@@ -9,6 +9,14 @@ import { test } from "./commands/test.ts";
 import { paint } from "./format.ts";
 import { CliError } from "./project.ts";
 
+// Ludra strips types from game scripts with Node's built-in stripTypeScriptTypes, which warns that it is
+// experimental on every use. That warning is noise for game authors, so drop just that one.
+const emitWarning = process.emitWarning.bind(process);
+process.emitWarning = ((warning: string | Error, ...rest: unknown[]) => {
+  if (String(warning instanceof Error ? warning.message : warning).includes("stripTypeScriptTypes")) return;
+  return (emitWarning as (...args: unknown[]) => void)(warning, ...rest);
+}) as typeof process.emitWarning;
+
 const HELP = `ludra: the game engine built for AI agents
 
 Usage

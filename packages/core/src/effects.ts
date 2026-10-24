@@ -29,7 +29,7 @@ export interface AssetReference {
   path: string;
   /** JSON path of the field that references it. */
   at: string;
-  kind: "image" | "audio";
+  kind: "image" | "audio" | "script";
 }
 
 /** Every file a scene points at, so tools can check that they exist. */
@@ -38,6 +38,8 @@ export function collectAssetPaths(scene: SceneDef): AssetReference[] {
   scene.entities.forEach((entity, i) => {
     const image = entity.components.sprite?.image;
     if (typeof image === "string" && image !== "") refs.push({ path: image, at: `entities[${i}].components.sprite.image`, kind: "image" });
+    const src = entity.components.script?.src;
+    if (typeof src === "string" && src !== "") refs.push({ path: src, at: `entities[${i}].components.script.src`, kind: "script" });
   });
   for (const [event, effect] of Object.entries(scene.effects ?? {})) {
     const sound = effect?.sound;

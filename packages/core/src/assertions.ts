@@ -1,8 +1,8 @@
 import { InputScript } from "./input.ts";
 import { defaultDuration, simulate } from "./simulate.ts";
 import { FIXED_DT, parseDuration, secondsToFrames } from "./time.ts";
-import { EVENT_TYPES, type GameEventType, type SceneDef } from "./types.ts";
-import { World, type GameEvent, type WorldSnapshot } from "./world.ts";
+import { EVENT_TYPES, type SceneDef } from "./types.ts";
+import { World, type GameEvent, type WorldOptions, type WorldSnapshot } from "./world.ts";
 
 const OPERATORS = ["<=", ">=", "==", "!=", "<", ">"] as const;
 type Operator = (typeof OPERATORS)[number];
@@ -15,14 +15,18 @@ type WorldField = (typeof WORLD_FIELDS)[number];
 
 type Subject =
   | { kind: "world"; field: WorldField }
-  | { kind: "events"; type: GameEventType }
-  | { kind: "entity"; id: string; field: EntityField };
+  /** Built-in event types, or custom events fired by scripts with world.emit(name). */
+  | { kind: "events"; name: string; builtin: boolean }
+  | { kind: "entity"; id: string; field: EntityField }
+  | { kind: "state"; id: string; key: string };
+
+type Value = number | boolean | string;
 
 export interface Assertion {
   source: string;
   subject: Subject;
   operator: Operator;
-  expected: number | boolean;
+  expected: Value;
   /** Frame to check at, or "end" for the last frame of the run. */
   at: number | "end";
 }
@@ -30,7 +34,7 @@ export interface Assertion {
 export class AssertionSyntaxError extends Error {}
 
 const EXAMPLES =
-  'Examples: "player.x > 400", "player.grounded == true at 1s", "score >= 3", "won == true", "deaths == 0", "events.jump == 1 at end", "coin1.exists == false".';
+  'Examples: "player.x > 400", "player.grounded == true at 1s", "score >= 3", "won == true", "deaths == 0", "events.jump == 1 at end", "coin1.exists == false", "door.state.open == true", "boss.state.phase == \\"angry\\"", "events.shoot >= 3".';
 
 /** Parses `<subject> <op> <value> [at <time|end>]`. */
 export function parseAssertion(source: string): Assertion {
@@ -39,29 +43,32 @@ export function parseAssertion(source: string): Assertion {
   const [, lhs = "", operator, rhs = "", at] = match;
 
   let subject: Subject;
+  const stateMatch = /^(.+)\.state\.([\w-]+)$/.exec(lhs);
   if ((WORLD_FIELDS as readonly string[]).includes(lhs)) {
     subject = { kind: "world", field: lhs as WorldField };
-  } else if (lhs.startsWith("events.")) {
-    const type = lhs.slice("events.".length);
-    if (!(EVENT_TYPES as readonly string[]).includes(type)) {
-      throw new AssertionSyntaxError(`Unknown event "${type}" in "${source}". Events: ${EVENT_TYPES.join(", ")}.`);
-    }
-    subject = { kind: "events", type: type as GameEventType };
+  } else if (lhs.startsWith("events.") && lhs.length > "events.".length) {
+    const name = lhs.slice("events.".length);
+    subject = { kind: "events", name, builtin: (EVENT_TYPES as readonly string[]).includes(name) };
+  } else if (stateMatch) {
+    subject = { kind: "state", id: stateMatch[1]!, key: stateMatch[2]! };
   } else {
     const dot = lhs.lastIndexOf(".");
     const field = lhs.slice(dot + 1);
     if (dot <= 0 || !(ENTITY_FIELDS as readonly string[]).includes(field)) {
       throw new AssertionSyntaxError(
-        `"${lhs}" is not something Ludra can check. Use ${WORLD_FIELDS.join(", ")}, events.<${EVENT_TYPES.join("|")}> or <entityId>.<${ENTITY_FIELDS.join("|")}>.`,
+        `"${lhs}" is not something Ludra can check. Use ${WORLD_FIELDS.join(", ")}, events.<name>, <entityId>.<${ENTITY_FIELDS.join("|")}> or <entityId>.state.<key>.`,
       );
     }
     subject = { kind: "entity", id: lhs.slice(0, dot), field: field as EntityField };
   }
 
-  let expected: number | boolean;
+  let expected: Value;
   if (rhs === "true" || rhs === "false") expected = rhs === "true";
+  else if (/^".*"$/.test(rhs)) expected = rhs.slice(1, -1);
   else if (Number.isFinite(Number(rhs))) expected = Number(rhs);
-  else throw new AssertionSyntaxError(`Expected a number or true/false after "${operator}" in "${source}", got "${rhs}".`);
+  else {
+    throw new AssertionSyntaxError(`Expected a number, true/false or a "quoted string" after "${operator}" in "${source}", got ${rhs}.`);
+  }
 
   let frame: number | "end" = "end";
   if (at !== undefined && at !== "end") {
@@ -78,7 +85,7 @@ export function parseAssertion(source: string): Assertion {
 export interface AssertionResult {
   source: string;
   pass: boolean;
-  actual: number | boolean | undefined;
+  actual: unknown;
   time: number;
   message: string;
 }
@@ -86,7 +93,7 @@ export interface AssertionResult {
 export function evaluateAssertion(assertion: Assertion, snapshot: WorldSnapshot, events: readonly GameEvent[]): AssertionResult {
   const { subject, operator, expected, source } = assertion;
   const time = snapshot.time;
-  let actual: number | boolean | undefined;
+  let actual: unknown;
   let label: string;
 
   switch (subject.kind) {
@@ -94,10 +101,30 @@ export function evaluateAssertion(assertion: Assertion, snapshot: WorldSnapshot,
       actual = snapshot[subject.field];
       label = subject.field;
       break;
-    case "events":
-      actual = events.filter((e) => e.type === subject.type && e.frame <= snapshot.frame).length;
-      label = `events.${subject.type}`;
+    case "events": {
+      const matches = (e: GameEvent) => (subject.builtin ? e.type === subject.name : e.type === "custom" && e.name === subject.name);
+      actual = events.filter((e) => matches(e) && e.frame <= snapshot.frame).length;
+      label = `events.${subject.name}`;
       break;
+    }
+    case "state": {
+      const entity = snapshot.entities[subject.id];
+      label = `${subject.id}.state.${subject.key}`;
+      if (!entity) {
+        return { source, pass: false, actual: undefined, time, message: `entity "${subject.id}" does not exist at ${time.toFixed(2)}s.` };
+      }
+      actual = entity.state?.[subject.key];
+      if (actual === undefined) {
+        return {
+          source,
+          pass: false,
+          actual,
+          time,
+          message: `${label} is not set at ${time.toFixed(2)}s. Scripts set it with self.state.${subject.key} = ...`,
+        };
+      }
+      break;
+    }
     case "entity": {
       const entity = snapshot.entities[subject.id];
       label = `${subject.id}.${subject.field}`;
@@ -116,14 +143,20 @@ export function evaluateAssertion(assertion: Assertion, snapshot: WorldSnapshot,
   }
 
   if (typeof actual !== typeof expected) {
-    return { source, pass: false, actual, time, message: `${label} is a ${typeof actual}, but it is compared with ${JSON.stringify(expected)}.` };
+    return {
+      source,
+      pass: false,
+      actual,
+      time,
+      message: `${label} is ${JSON.stringify(actual)} (a ${typeof actual}), but it is compared with ${JSON.stringify(expected)}.`,
+    };
   }
-  if (typeof actual === "boolean" && operator !== "==" && operator !== "!=") {
-    return { source, pass: false, actual, time, message: `${label} is true/false, so only == and != can be used.` };
+  if (typeof actual !== "number" && operator !== "==" && operator !== "!=") {
+    return { source, pass: false, actual, time, message: `${label} is a ${typeof actual}, so only == and != can be used.` };
   }
 
   const pass = compare(actual as number, operator, expected as number);
-  const shown = typeof actual === "number" ? round(actual) : actual;
+  const shown = typeof actual === "number" ? round(actual) : JSON.stringify(actual);
   return { source, pass, actual, time, message: `${label} = ${shown} at ${time.toFixed(2)}s` };
 }
 
@@ -166,7 +199,7 @@ export interface TestResult {
   error?: string;
 }
 
-export function runTest(scene: SceneDef, test: TestCase): TestResult {
+export function runTest(scene: SceneDef, test: TestCase, options: WorldOptions = {}): TestResult {
   let script: InputScript;
   let assertions: Assertion[];
   let frames: number;
@@ -187,10 +220,16 @@ export function runTest(scene: SceneDef, test: TestCase): TestResult {
 
   const wanted = new Set(assertions.map((a) => (a.at === "end" ? frames : Math.min(a.at, frames))));
   const snapshots = new Map<number, WorldSnapshot>();
-  const world = new World(scene);
-  simulate(world, script, frames, (w) => {
-    if (wanted.has(w.frame)) snapshots.set(w.frame, w.snapshot());
-  });
+  let world: World;
+  try {
+    world = new World(scene, options);
+    simulate(world, script, frames, (w) => {
+      if (wanted.has(w.frame)) snapshots.set(w.frame, w.snapshot());
+    });
+  } catch (err) {
+    // A throwing script fails this test, not the whole run.
+    return { name: test.name, pass: false, duration: frames * FIXED_DT, results: [], error: (err as Error).message };
+  }
 
   const results = assertions.map((a) => {
     const frame = a.at === "end" ? frames : Math.min(a.at, frames);

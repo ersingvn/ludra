@@ -4,9 +4,10 @@ import { stripTypeScriptTypes } from "node:module";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { collectAssetPaths } from "@ludra/core";
-import { isInside, readScene, type Project } from "./project.ts";
+import { isInside, readScene, scriptPaths, type Project } from "./project.ts";
 
 export const PROJECT_PREFIX = "/__ludra/project/";
+export const SCRIPT_PREFIX = "/__ludra/script/";
 /** An empty same-origin page that headless capture loads before importing the engine. */
 export const BLANK_PATH = "/__ludra/blank";
 
@@ -55,6 +56,19 @@ export function createGameServer(project: Project, indexHtml: (browserModule: st
       } else if (url.pathname === "/__ludra/version") {
         res.writeHead(200, { "content-type": "text/plain" });
         res.end(version(project));
+      } else if (url.pathname === "/__ludra/scripts") {
+        const { scene } = readScene(project);
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify(scene ? scriptPaths(project, scene) : []));
+      } else if (url.pathname.startsWith(SCRIPT_PREFIX)) {
+        // Only the game's own script files, type-stripped so the browser can import them.
+        const path = decodeURIComponent(url.pathname.slice(SCRIPT_PREFIX.length));
+        const { scene } = readScene(project);
+        const file = resolve(project.dir, path);
+        if (!scene || !scriptPaths(project, scene).includes(path) || !isInside(project.dir, file) || !existsSync(file)) return notFound(res);
+        const source = readFileSync(file, "utf8");
+        res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" });
+        res.end(extname(file) === ".ts" ? stripTypeScriptTypes(source) : source);
       } else if (url.pathname.startsWith(PROJECT_PREFIX)) {
         // Only media files inside the project are served, never source or config.
         const file = resolve(project.dir, decodeURIComponent(url.pathname.slice(PROJECT_PREFIX.length)));
@@ -84,7 +98,10 @@ function version(project: Project): string {
   if (!existsSync(project.entryPath)) return "missing";
   const files = [project.entryPath];
   const { scene } = readScene(project);
-  if (scene) files.push(...collectAssetPaths(scene).map((ref) => resolve(project.dir, ref.path)));
+  if (scene) {
+    files.push(...collectAssetPaths(scene).map((ref) => resolve(project.dir, ref.path)));
+    files.push(...scriptPaths(project, scene).map((path) => resolve(project.dir, path)));
+  }
   return files.map((file) => (existsSync(file) ? statSync(file).mtimeMs : 0)).join(":");
 }
 

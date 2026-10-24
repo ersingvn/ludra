@@ -51,7 +51,8 @@ describe("effects", () => {
 
   test("suggests the right event and sound names", () => {
     const result = validateScene({ effects: { colect: { sound: "coin" }, jump: { sound: "jmp" } }, entities: [ground, player] });
-    const unknownEvent = result.diagnostics.find((d) => d.code === "E_UNKNOWN_EVENT");
+    // Unknown names may be custom events fired by scripts, so a likely typo is a warning, not an error.
+    const unknownEvent = result.diagnostics.find((d) => d.code === "W_EVENT_LOOKS_LIKE_TYPO");
     const badSound = result.diagnostics.find((d) => d.code === "E_INVALID_SOUND");
     assert.match(unknownEvent?.fix ?? "", /Did you mean "collect"/);
     assert.match(badSound?.fix ?? "", /Did you mean "jump"/);

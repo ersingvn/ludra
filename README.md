@@ -25,7 +25,7 @@ claude > ludra new slime-valley
          Done. Run `ludra dev` to play it.
 ```
 
-> **Status:** early (v0.4). 2D platformers with enemies, hazards, moving platforms, goals, animated SVG sprites, particles and sound, plus the full agent toolchain including real rendered screenshots, work today. 3D is on the [roadmap](#roadmap).
+> **Status:** early (v0.5). 2D games with custom TypeScript scripts, enemies, hazards, moving platforms, goals, animated SVG sprites, particles and sound, plus the full agent toolchain including real rendered screenshots, work today. 3D is on the [roadmap](#roadmap).
 
 ## Why an engine for agents?
 
@@ -175,6 +175,40 @@ gameplay.test.json
 
 Assertions can check `score`, `deaths`, `won`, event counts (`events.jump`, `events.stomp`, ...) and any entity's `x`, `y`, `vx`, `vy`, `grounded` or `exists`, at the end or `at 1.5s`.
 
+### Scripts: any game logic, still testable
+
+Built-in components cover the basics. For everything else (enemies that chase, keys and locked doors, timers, shooting, boss phases) the agent writes a short TypeScript script, the way Unity developers write C# behaviours:
+
+```ts
+// scripts/locked-door.ts
+import type { Script } from "@ludra/core";
+
+export default {
+  update({ self, world }) {
+    const player = world.player();
+    if (player?.state.hasKey && self.touches(player)) {
+      world.emit("door-open");
+      world.destroy(self);
+    }
+  },
+} satisfies Script;
+```
+
+```json
+"script": { "src": "scripts/locked-door.ts" }
+```
+
+Unlike in other engines, the agent can prove the script works, because scripts run in the same deterministic simulation as everything else:
+
+```json
+"assert": ["events.door-open == 1", "player.state.hasKey == true", "chaser.state.chasing == true"]
+```
+
+- **Hooks:** `start`, `update` and `touch`. Scripts get the entity (`self`), the `world` (`get`, `all`, `player`, `spawn`, `destroy`, `kill`, `win`, `emit`, a seeded `random`) and `input`.
+- **No build step:** Node and the dev server strip types on the fly.
+- **Errors:** `ludra check` loads every script and reports syntax errors with the line and a caret. Runtime errors name the file, entity, hook and frame.
+- **Reference:** run `ludra components script` for the API, or see [`examples/key-quest`](examples/key-quest) for a jump pad, a key, a locked door, a chasing enemy and a time limit, all with tests.
+
 ### Art, effects and sound, all as text
 
 Agents can't use a paint program, so Ludra's art pipeline is text too. Sprites are **SVG files the agent writes itself**: spritesheets with `idle`, `run`, `jump` and `fall` animations that switch automatically, and tiles for ground and platforms. Game events trigger particles, synthesized sounds and screen shake from a few lines of JSON:
@@ -188,7 +222,7 @@ Agents can't use a paint program, so Ludra's art pipeline is text too. Sprites a
 
 No audio files are needed: `jump`, `coin`, `hit`, `explosion`, `powerup`, `blip` and `thud` are synthesized in the browser. Presentation never touches the simulation, so polishing a game can't break its tests, and `ludra check` reports any missing image along with the files that do exist.
 
-## Components (v0.3)
+## Components (v0.5)
 
 | Component | What it does |
 | --- | --- |
@@ -201,6 +235,7 @@ No audio files are needed: `jump`, `coin`, `hit`, `explosion`, `powerup`, `blip`
 | `hazard` | Kills the player on touch, who respawns at the start. `stompable` enemies die when landed on |
 | `goal` | Completes the level, optionally only after reaching `requireScore` |
 | `emitter` | Streams particles continuously: sparkles, fire, smoke |
+| `script` | Custom behavior in TypeScript: `start`, `update` and `touch` hooks with `params` |
 | `camera` | The browser camera follows this entity through worlds wider than the window |
 
 Falling out of the bottom of the world also counts as a death. Scene-level `effects` add particles, sound and shake to game events. Run `ludra components effects` for every option.
@@ -228,9 +263,12 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how it fits together.
 - ~~**v0.3: looks.** Image sprites and spritesheets, particles, screen shake, sound.~~ Done.
 - **v0.3.x:** tilemaps, parallax backgrounds, text and UI, music, and importing asset packs.
 - ~~**v0.4: real screenshots.** `ludra play --screenshot` renders actual frames headlessly so multimodal agents can see the game.~~ Done.
-- **v0.4.x:** `ludra play --gif`, and visual checks in tests (for example, nothing important off-screen).
-- **v0.5: 3D.** The same scene format and agent tools on a WebGL renderer with real 3D physics.
-- **Later:** top-down and other genres, a component registry (`ludra add <component>`), multiplayer, and desktop and mobile export.
+- ~~**v0.5: scripting.** Custom game logic in TypeScript, deterministic and testable.~~ Done.
+- **v0.6: game structure.** Multiple scenes and level transitions, prefabs, text and UI, lives and checkpoints.
+- **v0.7: worlds.** Tilemaps, top-down games, camera zones, parallax backgrounds.
+- **v0.8: physics.** A real physics engine (Rapier): slopes, rotating bodies, joints; pathfinding for enemies.
+- **v0.9: shipping.** Export to a single HTML file or a desktop app, touch controls for mobile.
+- **v1.0: 3D.** The same scene format and agent tools on a WebGL renderer with 3D physics.
 
 ## Contributing
 

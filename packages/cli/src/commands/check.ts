@@ -1,9 +1,10 @@
 import { formatDiagnostics, paint } from "../format.ts";
-import { loadProject, readScene } from "../project.ts";
+import { loadGame, loadProject } from "../project.ts";
 
-export function check(dir: string, options: { json?: boolean }): number {
+export async function check(dir: string, options: { json?: boolean }): Promise<number> {
   const project = loadProject(dir);
-  const { scene, diagnostics } = readScene(project);
+  const { game, diagnostics } = await loadGame(project);
+  const scene = game?.scene;
   const errors = diagnostics.filter((d) => d.severity === "error").length;
   const warnings = diagnostics.length - errors;
 

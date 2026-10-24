@@ -7,6 +7,7 @@ A game built with Ludra, a game engine designed for AI agents.
 - `ludra.json`: project config (name, entry scene, window size)
 - `scenes/main.scene.json`: the level. Entities are made of components; `effects` adds particles, sound and shake to game events.
 - `assets/`: SVG art. Spritesheets are frames side by side; tiles repeat.
+- `scripts/`: custom game logic in TypeScript (create it when needed). Run `npx @ludra/cli components script` for the API.
 - `tests/*.test.json`: gameplay tests, run headlessly
 
 ## Loop
@@ -28,3 +29,4 @@ Never call a change done until `ludra check` and `ludra test` both pass.
 - A jump only triggers on a new press, so put a segment without jump between two jump segments.
 - The level is done when a test proves `won == true` with `deaths == 0`.
 - Art and effects never change gameplay. Make it playable first, then dress it. Write new art as SVG in `assets/`.
+- For behavior no component provides (chasing, keys, timers, shooting), write a script and attach it with a `script` component. Use `world.random()`, never `Math.random()`, and test what it does through `self.state` and `world.emit`.

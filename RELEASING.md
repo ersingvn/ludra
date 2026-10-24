@@ -25,8 +25,8 @@ Both always share one version number.
 3. Tag the merge commit and push the tag:
 
    ```bash
-   git tag v0.4.0
-   git push origin v0.4.0
+   git tag v0.5.0
+   git push origin v0.5.0
    ```
 
 The [Release workflow](.github/workflows/release.yml) then checks that the tag matches both package versions, builds, runs the tests, and publishes `@ludra/core` and then `@ludra/cli` with [npm provenance](https://docs.npmjs.com/generating-provenance-statements). A version that is already on npm is skipped, so if a release fails halfway, fix the cause and re-run the workflow from the Actions tab.

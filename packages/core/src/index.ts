@@ -4,6 +4,7 @@ export * from "./components.ts";
 export * from "./effects.ts";
 export * from "./validate.ts";
 export * from "./input.ts";
+export * from "./script.ts";
 export * from "./world.ts";
 export * from "./simulate.ts";
 export * from "./assertions.ts";

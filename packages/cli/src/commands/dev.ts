@@ -1,6 +1,6 @@
 import { paint } from "../format.ts";
 import { CliError, loadProject, type Project } from "../project.ts";
-import { createGameServer, PROJECT_PREFIX } from "../server.ts";
+import { createGameServer, PROJECT_PREFIX, SCRIPT_PREFIX } from "../server.ts";
 
 /** Serves the game for a human to play, and reloads the page when the scene or its assets change. */
 export function dev(dir: string, options: { port?: string }): number {
@@ -45,7 +45,8 @@ import { startGame } from "${browserModule}";
 
 const data = await (await fetch("/__ludra/scene")).json();
 if (data.ok) {
-  await startGame(document.getElementById("game"), data.scene, { assetBase: "${PROJECT_PREFIX}" });
+  const scriptPaths = await (await fetch("/__ludra/scripts")).json();
+  await startGame(document.getElementById("game"), data.scene, { assetBase: "${PROJECT_PREFIX}", scriptBase: "${SCRIPT_PREFIX}", scriptPaths });
 } else {
   document.getElementById("game").hidden = true;
   const errors = document.getElementById("errors");

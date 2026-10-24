@@ -22,6 +22,15 @@ Ludra has one design rule: **anything a human would check by looking at the scre
 
 `browser.ts` is a separate entry point (`@ludra/core/browser`) so Node code never loads DOM code.
 
+### Scripts
+
+`script.ts` defines the API scripts see (`Script`, `ScriptContext`, `ScriptEntity`, `ScriptWorld`) and `ScriptError`. Core never imports script files itself. Hosts load them and pass the modules in, with `new World(scene, { scripts })`:
+
+- **CLI:** `loadGame` in `project.ts` imports each script with Node's built-in type stripping. It loads every file the scene references plus all of `scripts/`, so `world.spawn` can attach any of them, and turns load problems (syntax errors with line and caret, forbidden imports, misspelled hooks) into diagnostics.
+- **Browser:** the server serves those same files type-stripped at `/__ludra/script/`, and `startGame` and `captureFrames` import them.
+
+In a frame, scripts run after platformer input and before patrols and physics (`start` once, then `update`). `touch` runs after physics, for bodies that started overlapping or touching within 1px. Scripts see entities through stable handles whose setters write straight to the entity. Per-entity data lives in `entity.state`, which snapshots copy, so tests can assert on it. `world.random()` is seeded by `world.seed`, which keeps scripted runs deterministic as long as scripts avoid `Math.random` and `Date`, as the skill instructs. Hook errors are rethrown as `ScriptError` with file, entity, hook and frame; `runTest` turns them into a failed test.
+
 ### Presentation is a one-way street
 
 Everything visual or audible reads from the `World` and never writes to it. Effects react to `world.events` (which carry the position where they happened), animations derive from velocity and `grounded`, and particles use their own seeded random numbers. So adding art or effects can never change what `ludra test` verifies, and a test asserts exactly this.

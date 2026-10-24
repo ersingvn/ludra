@@ -3,6 +3,7 @@ import { parseFrames, type Sprite } from "./components.ts";
 import { collectAssetPaths } from "./effects.ts";
 import { InputScript } from "./input.ts";
 import { ParticleSystem } from "./particles.ts";
+import type { Script } from "./script.ts";
 import { FIXED_DT } from "./time.ts";
 import type { Action, SceneDef } from "./types.ts";
 import { World, type Entity } from "./world.ts";
@@ -30,6 +31,25 @@ const SHAKE_DECAY = 0.88;
 export interface GameOptions {
   /** URL prefix for image and audio paths in the scene. Defaults to "". */
   assetBase?: string;
+  /** URL prefix the scene's script paths are imported from. Defaults to `assetBase`. */
+  scriptBase?: string;
+  /** Scripts to load. Defaults to those the scene references; include any that `world.spawn` uses. */
+  scriptPaths?: readonly string[];
+}
+
+/** Imports the game's script modules, keyed by their path in the scene. */
+async function loadScripts(scene: SceneDef, options: GameOptions): Promise<Map<string, Script>> {
+  const base = options.scriptBase ?? options.assetBase ?? "";
+  const paths = options.scriptPaths ?? collectAssetPaths(scene).filter((ref) => ref.kind === "script").map((ref) => ref.path);
+  const scripts = new Map<string, Script>();
+  await Promise.all(
+    [...new Set(paths)].map(async (path) => {
+      const module = (await import(base + path)) as { default?: Script };
+      if (!module.default) throw new Error(`Script ${path} has no default export.`);
+      scripts.set(path, module.default);
+    }),
+  );
+  return scripts;
 }
 
 /**
@@ -42,14 +62,16 @@ export async function startGame(canvas: HTMLCanvasElement, scene: SceneDef, opti
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas 2D context is not available.");
   const assetBase = options.assetBase ?? "";
-  const images = await loadImages(scene, assetBase);
+  const [images, scripts] = await Promise.all([loadImages(scene, assetBase), loadScripts(scene, options)]);
   const sounds = new SoundPlayer(assetBase);
   const view = new View(scene, images);
 
-  let world = new World(scene);
+  let world = new World(scene, { scripts });
+  let crash: string | undefined;
   const restart = () => {
-    world = new World(scene);
+    world = new World(scene, { scripts });
     view.reset();
+    crash = undefined;
   };
 
   const held = new Set<Action>();
@@ -83,13 +105,20 @@ export async function startGame(canvas: HTMLCanvasElement, scene: SceneDef, opti
   const frame = (now: number) => {
     accumulator += Math.min(MAX_FRAME_TIME, (now - last) / 1000);
     last = now;
-    while (accumulator >= FIXED_DT) {
-      world.step(tapped.size > 0 ? new Set([...held, ...tapped]) : held);
+    while (accumulator >= FIXED_DT && !crash) {
+      try {
+        world.step(tapped.size > 0 ? new Set([...held, ...tapped]) : held);
+      } catch (err) {
+        // A script threw: freeze the game and show why, instead of failing silently.
+        crash = err instanceof Error ? err.message : String(err);
+        console.error("[ludra]", err);
+      }
       tapped.clear();
       view.step(world, (sound) => sounds.play(sound));
       accumulator -= FIXED_DT;
     }
     view.draw(ctx, world, sounds.muted);
+    if (crash) drawCrash(ctx, crash);
     raf = requestAnimationFrame(frame);
   };
   raf = requestAnimationFrame(frame);
@@ -125,9 +154,9 @@ export interface CapturedFrame {
 export async function captureFrames(canvas: HTMLCanvasElement, scene: SceneDef, options: CaptureOptions): Promise<CapturedFrame[]> {
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas 2D context is not available.");
-  const images = await loadImages(scene, options.assetBase ?? "");
+  const [images, scripts] = await Promise.all([loadImages(scene, options.assetBase ?? ""), loadScripts(scene, options)]);
   const view = new View(scene, images);
-  const world = new World(scene);
+  const world = new World(scene, { scripts });
   const script = InputScript.parse(options.inputs ?? "");
   const wanted = new Set(options.frames);
   const last = Math.max(0, ...options.frames);
@@ -143,6 +172,31 @@ export async function captureFrames(canvas: HTMLCanvasElement, scene: SceneDef, 
     view.step(world, () => {});
   }
   return captured;
+}
+
+function drawCrash(ctx: CanvasRenderingContext2D, message: string): void {
+  const { width, height } = ctx.canvas;
+  ctx.fillStyle = "rgba(20, 0, 8, 0.85)";
+  ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = "#ff9b9b";
+  ctx.textAlign = "left";
+  ctx.font = "700 22px system-ui, sans-serif";
+  ctx.fillText("Script error", 32, 56);
+  ctx.font = "15px ui-monospace, monospace";
+  // Wrap the message to the canvas width.
+  let line = "";
+  let y = 92;
+  for (const word of message.split(" ")) {
+    if (ctx.measureText(line + word).width > width - 64) {
+      ctx.fillText(line, 32, y);
+      line = "";
+      y += 22;
+    }
+    line += `${word} `;
+  }
+  ctx.fillText(line, 32, y);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+  ctx.fillText("Fix the script; the page reloads on save. R restarts.", 32, y + 40);
 }
 
 async function loadImages(scene: SceneDef, assetBase: string): Promise<Map<string, HTMLImageElement>> {
@@ -195,7 +249,7 @@ class View {
   /** Runs once per simulation step: turns new events into effects and advances particles. */
   step(world: World, playSound: (sound: string) => void): void {
     for (const event of world.events.slice(this.handledEvents)) {
-      const effect = this.scene.effects?.[event.type];
+      const effect = this.scene.effects?.[event.type === "custom" ? event.name : event.type];
       if (!effect) continue;
       if (effect.particles) this.particles.burst(event.x, event.y, effect.particles);
       if (effect.sound) playSound(effect.sound);

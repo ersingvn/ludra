@@ -4,7 +4,9 @@ export type FieldSpec =
   | { type: "boolean"; default?: boolean; description: string }
   | { type: "enum"; values: readonly string[]; default?: string; description: string }
   /** Spritesheet frame indices: "0", "1-4" or "0,2,4-6". Empty = not used. */
-  | { type: "frames"; default?: string; description: string };
+  | { type: "frames"; default?: string; description: string }
+  /** Any JSON object. */
+  | { type: "object"; default?: Record<string, unknown>; description: string };
 
 export interface ComponentSpec {
   description: string;
@@ -23,6 +25,7 @@ export const COMPONENT_NAMES = [
   "hazard",
   "goal",
   "emitter",
+  "script",
   "camera",
 ] as const;
 export type ComponentName = (typeof COMPONENT_NAMES)[number];
@@ -140,6 +143,15 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       ...Object.fromEntries(Object.entries(PARTICLE_FIELDS).filter(([field]) => field !== "count")),
     },
   },
+  script: {
+    description:
+      "Custom behavior written in TypeScript or JavaScript: a file that default-exports hooks (start, update, touch). Use it for anything the built-in components don't do: chasing, doors and keys, timers, shooting, boss phases. Run `ludra components script` for the API.",
+    requires: ["transform"],
+    fields: {
+      src: { type: "string", description: 'Script path relative to the project, e.g. "scripts/chase.ts".' },
+      params: { type: "object", default: {}, description: "Values passed to the script as ctx.params, so one script can serve many entities." },
+    },
+  },
   camera: {
     description: "The browser camera follows this entity. Without it, the camera follows the first platformer.",
     requires: ["transform"],
@@ -195,6 +207,11 @@ export interface ParticleSpec {
 
 export interface Emitter extends Omit<ParticleSpec, "count"> {
   rate: number;
+}
+
+export interface ScriptComponent {
+  src: string;
+  params: Record<string, unknown>;
 }
 
 export interface Platformer {
