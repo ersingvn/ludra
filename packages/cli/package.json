@@ -3,8 +3,21 @@
   "version": "0.3.0",
   "description": "The game engine built for AI agents. CLI: create, check, play, test and run Ludra games.",
   "license": "MIT",
-  "repository": { "type": "git", "url": "git+https://github.com/ersingvn/ludra.git", "directory": "packages/cli" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ersingvn/ludra.git",
+    "directory": "packages/cli"
+  },
   "homepage": "https://github.com/ersingvn/ludra#readme",
+  "bugs": {
+    "url": "https://github.com/ersingvn/ludra/issues"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "prepack": "tsc -b --clean && tsc -b"
+  },
   "type": "module",
   "bin": {
     "ludra": "./dist/index.js"

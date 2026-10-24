@@ -3,8 +3,21 @@
   "version": "0.3.0",
   "description": "Ludra engine runtime: scene format, validation, deterministic simulation and rendering.",
   "license": "MIT",
-  "repository": { "type": "git", "url": "git+https://github.com/ersingvn/ludra.git", "directory": "packages/core" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ersingvn/ludra.git",
+    "directory": "packages/core"
+  },
   "homepage": "https://github.com/ersingvn/ludra#readme",
+  "bugs": {
+    "url": "https://github.com/ersingvn/ludra/issues"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "prepack": "tsc -b --clean && tsc -b"
+  },
   "type": "module",
   "exports": {
     ".": {
@@ -21,5 +34,17 @@
   "files": [
     "dist",
     "src"
-  ]
+  ],
+  "keywords": [
+    "game-engine",
+    "ai",
+    "agents",
+    "llm",
+    "gamedev",
+    "deterministic",
+    "headless-testing"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }
