@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Node ${{ matrix.node }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build (type-check)
+        run: npm run build
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Example games
+        shell: bash
+        run: |
+          for game in examples/*/; do
+            echo "::group::$game"
+            npm run -s ludra -- check "$game"
+            npm run -s ludra -- test "$game"
+            echo "::endgroup::"
+          done
+
+      - name: Built CLI works without the dev condition
+        shell: bash
+        run: node packages/cli/dist/index.js test examples/slime-valley

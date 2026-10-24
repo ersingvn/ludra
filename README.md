@@ -1,5 +1,8 @@
 # Ludra
 
+[![CI](https://github.com/ersingvn/ludra/actions/workflows/ci.yml/badge.svg)](https://github.com/ersingvn/ludra/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **The game engine built for AI agents.**
 
 Unity, Unreal and Godot are designed for humans clicking around an editor. Ludra is designed for an agent like Claude: games are plain JSON, every problem comes with a machine-readable fix, and the agent can **play its own game headlessly** to prove it works before a human ever touches it.
