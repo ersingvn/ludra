@@ -2,7 +2,9 @@ export type FieldSpec =
   | { type: "number"; default?: number; min?: number; description: string }
   | { type: "string"; default?: string; description: string }
   | { type: "boolean"; default?: boolean; description: string }
-  | { type: "enum"; values: readonly string[]; default?: string; description: string };
+  | { type: "enum"; values: readonly string[]; default?: string; description: string }
+  /** Spritesheet frame indices: "0", "1-4" or "0,2,4-6". Empty = not used. */
+  | { type: "frames"; default?: string; description: string };
 
 export interface ComponentSpec {
   description: string;
@@ -20,9 +22,22 @@ export const COMPONENT_NAMES = [
   "patrol",
   "hazard",
   "goal",
+  "emitter",
   "camera",
 ] as const;
 export type ComponentName = (typeof COMPONENT_NAMES)[number];
+
+/** Shared by the `emitter` component and the particles of scene `effects`. Purely visual. */
+export const PARTICLE_FIELDS: Record<string, FieldSpec> = {
+  count: { type: "number", min: 1, default: 10, description: "Particles per burst (effects only)." },
+  color: { type: "string", default: "#ffffff", description: "Any CSS color." },
+  speed: { type: "number", min: 0, default: 120, description: "Launch speed in px/s." },
+  direction: { type: "number", default: -90, description: "Launch angle in degrees. 0 = right, -90 = up, 90 = down." },
+  spread: { type: "number", min: 0, default: 360, description: "Random spread around direction, in degrees. 360 = all directions." },
+  life: { type: "number", min: 0, default: 0.5, description: "Seconds each particle lives; it shrinks and fades over that time." },
+  size: { type: "number", min: 0, default: 3, description: "Starting size in pixels." },
+  gravity: { type: "number", default: 400, description: "Downward acceleration in px/s². Negative values float up." },
+};
 
 /**
  * The single source of truth for components. Validation, defaults and
@@ -52,11 +67,22 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
     },
   },
   sprite: {
-    description: "How the entity is drawn. Size defaults to the body size.",
+    description:
+      "How the entity is drawn: a colored shape, or an image (SVG, PNG...) path relative to the project. An image can be a horizontal spritesheet with animations; platformers pick idle/run/jump/fall automatically, everything else plays run while moving and idle otherwise. Size defaults to the body size.",
     requires: ["transform"],
     fields: {
-      shape: { type: "enum", values: ["rect", "circle"], default: "rect", description: "Shape to draw." },
-      color: { type: "string", default: "#ffffff", description: "Any CSS color." },
+      shape: { type: "enum", values: ["rect", "circle"], default: "rect", description: "Shape to draw when there is no image." },
+      color: { type: "string", default: "#ffffff", description: "Any CSS color. Used when there is no image." },
+      image: { type: "string", default: "", description: 'Image path relative to the project, e.g. "assets/player.svg".' },
+      frameWidth: { type: "number", min: 0, default: 0, description: "Width of one spritesheet frame in image pixels. 0 = the whole image is one frame." },
+      frameHeight: { type: "number", min: 0, default: 0, description: "Height of one frame in image pixels. 0 = the image height." },
+      idle: { type: "frames", default: "0", description: 'Frames to loop when standing still, e.g. "0" or "0-1".' },
+      run: { type: "frames", default: "", description: 'Frames to loop while moving, e.g. "2-5". Empty = use idle.' },
+      jump: { type: "frames", default: "", description: "Frames while moving up in the air. Empty = use idle." },
+      fall: { type: "frames", default: "", description: "Frames while falling. Empty = use jump." },
+      fps: { type: "number", min: 0, default: 8, description: "Animation speed in frames per second." },
+      flip: { type: "boolean", default: true, description: "Mirror the image while moving left. Draw images facing right." },
+      tile: { type: "boolean", default: false, description: "Repeat the image to fill the sprite instead of stretching it (ground, walls, spikes)." },
       width: { type: "number", min: 0, default: 0, description: "Draw width in pixels. 0 = use the body width." },
       height: { type: "number", min: 0, default: 0, description: "Draw height in pixels. 0 = use the body height." },
       layer: { type: "number", default: 0, description: "Higher layers are drawn on top." },
@@ -106,6 +132,14 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       requireScore: { type: "number", min: 0, default: 0, description: "Score needed before the goal accepts the player." },
     },
   },
+  emitter: {
+    description: "Continuously emits visual particles from the entity (torches, sparkles, smoke). It does not affect gameplay.",
+    requires: ["transform"],
+    fields: {
+      rate: { type: "number", min: 0, default: 10, description: "Particles per second." },
+      ...Object.fromEntries(Object.entries(PARTICLE_FIELDS).filter(([field]) => field !== "count")),
+    },
+  },
   camera: {
     description: "The browser camera follows this entity. Without it, the camera follows the first platformer.",
     requires: ["transform"],
@@ -133,9 +167,34 @@ export interface Body {
 export interface Sprite {
   shape: "rect" | "circle";
   color: string;
+  image: string;
+  frameWidth: number;
+  frameHeight: number;
+  idle: string;
+  run: string;
+  jump: string;
+  fall: string;
+  fps: number;
+  flip: boolean;
+  tile: boolean;
   width: number;
   height: number;
   layer: number;
+}
+
+export interface ParticleSpec {
+  count: number;
+  color: string;
+  speed: number;
+  direction: number;
+  spread: number;
+  life: number;
+  size: number;
+  gravity: number;
+}
+
+export interface Emitter extends Omit<ParticleSpec, "count"> {
+  rate: number;
 }
 
 export interface Platformer {
@@ -175,9 +234,32 @@ export function isComponentName(name: string): name is ComponentName {
 
 /** Fills in defaults for a component that has already passed validation. */
 export function resolveComponent<T>(name: ComponentName, raw: Record<string, unknown>): T {
+  return resolveFields<T>(COMPONENTS[name].fields, raw);
+}
+
+export function resolveFields<T>(fields: Record<string, FieldSpec>, raw: Record<string, unknown>): T {
   const out: Record<string, unknown> = {};
-  for (const [field, spec] of Object.entries(COMPONENTS[name].fields)) {
+  for (const [field, spec] of Object.entries(fields)) {
     out[field] = raw[field] ?? spec.default;
   }
   return out as T;
+}
+
+const FRAMES_PATTERN = /^\d+(-\d+)?(,\d+(-\d+)?)*$/;
+
+export function isFrameList(text: string): boolean {
+  return text === "" || FRAMES_PATTERN.test(text.replaceAll(" ", ""));
+}
+
+/** Expands "0,2-4" to [0, 2, 3, 4]. Assumes `isFrameList(text)`. */
+export function parseFrames(text: string): number[] {
+  if (text.trim() === "") return [];
+  return text
+    .replaceAll(" ", "")
+    .split(",")
+    .flatMap((part) => {
+      const [start = 0, end = start] = part.split("-").map(Number);
+      const step = end >= start ? 1 : -1;
+      return Array.from({ length: Math.abs(end - start) + 1 }, (_, i) => start + i * step);
+    });
 }

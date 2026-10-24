@@ -5,7 +5,8 @@ A game built with Ludra, a game engine designed for AI agents.
 ## Layout
 
 - `ludra.json`: project config (name, entry scene, window size)
-- `scenes/main.scene.json`: the level. Entities are made of components.
+- `scenes/main.scene.json`: the level. Entities are made of components; `effects` adds particles, sound and shake to game events.
+- `assets/`: SVG art. Spritesheets are frames side by side; tiles repeat.
 - `tests/*.test.json`: gameplay tests, run headlessly
 
 ## Loop
@@ -26,3 +27,4 @@ Never call a change done until `ludra check` and `ludra test` both pass.
 - Moving platforms and enemies are kinematic bodies with a `patrol`. Players standing on a moving platform are carried.
 - A jump only triggers on a new press, so put a segment without jump between two jump segments.
 - The level is done when a test proves `won == true` with `deaths == 0`.
+- Art and effects never change gameplay. Make it playable first, then dress it. Write new art as SVG in `assets/`.

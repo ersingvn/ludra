@@ -15,13 +15,20 @@ Ludra has one design rule: **anything a human would check by looking at the scre
 | `simulate.ts` | Runs a world against a script. |
 | `assertions.ts` | Parses and evaluates `"<subject> <op> <value> [at <time>]"` and runs test cases. |
 | `ascii.ts` | Draws a frame as text so agents can see layout and positions. |
-| `browser.ts` | Canvas renderer and keyboard input for humans. It uses the same `World`, so tests and play match. |
+| `effects.ts` | Scene `effects` schema, sound presets, and `collectAssetPaths` (every image and audio file a scene references). |
+| `browser.ts` | Canvas renderer and keyboard input for humans. It uses the same `World`, so tests and play match. Draws sprites, spritesheet animations and tiles, and turns world events into effects. |
+| `particles.ts` | Seeded, visual-only particle system for effect bursts and `emitter`s. |
+| `audio.ts` | Web Audio sound player: synthesized presets plus audio files. |
 
 `browser.ts` is a separate entry point (`@ludra/core/browser`) so Node code never loads DOM code.
 
+### Presentation is a one-way street
+
+Everything visual or audible reads from the `World` and never writes to it. Effects react to `world.events` (which carry the position where they happened), animations derive from velocity and `grounded`, and particles use their own seeded random numbers. So adding art or effects can never change what `ludra test` verifies, and a test asserts exactly this.
+
 ### `ludra` (CLI)
 
-The CLI is a thin layer over core: project loading (`ludra.json`), output formatting (`--json` everywhere), templates and the dev server. The dev server has no bundler. In development it type-strips the engine's TypeScript on request, and in a published install it serves the compiled JavaScript.
+The CLI is a thin layer over core: project loading (`ludra.json`), output formatting (`--json` everywhere), templates and the dev server. `ludra check` adds file-system checks core can't do, such as `E_ASSET_MISSING`. The dev server serves only media files from the project and reloads the page when the scene or any asset it uses changes. It has no bundler. In development it type-strips the engine's TypeScript on request, and in a published install it serves the compiled JavaScript.
 
 ## Determinism
 

@@ -2,6 +2,16 @@ export type Action = "left" | "right" | "up" | "down" | "jump" | "action";
 
 export const ACTIONS: readonly Action[] = ["left", "right", "up", "down", "jump", "action"];
 
+export const EVENT_TYPES = ["jump", "land", "collect", "die", "stomp", "win"] as const;
+export type GameEventType = (typeof EVENT_TYPES)[number];
+
+/** What happens visually and audibly when a game event fires. See `EFFECT_FIELDS`. */
+export interface EffectDef {
+  particles?: Record<string, unknown>;
+  sound?: string;
+  shake?: number;
+}
+
 /** An entity as written in a scene file. */
 export interface EntityDef {
   id: string;
@@ -21,6 +31,8 @@ export interface WorldSettings {
 export interface SceneDef {
   name?: string;
   world?: WorldSettings;
+  /** Feedback for game events, e.g. `{ "collect": { "sound": "coin" } }`. Visual and audio only. */
+  effects?: Partial<Record<GameEventType, EffectDef>>;
   entities: EntityDef[];
 }
 

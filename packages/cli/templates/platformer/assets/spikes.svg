@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="20" height="16" viewBox="0 0 20 16">
+  <!-- Tile: repeats horizontally across the hazard. -->
+  <path d="M0 16 L 5 1 L 10 16 Z" fill="#e4e8f2"/>
+  <path d="M5 1 L 10 16 L 6.5 16 Z" fill="#a9b1c7"/>
+  <path d="M10 16 L 15 1 L 20 16 Z" fill="#e4e8f2"/>
+  <path d="M15 1 L 20 16 L 16.5 16 Z" fill="#a9b1c7"/>
+  <rect x="0" y="13" width="20" height="3" fill="#ff5d73"/>
+</svg>

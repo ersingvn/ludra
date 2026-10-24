@@ -1,5 +1,6 @@
-import { COMPONENT_NAMES, COMPONENTS, isComponentName, type ComponentName, type FieldSpec } from "./components.ts";
-import type { Diagnostic, SceneDef } from "./types.ts";
+import { COMPONENT_NAMES, COMPONENTS, isComponentName, isFrameList, PARTICLE_FIELDS, type ComponentName, type FieldSpec } from "./components.ts";
+import { AUDIO_EXTENSIONS, EFFECT_FIELDS, IMAGE_EXTENSIONS, isSoundPreset, SOUND_PRESETS } from "./effects.ts";
+import { EVENT_TYPES, type Diagnostic, type SceneDef } from "./types.ts";
 
 export interface ValidationResult {
   ok: boolean;
@@ -48,6 +49,8 @@ export function validateScene(raw: unknown): ValidationResult {
       }
     }
   }
+
+  if (raw.effects !== undefined) validateEffects(raw.effects, error, warn);
 
   if (!Array.isArray(raw.entities)) {
     error("E_NO_ENTITIES", "entities", 'A scene needs an "entities" array.', 'Add "entities": [].');
@@ -104,7 +107,7 @@ export function validateScene(raw: unknown): ValidationResult {
         error("E_COMPONENT_NOT_OBJECT", componentPath, `Component "${name}" on entity ${label} must be an object.`, `Use "${name}": {}.`);
         continue;
       }
-      validateFields(name, value, componentPath, label, error, warn);
+      validateFields(COMPONENTS[name].fields, value, componentPath, name, ` on entity ${label}`, error, warn);
     }
 
     for (const name of Object.keys(components)) {
@@ -120,6 +123,16 @@ export function validateScene(raw: unknown): ValidationResult {
           );
         }
       }
+    }
+
+    const sprite = isObject(components.sprite) ? components.sprite : undefined;
+    if (sprite && typeof sprite.image === "string" && sprite.image !== "" && !hasExtension(sprite.image, IMAGE_EXTENSIONS)) {
+      error(
+        "E_INVALID_IMAGE",
+        `${path}.components.sprite.image`,
+        `"${sprite.image}" on entity ${label} is not an image file.`,
+        `Use a path ending in ${IMAGE_EXTENSIONS.join(", ")}. SVG is easiest: you can write it as text.`,
+      );
     }
 
     const body = isObject(components.body) ? components.body : undefined;
@@ -196,39 +209,86 @@ function numberOr(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
-type Report =(code: string, path: string, message: string, fix?: string) => void;
+type Report = (code: string, path: string, message: string, fix?: string) => void;
 
+/**
+ * Checks an object against a field table.
+ * `owner` names it in messages (e.g. `sprite`), `where` says whose it is (e.g. ` on entity "player"`).
+ */
 function validateFields(
-  name: ComponentName,
+  fields: Record<string, FieldSpec>,
   value: Record<string, unknown>,
   path: string,
-  label: string,
+  owner: string,
+  where: string,
   error: Report,
   warn: Report,
+  ignore: readonly string[] = [],
 ): void {
-  const fields = COMPONENTS[name].fields;
   for (const [field, fieldValue] of Object.entries(value)) {
+    if (ignore.includes(field)) continue;
     const spec = fields[field];
     if (!spec) {
       const suggestion = closest(field, Object.keys(fields));
       warn(
         "W_UNKNOWN_FIELD",
         `${path}.${field}`,
-        `"${name}" has no field "${field}", so it is ignored.`,
+        `"${owner}" has no field "${field}", so it is ignored.`,
         suggestion ? `Did you mean "${suggestion}"?` : `Valid fields: ${Object.keys(fields).join(", ")}.`,
       );
       continue;
     }
     const problem = checkField(spec, fieldValue);
     if (problem) {
-      error("E_INVALID_FIELD", `${path}.${field}`, `${name}.${field} on entity ${label} ${problem}`, fixFor(spec));
+      error("E_INVALID_FIELD", `${path}.${field}`, `${owner}.${field}${where} ${problem}`, fixFor(spec));
     }
   }
   for (const [field, spec] of Object.entries(fields)) {
     if (spec.default === undefined && !(field in value)) {
-      error("E_MISSING_FIELD", `${path}.${field}`, `${name}.${field} is required on entity ${label}.`, `Add "${field}": <${spec.type}>. ${spec.description}`);
+      error("E_MISSING_FIELD", `${path}.${field}`, `${owner}.${field} is required${where}.`, `Add "${field}": <${spec.type}>. ${spec.description}`);
     }
   }
+}
+
+function validateEffects(effects: unknown, error: Report, warn: Report): void {
+  if (!isObject(effects)) {
+    error("E_EFFECTS_NOT_OBJECT", "effects", '"effects" must map event names to effects.', 'Use "effects": { "collect": { "sound": "coin" } }.');
+    return;
+  }
+  for (const [event, effect] of Object.entries(effects)) {
+    const path = `effects.${event}`;
+    if (!(EVENT_TYPES as readonly string[]).includes(event)) {
+      const suggestion = closest(event, EVENT_TYPES);
+      error("E_UNKNOWN_EVENT", path, `There is no "${event}" event.`, `${suggestion ? `Did you mean "${suggestion}"? ` : ""}Events: ${EVENT_TYPES.join(", ")}.`);
+      continue;
+    }
+    if (!isObject(effect)) {
+      error("E_EFFECT_NOT_OBJECT", path, `effects.${event} must be an object.`, `Use { "sound": "blip", "particles": { "count": 8 } }.`);
+      continue;
+    }
+    validateFields(EFFECT_FIELDS, effect, path, `effects.${event}`, "", error, warn, ["particles"]);
+    if (typeof effect.sound === "string" && effect.sound !== "" && !isSoundPreset(effect.sound) && !hasExtension(effect.sound, AUDIO_EXTENSIONS)) {
+      const suggestion = closest(effect.sound, SOUND_PRESETS);
+      error(
+        "E_INVALID_SOUND",
+        `${path}.sound`,
+        `"${effect.sound}" is neither a sound preset nor an audio file.`,
+        `${suggestion ? `Did you mean "${suggestion}"? ` : ""}Presets: ${SOUND_PRESETS.join(", ")}. Files must end in ${AUDIO_EXTENSIONS.join(", ")}.`,
+      );
+    }
+    if (effect.particles !== undefined) {
+      if (!isObject(effect.particles)) {
+        error("E_INVALID_FIELD", `${path}.particles`, `effects.${event}.particles must be an object.`, 'Use "particles": { "count": 10, "color": "#ffd166" }.');
+      } else {
+        validateFields(PARTICLE_FIELDS, effect.particles, `${path}.particles`, `effects.${event}.particles`, "", error, warn);
+      }
+    }
+  }
+}
+
+function hasExtension(path: string, extensions: readonly string[]): boolean {
+  const lower = path.toLowerCase();
+  return extensions.some((ext) => lower.endsWith(ext));
 }
 
 function checkField(spec: FieldSpec, value: unknown): string | undefined {
@@ -245,11 +305,14 @@ function checkField(spec: FieldSpec, value: unknown): string | undefined {
       return typeof value === "string" && spec.values.includes(value)
         ? undefined
         : `must be one of ${spec.values.map((v) => `"${v}"`).join(", ")}, got ${describe(value)}.`;
+    case "frames":
+      return typeof value === "string" && isFrameList(value) ? undefined : `must be a frame list like "0", "1-4" or "0,2-3", got ${describe(value)}.`;
   }
 }
 
 function fixFor(spec: FieldSpec): string | undefined {
   if (spec.type === "enum") return `Use one of: ${spec.values.map((v) => `"${v}"`).join(", ")}.`;
+  if (spec.type === "frames") return 'Frames are zero-based indices into the spritesheet, left to right: "0", "1-4" or "0,2-3".';
   if (spec.default !== undefined) return `The default is ${JSON.stringify(spec.default)}. ${spec.description}`;
   return spec.description;
 }

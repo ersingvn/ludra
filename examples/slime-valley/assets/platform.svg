@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">
+  <!-- Tile: stone brick for ledges and steps. -->
+  <rect width="20" height="20" fill="#56658f"/>
+  <rect width="20" height="3" fill="#7a8ab8"/>
+  <rect y="17" width="20" height="3" fill="#434f72"/>
+  <rect x="9" y="3" width="2" height="14" fill="#434f72"/>
+  <rect x="1" y="5" width="3" height="2" fill="#6b7aa6"/>
+  <rect x="13" y="9" width="4" height="2" fill="#6b7aa6"/>
+</svg>

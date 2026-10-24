@@ -1,6 +1,6 @@
 ---
 name: ludra
-description: Build, debug and test 2D games with the Ludra engine. Use when the user asks to make, change or fix a game (platformer, level, player movement, coins, enemies, hazards, moving platforms, goals) in a project that has a ludra.json, or asks to start a new game with Ludra.
+description: Build, debug, test and polish 2D games with the Ludra engine. Use when the user asks to make, change or fix a game (platformer, level, player movement, coins, enemies, hazards, moving platforms, goals, sprites, animations, particles, sound) in a project that has a ludra.json, or asks to start a new game with Ludra.
 ---
 
 # Building games with Ludra
@@ -86,4 +86,39 @@ Prefer routes with some slack: if only one exact timing works, a human will find
 
 ## Making it look good
 
-Use `sprite` colors with a coherent palette: a dark background, mid-tone platforms, a bright player and pickups, and a warning color (red, magenta) for anything that kills. Use `layer` so the player draws above everything. Keep sizes consistent, for example a 28x36 player, 20px pickups and 20px-thick platforms.
+Get the level playable with colored shapes first, then dress it. Images, effects and emitters are presentation only: they never change the simulation, so tests that passed keep passing.
+
+### Art: write SVG
+
+You can't draw with a mouse, but you can write SVG. Put files in `assets/` and point `sprite.image` at them.
+
+- **Spritesheets** are frames side by side, left to right, each `frameWidth` x `frameHeight` (`width`/`height` on the `<svg>` must match the sheet). Draw characters facing right; `flip` mirrors them when moving left.
+- **Animations**: set `idle`, `run`, `jump`, `fall` to frame lists (`"0"`, `"1-2"`, `"0,2-4"`) and `fps`. Platformers switch automatically. Other entities play `run` while moving and `idle` otherwise, so a spinning coin is `"idle": "0-3"`.
+- **Tiles**: `"tile": true` repeats the image at its natural size to fill the sprite. Use it for ground, platforms and spikes instead of stretching.
+- Match each frame's size to the body size so collisions match what players see. Leave a pixel or two of padding inside the frame.
+- Keep `color` set even with an image: it is the fallback if the image fails to load.
+- Style: chunky shapes with flat colors, a darker shade underneath, a light highlight on top, and big readable eyes. Pick one palette and reuse it.
+
+`ludra check` fails with `E_ASSET_MISSING` (and lists what does exist) if a referenced file is missing, so run it after adding art.
+
+### Juice: effects and emitters
+
+Scene-level `effects` map events (`jump`, `land`, `collect`, `stomp`, `die`, `win`) to a particle burst at the event position, a `sound` and a screen `shake`:
+
+```json
+"effects": {
+  "collect": { "sound": "coin", "particles": { "count": 14, "color": "#ffd166", "speed": 140, "life": 0.45 } },
+  "die": { "sound": "explosion", "shake": 10, "particles": { "count": 30, "color": "#ff5d73", "speed": 220 } }
+}
+```
+
+- Sounds are synthesized presets: `jump`, `coin`, `hit`, `explosion`, `powerup`, `blip`, `thud`. Use those unless the user supplies audio files (`.wav`, `.mp3`, `.ogg` paths also work).
+- Particles: `direction` is degrees (-90 = up, 90 = down), `spread` is the cone width, and negative `gravity` floats up.
+- An `emitter` component streams particles continuously (sparkles on a goal, torch fire, steam).
+- Feedback for every player action makes a game feel good: a small dust puff on jump and land, a burst plus sound on pickups, and shake plus a big burst on death.
+
+Run `npx ludra components effects` for every field.
+
+### Layout and color
+
+Use a coherent palette: a dark background, mid-tone platforms, a bright player and pickups, and a warning color (red, magenta) for anything that kills. Use `layer` so the player draws above everything. Keep sizes consistent, for example a 28x36 player, 20px pickups and 20px-thick platforms.
