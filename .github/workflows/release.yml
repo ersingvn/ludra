@@ -1,0 +1,56 @@
+name: Release
+
+# Publishes @ludra/core and ludra to npm when a version tag is pushed:
+#   git tag v0.3.0 && git push origin v0.3.0
+# Needs an NPM_TOKEN repository secret (an npm automation or granular token
+# allowed to publish both packages).
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  id-token: write # npm provenance: links each published version to this workflow run
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Tag matches package versions
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          for pkg in packages/core packages/cli; do
+            version=$(node -p "require('./$pkg/package.json').version")
+            if [ "$version" != "$tag" ]; then
+              echo "::error::$pkg is $version but the tag is v$tag. Bump the versions first."
+              exit 1
+            fi
+          done
+
+      - name: Build and test
+        run: |
+          npm run build
+          npm test
+
+      # core first: the CLI depends on it.
+      - name: Publish @ludra/core
+        run: npm publish --workspace packages/core --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish ludra
+        run: npm publish --workspace packages/cli --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
