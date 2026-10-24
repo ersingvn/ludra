@@ -39,6 +39,28 @@ The simulation is fixed-step and deterministic, so the game a test verifies is e
 
 Requires Node.js 22.18 or newer.
 
+### With Claude Code (recommended)
+
+Install the plugin by running these two commands inside Claude Code:
+
+```
+/plugin marketplace add ersingvn/ludra
+/plugin install ludra@ludra
+```
+
+Then just ask, in any folder:
+
+> make me a platformer with spikes, a moving platform and an enemy to stomp
+
+The plugin's [`ludra` skill](plugins/ludra/skills/ludra/SKILL.md) teaches Claude the whole loop: create the game, `check` after every edit, `play` it headlessly, prove it with `test`, add art and effects, and hand it to you with `ludra dev`. Every project created with `ludra new` also has a `CLAUDE.md` with the same loop, so other agents know how to work in it too.
+
+To update later, run `/plugin marketplace update ludra`.
+
+> [!NOTE]
+> The skill runs the CLI through `npx ludra`, which needs the `ludra` npm package. Until it is published, clone this repo and work inside it with `npm run ludra -- <command>` instead (see below).
+
+### From source
+
 ```bash
 git clone https://github.com/ersingvn/ludra.git && cd ludra
 npm install
@@ -48,10 +70,6 @@ npm run ludra -- dev my-game
 ```
 
 Once the packages are published, this becomes `npx ludra new my-game`.
-
-### Use it with Claude Code
-
-This repo is also a Claude Code plugin. The [`ludra` skill](skills/ludra/SKILL.md) teaches Claude the workflow: edit, check, play, test, then hand off. Every project created with `ludra new` also includes a `CLAUDE.md` with the same loop, so any agent that reads it knows how to work.
 
 ## A tour
 
@@ -164,7 +182,8 @@ Run `ludra components` for every field, its type and its default.
 packages/core     Engine: scene format, validation, deterministic world, input scripts,
                   assertions, ASCII renderer, browser runtime (zero dependencies)
 packages/cli      The `ludra` command and project templates
-skills/ludra      Claude skill that teaches agents the workflow
+plugins/ludra     Claude Code plugin: the skill that teaches agents the workflow
+.claude-plugin    Marketplace manifest, so the repo installs with /plugin
 examples/         Games built with Ludra
 docs/             Architecture and design notes
 ```

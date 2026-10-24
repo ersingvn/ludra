@@ -9,6 +9,8 @@ Ludra is a game engine designed for agents. A game is plain JSON (scenes made of
 
 ## Start
 
+Commands below use `npx ludra`. Inside a clone of the Ludra repository itself (its root `package.json` is named `ludra-monorepo`), use `npm run ludra -- <command>` from the repo root instead. If `npx ludra` cannot find the package, tell the user it requires Node.js 22.18+ and the `ludra` npm package, and point them to https://github.com/ersingvn/ludra.
+
 - New game: `npx ludra new <folder>` (template `platformer`), then work inside that folder.
 - Existing game: read `ludra.json`, the entry scene and `tests/` first.
 - Component reference: `npx ludra components` (or `npx ludra components <name>`). It is generated from the engine, so it is always current. Trust it over memory.

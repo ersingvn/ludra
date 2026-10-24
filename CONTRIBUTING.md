@@ -24,7 +24,7 @@ npm run build
 3. Implement its behavior as a system in `World.step`.
 4. Add any cross-component validation rules to `validate.ts`, each with a `fix`.
 5. Draw it in `ascii.ts` (and `browser.ts` if it has visuals).
-6. Add tests in `packages/core/test/`, and update `skills/ludra/SKILL.md` if agents need to know new rules.
+6. Add tests in `packages/core/test/`, and update `plugins/ludra/skills/ludra/SKILL.md` if agents need to know new rules.
 
 ## Pull requests
 

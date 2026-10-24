@@ -1,0 +1,10 @@
+{
+  "name": "ludra",
+  "description": "Build, test and polish 2D games with Ludra, the game engine built for AI agents.",
+  "version": "0.3.0",
+  "author": { "name": "Ludra contributors" },
+  "homepage": "https://github.com/ersingvn/ludra",
+  "repository": "https://github.com/ersingvn/ludra",
+  "license": "MIT",
+  "keywords": ["gamedev", "game-engine", "games"]
+}
