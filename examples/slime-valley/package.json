@@ -1,0 +1,13 @@
+{
+  "name": "slime-valley",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "ludra dev",
+    "check": "ludra check",
+    "test": "ludra test"
+  },
+  "devDependencies": {
+    "ludra": "^0.2.0"
+  }
+}

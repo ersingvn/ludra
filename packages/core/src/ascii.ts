@@ -5,7 +5,7 @@ export interface AsciiOptions {
   columns?: number;
 }
 
-const LEGEND = "@ player   # solid   = moving solid   o collectible   + sensor   D dynamic";
+const LEGEND = "@ player  # solid  = moving solid  o collectible  ^ hazard  E enemy  G goal  + sensor  D dynamic";
 
 /**
  * Draws the world as text so an agent can "see" a frame without a browser.
@@ -43,8 +43,11 @@ export function renderAscii(world: World, options: AsciiOptions = {}): string {
   const passes: [string, (e: Entity) => boolean][] = [
     ["#", (e) => e.body!.type === "static" && !e.body!.sensor],
     ["=", (e) => e.body!.type === "kinematic" && !e.body!.sensor],
-    ["+", (e) => e.body!.sensor && !e.collectible],
+    ["+", (e) => e.body!.sensor && !e.collectible && !e.hazard && !e.goal],
     ["o", (e) => !!e.collectible],
+    ["G", (e) => !!e.goal],
+    ["^", (e) => !!e.hazard && e.body!.type !== "kinematic"],
+    ["E", (e) => !!e.hazard && e.body!.type === "kinematic"],
     ["D", (e) => e.body!.type === "dynamic" && !e.platformer],
     ["@", (e) => !!e.platformer],
   ];
@@ -54,7 +57,7 @@ export function renderAscii(world: World, options: AsciiOptions = {}): string {
 
   const border = `+${"-".repeat(columns)}+`;
   const lines = [
-    `t=${world.time.toFixed(2)}s  frame ${world.frame}  score ${world.score}  (1 char = ${round(cellWidth)}x${round(cellHeight)}px)`,
+    `t=${world.time.toFixed(2)}s  frame ${world.frame}  score ${world.score}  deaths ${world.deaths}${world.won ? "  WON" : ""}  (1 char = ${round(cellWidth)}x${round(cellHeight)}px)`,
     border,
     ...grid.map((row) => `|${row.join("")}|`),
     border,

@@ -20,6 +20,7 @@ Usage
       --watch player,enemy                     Entities in the timeline (default: platformer entities)
       --every 0.25s                            Timeline sampling interval
       --ascii                                  Print the final frame as a text map
+      --columns 120                            Width of the text map (default: 80)
       --json                                   Machine-readable output
   ludra test [folder] [--json]                 Run tests/*.test.json
   ludra components [name] [--json]             Reference for every component and field
@@ -37,6 +38,7 @@ function main(argv: string[]): number {
       watch: { type: "string" },
       every: { type: "string" },
       ascii: { type: "boolean" },
+      columns: { type: "string" },
       json: { type: "boolean" },
       template: { type: "string" },
       port: { type: "string" },

@@ -10,8 +10,11 @@ type Operator = (typeof OPERATORS)[number];
 const ENTITY_FIELDS = ["x", "y", "vx", "vy", "grounded", "exists"] as const;
 type EntityField = (typeof ENTITY_FIELDS)[number];
 
+const WORLD_FIELDS = ["score", "deaths", "won"] as const;
+type WorldField = (typeof WORLD_FIELDS)[number];
+
 type Subject =
-  | { kind: "score" }
+  | { kind: "world"; field: WorldField }
   | { kind: "events"; type: GameEventType }
   | { kind: "entity"; id: string; field: EntityField };
 
@@ -26,7 +29,8 @@ export interface Assertion {
 
 export class AssertionSyntaxError extends Error {}
 
-const EXAMPLES = 'Examples: "player.x > 400", "player.grounded == true at 1s", "score >= 3", "events.jump == 1 at end", "coin1.exists == false".';
+const EXAMPLES =
+  'Examples: "player.x > 400", "player.grounded == true at 1s", "score >= 3", "won == true", "deaths == 0", "events.jump == 1 at end", "coin1.exists == false".';
 
 /** Parses `<subject> <op> <value> [at <time|end>]`. */
 export function parseAssertion(source: string): Assertion {
@@ -35,8 +39,8 @@ export function parseAssertion(source: string): Assertion {
   const [, lhs = "", operator, rhs = "", at] = match;
 
   let subject: Subject;
-  if (lhs === "score") {
-    subject = { kind: "score" };
+  if ((WORLD_FIELDS as readonly string[]).includes(lhs)) {
+    subject = { kind: "world", field: lhs as WorldField };
   } else if (lhs.startsWith("events.")) {
     const type = lhs.slice("events.".length);
     if (!(EVENT_TYPES as readonly string[]).includes(type)) {
@@ -48,7 +52,7 @@ export function parseAssertion(source: string): Assertion {
     const field = lhs.slice(dot + 1);
     if (dot <= 0 || !(ENTITY_FIELDS as readonly string[]).includes(field)) {
       throw new AssertionSyntaxError(
-        `"${lhs}" is not something Ludra can check. Use score, events.<${EVENT_TYPES.join("|")}> or <entityId>.<${ENTITY_FIELDS.join("|")}>.`,
+        `"${lhs}" is not something Ludra can check. Use ${WORLD_FIELDS.join(", ")}, events.<${EVENT_TYPES.join("|")}> or <entityId>.<${ENTITY_FIELDS.join("|")}>.`,
       );
     }
     subject = { kind: "entity", id: lhs.slice(0, dot), field: field as EntityField };
@@ -86,9 +90,9 @@ export function evaluateAssertion(assertion: Assertion, snapshot: WorldSnapshot,
   let label: string;
 
   switch (subject.kind) {
-    case "score":
-      actual = snapshot.score;
-      label = "score";
+    case "world":
+      actual = snapshot[subject.field];
+      label = subject.field;
       break;
     case "events":
       actual = events.filter((e) => e.type === subject.type && e.frame <= snapshot.frame).length;

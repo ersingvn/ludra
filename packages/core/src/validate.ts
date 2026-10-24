@@ -58,6 +58,8 @@ export function validateScene(raw: unknown): ValidationResult {
   let hasPlayer = false;
   let hasDynamic = false;
   let hasSolid = false;
+  let availableScore = 0;
+  const goals: { path: string; label: string; requireScore: number }[] = [];
 
   raw.entities.forEach((entity: unknown, i: number) => {
     const path = `entities[${i}]`;
@@ -130,14 +132,28 @@ export function validateScene(raw: unknown): ValidationResult {
         'Set "type": "dynamic" on its body.',
       );
     }
-    if ("collectible" in components && body && body.sensor !== true) {
+    for (const [name, consequence] of SENSOR_COMPONENTS) {
+      if (name in components && body && body.sensor !== true) {
+        error(
+          `E_${name.toUpperCase()}_NEEDS_SENSOR`,
+          `${path}.components.body.sensor`,
+          `Entity ${label} has "${name}" but a solid body, so ${consequence}.`,
+          'Set "sensor": true on its body.',
+        );
+      }
+    }
+    if ("patrol" in components && body && bodyType !== "kinematic") {
       error(
-        "E_COLLECTIBLE_NEEDS_SENSOR",
-        `${path}.components.body.sensor`,
-        `Collectible ${label} has a solid body, so players would bump into it instead of picking it up.`,
-        'Set "sensor": true on its body.',
+        "E_PATROL_NEEDS_KINEMATIC_BODY",
+        `${path}.components.body.type`,
+        `Entity ${label} has "patrol" but its body is "${String(bodyType)}". Only kinematic bodies follow a patrol.`,
+        'Set "type": "kinematic" on its body.',
       );
     }
+
+    if (isObject(components.collectible)) availableScore += numberOr(components.collectible.score, 1);
+    if (isObject(components.hazard) && components.hazard.stompable === true) availableScore += numberOr(components.hazard.score, 0);
+    if (isObject(components.goal)) goals.push({ path: `${path}.components.goal.requireScore`, label, requireScore: numberOr(components.goal.requireScore, 0) });
 
     if ("platformer" in components) hasPlayer = true;
     if (body && bodyType === "dynamic") hasDynamic = true;
@@ -152,6 +168,16 @@ export function validateScene(raw: unknown): ValidationResult {
       'Add a ground entity with "body": { "type": "static", "width": 960, "height": 40 }.',
     );
   }
+  for (const goal of goals) {
+    if (goal.requireScore > availableScore) {
+      error(
+        "E_GOAL_UNREACHABLE",
+        goal.path,
+        `Goal ${goal.label} needs a score of ${goal.requireScore}, but the scene only offers ${availableScore} points, so the level cannot be completed.`,
+        `Lower requireScore to at most ${availableScore}, or add more collectibles.`,
+      );
+    }
+  }
   if (!hasPlayer) {
     warn("W_NO_PLAYER", "entities", 'No entity has a "platformer" component, so nothing responds to input.');
   }
@@ -159,7 +185,18 @@ export function validateScene(raw: unknown): ValidationResult {
   return result();
 }
 
-type Report = (code: string, path: string, message: string, fix?: string) => void;
+/** Components that only work on sensor bodies, and what goes wrong otherwise. */
+const SENSOR_COMPONENTS: [ComponentName, string][] = [
+  ["collectible", "players would bump into it instead of picking it up"],
+  ["hazard", "players would stand on it instead of being hurt"],
+  ["goal", "players would bump into it instead of reaching it"],
+];
+
+function numberOr(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+type Report =(code: string, path: string, message: string, fix?: string) => void;
 
 function validateFields(
   name: ComponentName,

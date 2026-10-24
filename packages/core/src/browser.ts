@@ -26,7 +26,7 @@ const MAX_FRAME_TIME = 0.25;
  * Returns a function that stops the game.
  */
 export function startGame(canvas: HTMLCanvasElement, scene: SceneDef): () => void {
-  const world = new World(scene);
+  let world = new World(scene);
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas 2D context is not available.");
 
@@ -34,6 +34,10 @@ export function startGame(canvas: HTMLCanvasElement, scene: SceneDef): () => voi
   // Keys pressed since the last step. A tap shorter than one frame still reaches the simulation.
   const tapped = new Set<Action>();
   const onKeyDown = (event: KeyboardEvent) => {
+    if (event.code === "KeyR") {
+      world = new World(scene);
+      return;
+    }
     const action = KEYMAP[event.code];
     if (!action) return;
     held.add(action);
@@ -94,7 +98,20 @@ export function draw(ctx: CanvasRenderingContext2D, world: World): void {
 
   ctx.fillStyle = "#ffffff";
   ctx.font = "600 18px system-ui, sans-serif";
-  ctx.fillText(`Score ${world.score}`, 16, 30);
+  ctx.textAlign = "left";
+  ctx.fillText(`Score ${world.score}   Deaths ${world.deaths}`, 16, 30);
+
+  if (world.won) {
+    ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
+    ctx.fillRect(0, 0, viewWidth, viewHeight);
+    ctx.fillStyle = "#ffffff";
+    ctx.textAlign = "center";
+    ctx.font = "700 44px system-ui, sans-serif";
+    ctx.fillText("Level complete!", viewWidth / 2, viewHeight / 2 - 10);
+    ctx.font = "500 18px system-ui, sans-serif";
+    const winTime = world.events.find((e) => e.type === "win")?.time ?? world.time;
+    ctx.fillText(`Score ${world.score} · ${winTime.toFixed(1)}s · Press R to play again`, viewWidth / 2, viewHeight / 2 + 30);
+  }
 }
 
 function drawSprite(ctx: CanvasRenderingContext2D, e: Entity): void {

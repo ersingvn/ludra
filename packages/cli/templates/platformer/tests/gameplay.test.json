@@ -3,7 +3,7 @@
     {
       "name": "player rests on the ground",
       "duration": "1s",
-      "assert": ["player.grounded == true", "player.y == 482"]
+      "assert": ["player.grounded == true", "player.y == 482", "deaths == 0"]
     },
     {
       "name": "player runs right",
@@ -16,9 +16,21 @@
       "assert": ["events.jump == 1", "player.y < 400 at 0.5s", "player.grounded == true at end"]
     },
     {
-      "name": "the level can be completed",
-      "inputs": "right:0.55s, right+jump:0.45s, right:0.45s, right+jump:0.45s, right:0.3s, wait:0.1s, right:0.25s, right+jump:0.45s, right:0.3s",
-      "assert": ["coin-1.exists == false at 1.2s", "score == 3", "player.y < 220"]
+      "name": "spikes kill the player, who respawns at the start",
+      "inputs": "right:1.85s",
+      "duration": "2s",
+      "assert": ["deaths == 1", "events.die == 1", "player.x < 200"]
+    },
+    {
+      "name": "the lift carries the player over the pit",
+      "inputs": "right:0.3s, right+jump:0.45s, right:0.85s, right+jump:0.45s, right:0.35s, right+jump:0.45s, right:0.18s",
+      "duration": "4s",
+      "assert": ["coin-2.exists == false", "player.grounded == true", "player.x > 860", "deaths == 0"]
+    },
+    {
+      "name": "the level can be completed without dying",
+      "inputs": "right:0.3s, right+jump:0.45s, right:0.85s, right+jump:0.45s, right:0.35s, right+jump:0.45s, right:0.18s, wait:1.0s, right+jump:0.45s, right:0.3s, wait:0.6s, right+jump:0.45s, right:0.1s, wait:0.6s, right:0.7s, right+jump:0.45s, right:0.2s, right+jump:0.45s, right:1.5s",
+      "assert": ["won == true", "deaths == 0", "score == 4", "events.stomp == 1", "slime.exists == false"]
     }
   ]
 }

@@ -18,6 +18,7 @@ export interface PlayOptions {
   watch?: string;
   every?: string;
   ascii?: boolean;
+  columns?: string;
   json?: boolean;
 }
 
@@ -53,7 +54,9 @@ export function play(dir: string, options: PlayOptions): number {
     const input = w.frame === 0 ? [] : [...script.at(w.frame - 1)];
     rows.push({ time: w.time, input, entities: Object.fromEntries(watch.map((id) => [id, snapshot.entities[id] ?? null])) });
   });
-  const ascii = options.ascii ? renderAscii(world) : undefined;
+  const columns = Number(options.columns ?? 80);
+  if (!Number.isInteger(columns) || columns < 10) throw new CliError(`--columns must be a whole number of at least 10, got "${options.columns}".`);
+  const ascii = options.ascii ? renderAscii(world, { columns }) : undefined;
 
   if (options.json) {
     console.log(
@@ -72,7 +75,8 @@ export function play(dir: string, options: PlayOptions): number {
   );
   if (watch.length > 0) printTimeline(rows, watch);
   printEvents(world.events);
-  console.log(`\n${paint("bold", "Final:")} score ${world.score} · ${world.entities.length} entities`);
+  const outcome = world.won ? paint("green", "level complete") : "level not complete";
+  console.log(`\n${paint("bold", "Final:")} ${outcome} · score ${world.score} · deaths ${world.deaths} · ${world.entities.length} entities`);
   if (ascii) console.log(`\n${ascii}`);
   return 0;
 }
@@ -98,10 +102,24 @@ function printTimeline(rows: Row[], watch: string[]): void {
 function printEvents(events: readonly GameEvent[]): void {
   console.log(`\n${paint("bold", "Events")}${events.length === 0 ? paint("dim", " (none)") : ""}`);
   for (const event of events.slice(0, MAX_EVENTS_SHOWN)) {
-    const detail = event.type === "collect" ? `${event.entity} → ${event.item} (+${event.score})` : event.entity;
-    console.log(`  ${pad(`${fixed(event.time, 2)}s`, 7)} ${pad(event.type, 8)} ${detail}`);
+    console.log(`  ${pad(`${fixed(event.time, 2)}s`, 7)} ${pad(event.type, 8)} ${describeEvent(event)}`);
   }
   if (events.length > MAX_EVENTS_SHOWN) console.log(paint("dim", `  … ${events.length - MAX_EVENTS_SHOWN} more (use --json for all)`));
+}
+
+function describeEvent(event: GameEvent): string {
+  switch (event.type) {
+    case "collect":
+      return `${event.entity} → ${event.item} (+${event.score})`;
+    case "stomp":
+      return `${event.entity} stomped ${event.enemy}${event.score ? ` (+${event.score})` : ""}`;
+    case "die":
+      return `${event.entity} ${event.cause === "fall" ? "fell out of the world" : `hit ${event.cause}`}, respawned`;
+    case "win":
+      return `${event.entity} reached ${event.goal}`;
+    default:
+      return event.entity;
+  }
 }
 
 /** Turns engine parse errors into user-facing CLI errors. */

@@ -1,21 +1,30 @@
 {
   "name": "Level 1",
-  "world": { "width": 960, "height": 540, "gravity": 1800, "background": "#1d2333" },
+  "world": { "width": 1920, "height": 540, "gravity": 1800, "background": "#1d2333" },
   "entities": [
     {
       "id": "player",
       "components": {
         "transform": { "x": 80, "y": 482 },
         "body": { "type": "dynamic", "width": 28, "height": 36 },
-        "sprite": { "color": "#7cf29c", "layer": 2 },
-        "platformer": { "speed": 240, "jumpSpeed": 680 }
+        "sprite": { "color": "#7cf29c", "layer": 3 },
+        "platformer": { "speed": 240, "jumpSpeed": 680 },
+        "camera": {}
       }
     },
     {
-      "id": "ground",
+      "id": "ground-start",
       "components": {
-        "transform": { "x": 480, "y": 520 },
-        "body": { "type": "static", "width": 960, "height": 40 },
+        "transform": { "x": 380, "y": 520 },
+        "body": { "type": "static", "width": 760, "height": 40 },
+        "sprite": { "color": "#3b4766" }
+      }
+    },
+    {
+      "id": "ground-end",
+      "components": {
+        "transform": { "x": 1450, "y": 520 },
+        "body": { "type": "static", "width": 940, "height": 40 },
         "sprite": { "color": "#3b4766" }
       }
     },
@@ -29,30 +38,14 @@
     {
       "id": "wall-right",
       "components": {
-        "transform": { "x": 970, "y": 270 },
+        "transform": { "x": 1930, "y": 270 },
         "body": { "type": "static", "width": 20, "height": 540 }
       }
     },
     {
-      "id": "step-1",
+      "id": "ledge",
       "components": {
-        "transform": { "x": 360, "y": 410 },
-        "body": { "type": "static", "width": 160, "height": 20 },
-        "sprite": { "color": "#56658f" }
-      }
-    },
-    {
-      "id": "step-2",
-      "components": {
-        "transform": { "x": 600, "y": 320 },
-        "body": { "type": "static", "width": 160, "height": 20 },
-        "sprite": { "color": "#56658f" }
-      }
-    },
-    {
-      "id": "step-3",
-      "components": {
-        "transform": { "x": 840, "y": 230 },
+        "transform": { "x": 300, "y": 410 },
         "body": { "type": "static", "width": 160, "height": 20 },
         "sprite": { "color": "#56658f" }
       }
@@ -60,28 +53,81 @@
     {
       "id": "coin-1",
       "components": {
-        "transform": { "x": 360, "y": 370 },
+        "transform": { "x": 300, "y": 370 },
         "body": { "type": "static", "width": 20, "height": 20, "sensor": true },
         "sprite": { "shape": "circle", "color": "#ffd166", "layer": 1 },
         "collectible": { "score": 1 }
+      }
+    },
+    {
+      "id": "spikes",
+      "components": {
+        "transform": { "x": 560, "y": 492 },
+        "body": { "type": "static", "width": 80, "height": 16, "sensor": true },
+        "sprite": { "color": "#ff5d73", "layer": 1 },
+        "hazard": {}
+      }
+    },
+    {
+      "id": "lift",
+      "components": {
+        "transform": { "x": 800, "y": 440 },
+        "body": { "type": "kinematic", "width": 120, "height": 20 },
+        "sprite": { "color": "#8fa3d9" },
+        "patrol": { "axis": "x", "distance": 140, "speed": 90 }
       }
     },
     {
       "id": "coin-2",
       "components": {
-        "transform": { "x": 600, "y": 280 },
+        "transform": { "x": 870, "y": 390 },
         "body": { "type": "static", "width": 20, "height": 20, "sensor": true },
         "sprite": { "shape": "circle", "color": "#ffd166", "layer": 1 },
         "collectible": { "score": 1 }
       }
     },
     {
+      "id": "slime",
+      "components": {
+        "transform": { "x": 1150, "y": 487 },
+        "body": { "type": "kinematic", "width": 32, "height": 26, "sensor": true },
+        "sprite": { "color": "#c77dff", "layer": 2 },
+        "patrol": { "axis": "x", "distance": 200, "speed": 70 },
+        "hazard": { "stompable": true, "score": 1 }
+      }
+    },
+    {
+      "id": "step-1",
+      "components": {
+        "transform": { "x": 1500, "y": 410 },
+        "body": { "type": "static", "width": 140, "height": 20 },
+        "sprite": { "color": "#56658f" }
+      }
+    },
+    {
+      "id": "step-2",
+      "components": {
+        "transform": { "x": 1680, "y": 330 },
+        "body": { "type": "static", "width": 140, "height": 20 },
+        "sprite": { "color": "#56658f" }
+      }
+    },
+    {
       "id": "coin-3",
       "components": {
-        "transform": { "x": 840, "y": 190 },
+        "transform": { "x": 1680, "y": 290 },
         "body": { "type": "static", "width": 20, "height": 20, "sensor": true },
         "sprite": { "shape": "circle", "color": "#ffd166", "layer": 1 },
         "collectible": { "score": 1 }
+      }
+    },
+    {
+      "id": "flag",
+      "components": {
+        "transform": { "x": 1860, "y": 460 },
+        "body": { "type": "static", "width": 24, "height": 80, "sensor": true },
+        "sprite": { "color": "#4cc9f0", "layer": 1 },
+        "goal": { "requireScore": 4 }
       }
     }
   ]

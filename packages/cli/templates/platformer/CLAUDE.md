@@ -22,5 +22,7 @@ Never call a change done until `ludra check` and `ludra test` both pass.
 
 - Coordinates are entity centers in pixels; +y is down.
 - Jump height = jumpSpeed² / (2 · gravity). The defaults (680, 1800) give about 128px.
-- Collectibles need `"sensor": true` on their body.
-- A jump only triggers on a new press, so put `wait:0.1s` between two jump segments.
+- Collectibles, hazards and goals need `"sensor": true` on their body.
+- Moving platforms and enemies are kinematic bodies with a `patrol`. Players standing on a moving platform are carried.
+- A jump only triggers on a new press, so put a segment without jump between two jump segments.
+- The level is done when a test proves `won == true` with `deaths == 0`.
