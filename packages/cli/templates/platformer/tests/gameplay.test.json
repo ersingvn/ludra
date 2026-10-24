@@ -1,0 +1,24 @@
+{
+  "tests": [
+    {
+      "name": "player rests on the ground",
+      "duration": "1s",
+      "assert": ["player.grounded == true", "player.y == 482"]
+    },
+    {
+      "name": "player runs right",
+      "inputs": "right:1s",
+      "assert": ["player.x > 300 at 1s", "player.grounded == true at 1s"]
+    },
+    {
+      "name": "jumping leaves the ground and lands again",
+      "inputs": "wait:0.2s, jump:0.4s",
+      "assert": ["events.jump == 1", "player.y < 400 at 0.5s", "player.grounded == true at end"]
+    },
+    {
+      "name": "the level can be completed",
+      "inputs": "right:0.55s, right+jump:0.45s, right:0.45s, right+jump:0.45s, right:0.3s, wait:0.1s, right:0.25s, right+jump:0.45s, right:0.3s",
+      "assert": ["coin-1.exists == false at 1.2s", "score == 3", "player.y < 220"]
+    }
+  ]
+}

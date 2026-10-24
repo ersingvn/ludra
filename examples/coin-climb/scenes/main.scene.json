@@ -1,0 +1,88 @@
+{
+  "name": "Level 1",
+  "world": { "width": 960, "height": 540, "gravity": 1800, "background": "#1d2333" },
+  "entities": [
+    {
+      "id": "player",
+      "components": {
+        "transform": { "x": 80, "y": 482 },
+        "body": { "type": "dynamic", "width": 28, "height": 36 },
+        "sprite": { "color": "#7cf29c", "layer": 2 },
+        "platformer": { "speed": 240, "jumpSpeed": 680 }
+      }
+    },
+    {
+      "id": "ground",
+      "components": {
+        "transform": { "x": 480, "y": 520 },
+        "body": { "type": "static", "width": 960, "height": 40 },
+        "sprite": { "color": "#3b4766" }
+      }
+    },
+    {
+      "id": "wall-left",
+      "components": {
+        "transform": { "x": -10, "y": 270 },
+        "body": { "type": "static", "width": 20, "height": 540 }
+      }
+    },
+    {
+      "id": "wall-right",
+      "components": {
+        "transform": { "x": 970, "y": 270 },
+        "body": { "type": "static", "width": 20, "height": 540 }
+      }
+    },
+    {
+      "id": "step-1",
+      "components": {
+        "transform": { "x": 360, "y": 410 },
+        "body": { "type": "static", "width": 160, "height": 20 },
+        "sprite": { "color": "#56658f" }
+      }
+    },
+    {
+      "id": "step-2",
+      "components": {
+        "transform": { "x": 600, "y": 320 },
+        "body": { "type": "static", "width": 160, "height": 20 },
+        "sprite": { "color": "#56658f" }
+      }
+    },
+    {
+      "id": "step-3",
+      "components": {
+        "transform": { "x": 840, "y": 230 },
+        "body": { "type": "static", "width": 160, "height": 20 },
+        "sprite": { "color": "#56658f" }
+      }
+    },
+    {
+      "id": "coin-1",
+      "components": {
+        "transform": { "x": 360, "y": 370 },
+        "body": { "type": "static", "width": 20, "height": 20, "sensor": true },
+        "sprite": { "shape": "circle", "color": "#ffd166", "layer": 1 },
+        "collectible": { "score": 1 }
+      }
+    },
+    {
+      "id": "coin-2",
+      "components": {
+        "transform": { "x": 600, "y": 280 },
+        "body": { "type": "static", "width": 20, "height": 20, "sensor": true },
+        "sprite": { "shape": "circle", "color": "#ffd166", "layer": 1 },
+        "collectible": { "score": 1 }
+      }
+    },
+    {
+      "id": "coin-3",
+      "components": {
+        "transform": { "x": 840, "y": 190 },
+        "body": { "type": "static", "width": 20, "height": 20, "sensor": true },
+        "sprite": { "shape": "circle", "color": "#ffd166", "layer": 1 },
+        "collectible": { "score": 1 }
+      }
+    }
+  ]
+}
