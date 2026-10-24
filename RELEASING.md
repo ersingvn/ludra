@@ -18,7 +18,7 @@ Both always share one version number.
 
 ## Each release
 
-1. Bump the version in `packages/core/package.json`, `packages/cli/package.json` (and its `@ludra/core` dependency), `.claude-plugin/plugin.json` and the template's `packages/cli/templates/platformer/package.json`, then run `npm install` to update the lockfile.
+1. Bump the version in `packages/core/package.json`, `packages/cli/package.json` (and its `@ludra/core` dependency), the plugin version in `plugins/ludra/.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`, and the template's `packages/cli/templates/platformer/package.json`, then run `npm install` to update the lockfile.
 2. Merge that to `main` through a pull request so CI checks it.
 3. Tag the merge commit and push the tag:
 

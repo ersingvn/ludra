@@ -1,0 +1,20 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "ludra",
+  "description": "Ludra: the game engine built for AI agents.",
+  "owner": {
+    "name": "Ludra contributors"
+  },
+  "plugins": [
+    {
+      "name": "ludra",
+      "source": "./plugins/ludra",
+      "description": "Build, test and polish 2D games with Ludra, a game engine designed for agents: JSON scenes, fixes for every error, headless play-testing, SVG art, particles and sound.",
+      "version": "0.3.0",
+      "category": "development",
+      "keywords": ["gamedev", "game-engine", "games"],
+      "homepage": "https://github.com/ersingvn/ludra",
+      "license": "MIT"
+    }
+  ]
+}
