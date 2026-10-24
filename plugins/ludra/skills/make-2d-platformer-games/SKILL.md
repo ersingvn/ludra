@@ -22,8 +22,9 @@ Repeat until the game does what the user asked:
 1. **Edit** the scene JSON.
 2. **Check**: `npx @ludra/cli check`. Fix every error before doing anything else. Each diagnostic gives the JSON path and a `fix:` line. Apply it.
 3. **Play**: `npx @ludra/cli play --inputs "<script>" --ascii`. Read the timeline (position, velocity, grounded per sample), the events (jump, land, collect, stomp, die, win) and the ASCII map of the final frame. Use `--watch player,lift,enemy` to time moving things, `--every 0.1s` for finer timing and `--columns 160` for wide worlds.
-4. **Test**: encode the requirement in `tests/<name>.test.json` and run `npx @ludra/cli test`.
-5. **Hand off**: tell the user to run `npx @ludra/cli dev` to play it.
+4. **Look**: add `--screenshot 1s,end` (any times, or `end`) to `play` to render real frames as PNGs into `screenshots/`, then open them with your image-reading tool. The ASCII map shows layout; screenshots show what players see: art, animation, particles, overlaps, readability. Do this after every visual change. It needs Chrome, Edge or Chromium installed; if none is found, say so and rely on the ASCII map.
+5. **Test**: encode the requirement in `tests/<name>.test.json` and run `npx @ludra/cli test`.
+6. **Hand off**: tell the user to run `npx @ludra/cli dev` to play it.
 
 ## Input scripts
 
@@ -101,7 +102,7 @@ You can't draw with a mouse, but you can write SVG. Put files in `assets/` and p
 - Keep `color` set even with an image: it is the fallback if the image fails to load.
 - Style: chunky shapes with flat colors, a darker shade underneath, a light highlight on top, and big readable eyes. Pick one palette and reuse it.
 
-`ludra check` fails with `E_ASSET_MISSING` (and lists what does exist) if a referenced file is missing, so run it after adding art.
+`ludra check` fails with `E_ASSET_MISSING` (and lists what does exist) if a referenced file is missing, so run it after adding art. Then take screenshots and look at them: check that sprites face the right way, sit on the ground instead of floating or sinking, tiles line up, and the player stands out from the background.
 
 ### Juice: effects and emitters
 

@@ -1,6 +1,7 @@
 import { SoundPlayer } from "./audio.ts";
 import { parseFrames, type Sprite } from "./components.ts";
 import { collectAssetPaths } from "./effects.ts";
+import { InputScript } from "./input.ts";
 import { ParticleSystem } from "./particles.ts";
 import { FIXED_DT } from "./time.ts";
 import type { Action, SceneDef } from "./types.ts";
@@ -99,6 +100,49 @@ export async function startGame(canvas: HTMLCanvasElement, scene: SceneDef, opti
     window.removeEventListener("keyup", onKeyUp);
     window.removeEventListener("blur", onBlur);
   };
+}
+
+export interface CaptureOptions extends GameOptions {
+  /** Input script, e.g. `"right:1s, jump:0.4s"`. See `InputScript`. */
+  inputs?: string;
+  /** Simulation frames to capture (60 per second). Frame 0 is the starting state. */
+  frames: readonly number[];
+}
+
+export interface CapturedFrame {
+  frame: number;
+  time: number;
+  /** PNG as a data URL. */
+  png: string;
+}
+
+/**
+ * Plays a scene without a clock or keyboard and returns the requested frames
+ * as PNGs. Same renderer, effects and particles as `startGame`, stepped
+ * deterministically, so a frame always looks the same. Used by
+ * `ludra play --screenshot`.
+ */
+export async function captureFrames(canvas: HTMLCanvasElement, scene: SceneDef, options: CaptureOptions): Promise<CapturedFrame[]> {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas 2D context is not available.");
+  const images = await loadImages(scene, options.assetBase ?? "");
+  const view = new View(scene, images);
+  const world = new World(scene);
+  const script = InputScript.parse(options.inputs ?? "");
+  const wanted = new Set(options.frames);
+  const last = Math.max(0, ...options.frames);
+  const captured: CapturedFrame[] = [];
+
+  for (let frame = 0; ; frame++) {
+    if (wanted.has(frame)) {
+      view.draw(ctx, world, false);
+      captured.push({ frame, time: frame * FIXED_DT, png: canvas.toDataURL("image/png") });
+    }
+    if (frame >= last) break;
+    world.step(script.at(frame));
+    view.step(world, () => {});
+  }
+  return captured;
 }
 
 async function loadImages(scene: SceneDef, assetBase: string): Promise<Map<string, HTMLImageElement>> {

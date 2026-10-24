@@ -25,7 +25,7 @@ claude > ludra new slime-valley
          Done. Run `ludra dev` to play it.
 ```
 
-> **Status:** early (v0.3). 2D platformers with enemies, hazards, moving platforms, goals, animated SVG sprites, particles and sound, plus the full agent toolchain, work today. 3D is on the [roadmap](#roadmap).
+> **Status:** early (v0.4). 2D platformers with enemies, hazards, moving platforms, goals, animated SVG sprites, particles and sound, plus the full agent toolchain including real rendered screenshots, work today. 3D is on the [roadmap](#roadmap).
 
 ## Why an engine for agents?
 
@@ -36,6 +36,7 @@ When an AI writes a game with a normal engine, it is coding blind. It cannot see
 | A format it can read and write reliably | Scenes are JSON: entities made of components. No binary files, no editor. |
 | To know what is wrong and how to fix it | `ludra check`: every diagnostic has a JSON path and a concrete `fix:` |
 | To see what happens | `ludra play`: deterministic headless simulation with a timeline, events and an ASCII map of the frame |
+| To see what players see | `ludra play --screenshot 1s,end`: real rendered frames as PNGs that a multimodal agent can look at |
 | To prove a feature works | `ludra test`: scripted inputs plus assertions like `"score == 3"` or `"player.grounded == true at 1s"` |
 | To know the API without guessing | `ludra components`: a reference generated from the engine itself |
 | To hand off to a human | `ludra dev`: the same simulation in the browser with keyboard controls and live reload |
@@ -132,6 +133,24 @@ t=4.30s  frame 258  score 3  (1 char = 12x24px)
 
 Add `--json` to any command for machine-readable output.
 
+### `ludra play --screenshot`: real frames, not guesses
+
+ASCII shows the layout. To check the art, an agent asks for real frames of the same deterministic run:
+
+```
+$ ludra play --inputs "right:0.3s, right+jump:0.45s, ..." --screenshot 0.85s,3.7s
+
+Screenshots (open these PNGs to see the frames)
+  0.85s   screenshots/t-0.85s.png
+  3.70s   screenshots/t-3.70s.png
+```
+
+<p align="center">
+  <img src="docs/media/screenshot-lift.png" alt="Screenshot at 3.7 seconds: the player rides the moving lift over the pit while gold coin particles fade, and the slime waits on the far side" width="720">
+</p>
+
+Frames come from the same renderer players use, with sprites, animation and particles, driven by Chrome, Edge or Chromium already on the machine in headless mode. Ludra adds no dependencies for this, and three frames take about a second.
+
 ### `ludra test`: proof, not vibes
 
 ```json
@@ -208,7 +227,8 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how it fits together.
 - **v0.2.x:** multiple scenes and level transitions, checkpoints, lives.
 - ~~**v0.3: looks.** Image sprites and spritesheets, particles, screen shake, sound.~~ Done.
 - **v0.3.x:** tilemaps, parallax backgrounds, text and UI, music, and importing asset packs.
-- **v0.4: real screenshots.** `ludra play --screenshot` renders actual frames headlessly so multimodal agents can see the game.
+- ~~**v0.4: real screenshots.** `ludra play --screenshot` renders actual frames headlessly so multimodal agents can see the game.~~ Done.
+- **v0.4.x:** `ludra play --gif`, and visual checks in tests (for example, nothing important off-screen).
 - **v0.5: 3D.** The same scene format and agent tools on a WebGL renderer with real 3D physics.
 - **Later:** top-down and other genres, a component registry (`ludra add <component>`), multiplayer, and desktop and mobile export.
 

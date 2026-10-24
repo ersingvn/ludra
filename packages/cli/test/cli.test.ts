@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { findBrowser } from "../src/headless.ts";
 
 const CLI = fileURLToPath(new URL("../src/index.ts", import.meta.url));
 const workDir = mkdtempSync(join(tmpdir(), "ludra-cli-"));
@@ -22,6 +23,31 @@ describe("ludra CLI", () => {
     const { code } = ludra("new", game);
     assert.equal(code, 0);
     assert.equal(JSON.parse(readFileSync(join(game, "ludra.json"), "utf8")).name, "my-game");
+    assert.match(readFileSync(join(game, ".gitignore"), "utf8"), /screenshots\//);
+    assert.equal(existsSync(join(game, "_gitignore")), false);
+  });
+
+  test("play --screenshot renders real frames as PNG", { skip: findBrowser() ? false : "no Chrome, Edge or Chromium installed" }, () => {
+    const { code, out } = ludra("play", game, "--inputs", "right:0.5s", "--screenshot", "0.25s,end", "--out", "shots", "--json");
+    assert.equal(code, 0, out);
+    const shots = JSON.parse(out).screenshots as { time: number; file: string }[];
+    assert.deepEqual(
+      shots.map((s) => s.time.toFixed(2)),
+      ["0.25", "2.00"],
+      "end is the last frame of the run, which lasts at least 2s",
+    );
+    for (const name of ["t-0.25s.png", "t-2.00s.png"]) {
+      const png = readFileSync(join(game, "shots", name));
+      assert.deepEqual([...png.subarray(1, 4)], [...Buffer.from("PNG")], `${name} is a PNG`);
+      assert.equal(png.readUInt32BE(16), 960, "width matches the project window");
+      assert.equal(png.readUInt32BE(20), 540, "height matches the project window");
+    }
+  });
+
+  test("play --screenshot rejects a time after the run", () => {
+    const { code, out } = ludra("play", game, "--duration", "1s", "--screenshot", "5s");
+    assert.equal(code, 1);
+    assert.match(out, /after the end of the run/);
   });
 
   test("check passes on the template", () => {
