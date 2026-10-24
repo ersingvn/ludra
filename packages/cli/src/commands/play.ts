@@ -9,8 +9,11 @@ import {
   type EntitySnapshot,
   type GameEvent,
 } from "@ludra/core";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
 import { fixed, pad, padStart, paint } from "../format.ts";
-import { CliError, loadProject, requireScene } from "../project.ts";
+import { captureScreenshots } from "../headless.ts";
+import { CliError, loadProject, requireScene, type Project } from "../project.ts";
 
 export interface PlayOptions {
   inputs?: string;
@@ -19,6 +22,8 @@ export interface PlayOptions {
   every?: string;
   ascii?: boolean;
   columns?: string;
+  screenshot?: string;
+  out?: string;
   json?: boolean;
 }
 
@@ -30,7 +35,7 @@ interface Row {
 
 const MAX_EVENTS_SHOWN = 40;
 
-export function play(dir: string, options: PlayOptions): number {
+export async function play(dir: string, options: PlayOptions): Promise<number> {
   const project = loadProject(dir);
   const scene = requireScene(project);
   const script = parse(() => InputScript.parse(options.inputs ?? ""));
@@ -57,11 +62,12 @@ export function play(dir: string, options: PlayOptions): number {
   const columns = Number(options.columns ?? 80);
   if (!Number.isInteger(columns) || columns < 10) throw new CliError(`--columns must be a whole number of at least 10, got "${options.columns}".`);
   const ascii = options.ascii ? renderAscii(world, { columns }) : undefined;
+  const screenshots = options.screenshot ? await takeScreenshots(project, options, frames) : undefined;
 
   if (options.json) {
     console.log(
       JSON.stringify(
-        { duration: frames / 60, frames, inputs: options.inputs ?? "", timeline: rows, events: world.events, final: world.snapshot(), ascii },
+        { duration: frames / 60, frames, inputs: options.inputs ?? "", timeline: rows, events: world.events, final: world.snapshot(), ascii, screenshots },
         null,
         2,
       ),
@@ -78,7 +84,43 @@ export function play(dir: string, options: PlayOptions): number {
   const outcome = world.won ? paint("green", "level complete") : "level not complete";
   console.log(`\n${paint("bold", "Final:")} ${outcome} · score ${world.score} · deaths ${world.deaths} · ${world.entities.length} entities`);
   if (ascii) console.log(`\n${ascii}`);
+  if (screenshots) {
+    console.log(`\n${paint("bold", "Screenshots")} ${paint("dim", "(open these PNGs to see the frames)")}`);
+    for (const shot of screenshots) console.log(`  ${pad(`${fixed(shot.time, 2)}s`, 7)} ${shot.file}`);
+  }
   return 0;
+}
+
+interface Screenshot {
+  time: number;
+  frame: number;
+  file: string;
+}
+
+/**
+ * Renders moments of the same run in a headless browser and writes them as
+ * PNGs. `--screenshot` is a comma list of times and/or "end".
+ */
+async function takeScreenshots(project: Project, options: PlayOptions, lastFrame: number): Promise<Screenshot[]> {
+  const requested = options.screenshot!.split(",").map((part) => {
+    const token = part.trim();
+    if (token === "end") return lastFrame;
+    const frame = secondsToFrames(parse(() => parseDuration(token)));
+    if (frame > lastFrame) {
+      throw new CliError(`--screenshot ${token} is after the end of the run (${fixed(lastFrame / 60, 2)}s). Use a longer --duration.`);
+    }
+    return frame;
+  });
+  const frames = [...new Set(requested)].sort((a, b) => a - b);
+
+  const outDir = resolve(project.dir, options.out ?? "screenshots");
+  mkdirSync(outDir, { recursive: true });
+  const captured = await captureScreenshots(project, { inputs: options.inputs ?? "", frames });
+  return captured.map((shot) => {
+    const path = join(outDir, `t-${fixed(shot.time, 2)}s.png`);
+    writeFileSync(path, Buffer.from(shot.png.slice(shot.png.indexOf(",") + 1), "base64"));
+    return { time: shot.time, frame: shot.frame, file: relative(process.cwd(), path).replaceAll("\\", "/") };
+  });
 }
 
 function printTimeline(rows: Row[], watch: string[]): void {

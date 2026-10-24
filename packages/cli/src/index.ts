@@ -21,6 +21,8 @@ Usage
       --every 0.25s                            Timeline sampling interval
       --ascii                                  Print the final frame as a text map
       --columns 120                            Width of the text map (default: 80)
+      --screenshot 1s,2.5s,end                 Save real rendered frames as PNGs (needs Chrome, Edge or Chromium)
+      --out screenshots                        Folder for screenshots, relative to the project (default: screenshots)
       --json                                   Machine-readable output
   ludra test [folder] [--json]                 Run tests/*.test.json
   ludra components [name] [--json]             Reference for every component and field
@@ -28,7 +30,7 @@ Usage
 
 Folder defaults to the current directory.`;
 
-function main(argv: string[]): number {
+async function main(argv: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args: argv,
     allowPositionals: true,
@@ -39,6 +41,8 @@ function main(argv: string[]): number {
       every: { type: "string" },
       ascii: { type: "boolean" },
       columns: { type: "string" },
+      screenshot: { type: "string" },
+      out: { type: "string" },
       json: { type: "boolean" },
       template: { type: "string" },
       port: { type: "string" },
@@ -70,7 +74,7 @@ function main(argv: string[]): number {
 }
 
 try {
-  process.exitCode = main(process.argv.slice(2));
+  process.exitCode = await main(process.argv.slice(2));
 } catch (err) {
   // parseArgs reports unknown flags with a code; show those like our own errors.
   const known = err instanceof CliError || (err as NodeJS.ErrnoException).code?.startsWith("ERR_PARSE_ARGS");

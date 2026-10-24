@@ -1,61 +1,14 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { createServer } from "node:http";
-import { stripTypeScriptTypes } from "node:module";
-import { dirname, extname, join, relative, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
-import { collectAssetPaths } from "@ludra/core";
 import { paint } from "../format.ts";
-import { CliError, isInside, loadProject, readScene, type Project } from "../project.ts";
+import { CliError, loadProject, type Project } from "../project.ts";
+import { createGameServer, PROJECT_PREFIX } from "../server.ts";
 
-/**
- * Serves the game with the engine's browser runtime and reloads the page when
- * the scene file changes. No bundler: when the engine runs from source, its
- * TypeScript files are type-stripped on the fly.
- */
+/** Serves the game for a human to play, and reloads the page when the scene or its assets change. */
 export function dev(dir: string, options: { port?: string }): number {
   const project = loadProject(dir);
   const port = Number(options.port ?? 5173);
   if (!Number.isInteger(port) || port <= 0) throw new CliError(`Invalid --port "${options.port}".`);
 
-  const coreEntry = fileURLToPath(import.meta.resolve("@ludra/core/browser"));
-  const coreDir = dirname(coreEntry);
-  const browserModule = `/__ludra/core/${relative(coreDir, coreEntry).replaceAll(sep, "/")}`;
-
-  const server = createServer((req, res) => {
-    const url = new URL(req.url ?? "/", "http://localhost");
-    try {
-      if (url.pathname === "/") {
-        res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-        res.end(page(project, browserModule));
-      } else if (url.pathname === "/__ludra/scene") {
-        const { scene, diagnostics } = readScene(project);
-        res.writeHead(200, { "content-type": "application/json" });
-        res.end(JSON.stringify({ ok: !!scene, scene, diagnostics }));
-      } else if (url.pathname === "/__ludra/version") {
-        res.writeHead(200, { "content-type": "text/plain" });
-        res.end(version(project));
-      } else if (url.pathname.startsWith(PROJECT_PREFIX)) {
-        // Only media files inside the project are served, never source or config.
-        const file = resolve(project.dir, decodeURIComponent(url.pathname.slice(PROJECT_PREFIX.length)));
-        const type = MEDIA_TYPES[extname(file).toLowerCase()];
-        if (!type || !isInside(project.dir, file) || !existsSync(file)) return notFound(res);
-        res.writeHead(200, { "content-type": type, "cache-control": "no-cache" });
-        res.end(readFileSync(file));
-      } else if (url.pathname.startsWith("/__ludra/core/")) {
-        const file = join(coreDir, decodeURIComponent(url.pathname.slice("/__ludra/core/".length)));
-        if (!file.startsWith(coreDir + sep) || !existsSync(file)) return notFound(res);
-        const source = readFileSync(file, "utf8");
-        res.writeHead(200, { "content-type": "text/javascript; charset=utf-8" });
-        res.end(extname(file) === ".ts" ? stripTypeScriptTypes(source) : source);
-      } else {
-        notFound(res);
-      }
-    } catch (err) {
-      res.writeHead(500, { "content-type": "text/plain" });
-      res.end((err as Error).message);
-    }
-  });
-
+  const { server } = createGameServer(project, (browserModule) => page(project, browserModule));
   server.on("error", (err: NodeJS.ErrnoException) => {
     console.error(paint("red", err.code === "EADDRINUSE" ? `Port ${port} is in use. Try --port ${port + 1}.` : err.message));
     process.exit(1);
@@ -66,34 +19,6 @@ export function dev(dir: string, options: { port?: string }): number {
     console.log(paint("dim", `  Editing ${project.entryLabel} or its images and sounds reloads the page. Ctrl+C to stop.`));
   });
   return 0;
-}
-
-const PROJECT_PREFIX = "/__ludra/project/";
-
-const MEDIA_TYPES: Record<string, string> = {
-  ".svg": "image/svg+xml",
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
-  ".wav": "audio/wav",
-  ".mp3": "audio/mpeg",
-  ".ogg": "audio/ogg",
-};
-
-/** Changes whenever the scene or any file it references changes, so the page knows to reload. */
-function version(project: Project): string {
-  if (!existsSync(project.entryPath)) return "missing";
-  const files = [project.entryPath];
-  const { scene } = readScene(project);
-  if (scene) files.push(...collectAssetPaths(scene).map((ref) => resolve(project.dir, ref.path)));
-  return files.map((file) => (existsSync(file) ? statSync(file).mtimeMs : 0)).join(":");
-}
-
-function notFound(res: import("node:http").ServerResponse): void {
-  res.writeHead(404, { "content-type": "text/plain" });
-  res.end("Not found");
 }
 
 function page(project: Project, browserModule: string): string {

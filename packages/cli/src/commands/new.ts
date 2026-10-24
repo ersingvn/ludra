@@ -1,4 +1,4 @@
-import { cpSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { basename, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { paint } from "../format.ts";
@@ -22,6 +22,9 @@ export function create(dir: string | undefined, options: { template?: string }):
 
   const name = basename(target);
   cpSync(source, target, { recursive: true });
+  // npm never publishes files named .gitignore, so templates ship it as _gitignore.
+  const gitignore = join(target, "_gitignore");
+  if (existsSync(gitignore)) renameSync(gitignore, join(target, ".gitignore"));
   for (const file of listFiles(target)) {
     const text = readFileSync(file, "utf8");
     if (text.includes("{{name}}")) writeFileSync(file, text.replaceAll("{{name}}", name));

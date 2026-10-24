@@ -16,7 +16,7 @@ Ludra has one design rule: **anything a human would check by looking at the scre
 | `assertions.ts` | Parses and evaluates `"<subject> <op> <value> [at <time>]"` and runs test cases. |
 | `ascii.ts` | Draws a frame as text so agents can see layout and positions. |
 | `effects.ts` | Scene `effects` schema, sound presets, and `collectAssetPaths` (every image and audio file a scene references). |
-| `browser.ts` | Canvas renderer and keyboard input for humans. It uses the same `World`, so tests and play match. Draws sprites, spritesheet animations and tiles, and turns world events into effects. |
+| `browser.ts` | Canvas renderer and keyboard input for humans. It uses the same `World`, so tests and play match. Draws sprites, spritesheet animations and tiles, and turns world events into effects. `captureFrames` runs the same view deterministically for screenshots. |
 | `particles.ts` | Seeded, visual-only particle system for effect bursts and `emitter`s. |
 | `audio.ts` | Web Audio sound player: synthesized presets plus audio files. |
 
@@ -28,7 +28,13 @@ Everything visual or audible reads from the `World` and never writes to it. Effe
 
 ### `ludra` (CLI)
 
-The CLI is a thin layer over core: project loading (`ludra.json`), output formatting (`--json` everywhere), templates and the dev server. `ludra check` adds file-system checks core can't do, such as `E_ASSET_MISSING`. The dev server serves only media files from the project and reloads the page when the scene or any asset it uses changes. It has no bundler. In development it type-strips the engine's TypeScript on request, and in a published install it serves the compiled JavaScript.
+The CLI is a thin layer over core: project loading (`ludra.json`), output formatting (`--json` everywhere), templates and the dev server. `ludra check` adds file-system checks core can't do, such as `E_ASSET_MISSING`.
+
+`server.ts` serves a project to a browser: the engine's browser module (type-stripped on the fly when running from source; no bundler), the validated scene, and only media files from the project. `ludra dev` puts a game page in front of it and reloads when the scene or any asset changes.
+
+### Screenshots
+
+`ludra play --screenshot` starts that server on a random port, launches the Chrome, Edge or Chromium already installed in headless mode (`headless.ts` finds it, or uses `LUDRA_BROWSER`), and drives it over the DevTools protocol with Node's built-in WebSocket. The page calls core's `captureFrames`, which steps a `World` and the same view as `startGame` frame by frame with no clock, so a given frame always renders the same. PNGs come back as data URLs and are written to `screenshots/`. No npm dependencies are involved, and the browser and its temporary profile are removed afterwards. In development it type-strips the engine's TypeScript on request, and in a published install it serves the compiled JavaScript.
 
 ## Determinism
 
