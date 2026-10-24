@@ -1,0 +1,31 @@
+{
+  "tests": [
+    {
+      "name": "the ball rests on the paddle, then launches",
+      "duration": "0.5s",
+      "assert": ["ball.vy == 0", "ball.x == 480", "events.launch == 0"]
+    },
+    {
+      "name": "the ball launches upward and breaks a brick",
+      "duration": "1.5s",
+      "assert": ["events.launch == 1", "events.brick >= 1", "score >= 1"]
+    },
+    {
+      "name": "the paddle only moves sideways and stays inside the walls",
+      "inputs": "right+up:2s",
+      "duration": "2s",
+      "assert": ["paddle.y == 500", "paddle.x == 880"]
+    },
+    {
+      "name": "missing the ball costs a life and puts the ball back on the paddle",
+      "duration": "3s",
+      "assert": ["events.ball-lost == 1", "deaths == 1", "ball.state.stuck == true"]
+    },
+    {
+      "name": "the wall can be cleared without losing a life",
+      "inputs": "wait:87f, right:48f, wait:56f, left:34f, wait:71f, left:29f, wait:73f, left:3f, wait:98f, left:24f, wait:84f, right:23f, wait:92f, right:36f, wait:72f, left:8f, wait:112f, right:17f, left:2f, wait:108f, left:22f, wait:92f, left:22f, wait:86f, left:26f, wait:75f, right:8f, wait:115f, right:17f, wait:141f, right:10f",
+      "duration": "30s",
+      "assert": ["won == true", "deaths == 0", "rules.state.bricksLeft == 0", "score == 42"]
+    }
+  ]
+}

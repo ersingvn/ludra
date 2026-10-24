@@ -21,6 +21,12 @@ const MEDIA_TYPES: Record<string, string> = {
   ".wav": "audio/wav",
   ".mp3": "audio/mpeg",
   ".ogg": "audio/ogg",
+  ".woff2": "font/woff2",
+  ".woff": "font/woff",
+  ".ttf": "font/ttf",
+  ".otf": "font/otf",
+  ".frag": "text/plain; charset=utf-8",
+  ".glsl": "text/plain; charset=utf-8",
 };
 
 export interface GameServer {

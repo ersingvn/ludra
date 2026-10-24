@@ -2,7 +2,7 @@ export type Action = "left" | "right" | "up" | "down" | "jump" | "action";
 
 export const ACTIONS: readonly Action[] = ["left", "right", "up", "down", "jump", "action"];
 
-export const EVENT_TYPES = ["jump", "land", "collect", "die", "stomp", "win"] as const;
+export const EVENT_TYPES = ["jump", "land", "collect", "die", "stomp", "win", "bounce"] as const;
 export type GameEventType = (typeof EVENT_TYPES)[number];
 
 /** What happens visually and audibly when a game event fires. See `EFFECT_FIELDS`. */
@@ -10,6 +10,13 @@ export interface EffectDef {
   particles?: Record<string, unknown>;
   sound?: string;
   shake?: number;
+}
+
+export interface PostFxDef {
+  /** Path to a GLSL ES 1.0 fragment shader, e.g. "shaders/crt.frag". */
+  shader: string;
+  /** Extra float uniforms, e.g. { "strength": 0.6 } becomes `uniform float strength;`. */
+  uniforms?: Record<string, number>;
 }
 
 /** An entity as written in a scene file. */
@@ -38,6 +45,13 @@ export interface SceneDef {
    * Keys are built-in event types or names scripts pass to `world.emit`.
    */
   effects?: Partial<Record<GameEventType, EffectDef>> & Record<string, EffectDef | undefined>;
+  /**
+   * Fonts that draw hooks can use in `ctx.g.font`: family name → "google" (loaded from
+   * Google Fonts) or a font file in the project (.woff2, .woff, .ttf, .otf).
+   */
+  fonts?: Record<string, string>;
+  /** A GLSL fragment shader applied to every rendered frame. Presentation only. */
+  postfx?: PostFxDef;
   entities: EntityDef[];
 }
 

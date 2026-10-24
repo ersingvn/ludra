@@ -46,7 +46,7 @@ export async function play(dir: string, options: PlayOptions): Promise<number> {
   const world = scriptErrors(() => new World(scene, { scripts }));
   const watch = options.watch
     ? options.watch.split(",").map((id) => id.trim()).filter(Boolean)
-    : world.entities.filter((e) => e.platformer).map((e) => e.id);
+    : world.entities.filter((e) => e.platformer || e.topdown).map((e) => e.id);
   for (const id of watch) {
     if (!world.get(id)) {
       throw new CliError(`--watch: no entity "${id}". Entities: ${world.entities.map((e) => e.id).join(", ")}.`);
@@ -163,6 +163,8 @@ function describeEvent(event: GameEvent): string {
       return `${event.entity} ${event.cause === "fall" ? "fell out of the world" : `hit ${event.cause}`}, respawned`;
     case "win":
       return event.entity === event.goal ? `${event.entity} (script) completed the level` : `${event.entity} reached ${event.goal}`;
+    case "bounce":
+      return `${event.entity} bounced off ${event.other}`;
     case "custom":
       return `from ${event.entity}'s script${event.data === undefined ? "" : ` ${JSON.stringify(event.data)}`}`;
     default:

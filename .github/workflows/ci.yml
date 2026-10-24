@@ -34,13 +34,16 @@ jobs:
       - name: Build (type-check)
         run: npm run build
 
+      - name: Type-check game scripts (templates, blocks, examples)
+        run: npm run check:scripts
+
       - name: Unit tests
         run: npm test
 
-      - name: Example games
+      - name: Example games and templates
         shell: bash
         run: |
-          for game in examples/*/; do
+          for game in examples/*/ packages/cli/templates/*/; do
             echo "::group::$game"
             npm run -s ludra -- check "$game"
             npm run -s ludra -- test "$game"
@@ -59,6 +62,8 @@ jobs:
           cd "$RUNNER_TEMP/app"
           npm init -y > /dev/null
           npm install "$RUNNER_TEMP"/pack/*.tgz
-          npx ludra new game
-          npx ludra check game
-          npx ludra test game
+          for template in platformer topdown breakout; do
+            npx ludra new "$template" --template "$template"
+            npx ludra check "$template"
+            npx ludra test "$template"
+          done

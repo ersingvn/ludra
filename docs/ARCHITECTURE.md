@@ -17,6 +17,8 @@ Ludra has one design rule: **anything a human would check by looking at the scre
 | `ascii.ts` | Draws a frame as text so agents can see layout and positions. |
 | `effects.ts` | Scene `effects` schema, sound presets, and `collectAssetPaths` (every image and audio file a scene references). |
 | `browser.ts` | Canvas renderer and keyboard input for humans. It uses the same `World`, so tests and play match. Draws sprites, spritesheet animations and tiles, and turns world events into effects. `captureFrames` runs the same view deterministically for screenshots. |
+| `postfx.ts` | Runs a scene's GLSL fragment shader over each rendered frame (WebGL). |
+| `drawcheck.ts` | Runs `draw`/`drawUI` hooks against a mock canvas for `ludra check`. |
 | `particles.ts` | Seeded, visual-only particle system for effect bursts and `emitter`s. |
 | `audio.ts` | Web Audio sound player: synthesized presets plus audio files. |
 
@@ -29,11 +31,17 @@ Ludra has one design rule: **anything a human would check by looking at the scre
 - **CLI:** `loadGame` in `project.ts` imports each script with Node's built-in type stripping. It loads every file the scene references plus all of `scripts/`, so `world.spawn` can attach any of them, and turns load problems (syntax errors with line and caret, forbidden imports, misspelled hooks) into diagnostics.
 - **Browser:** the server serves those same files type-stripped at `/__ludra/script/`, and `startGame` and `captureFrames` import them.
 
-In a frame, scripts run after platformer input and before patrols and physics (`start` once, then `update`). `touch` runs after physics, for bodies that started overlapping or touching within 1px. Scripts see entities through stable handles whose setters write straight to the entity. Per-entity data lives in `entity.state`, which snapshots copy, so tests can assert on it. `world.random()` is seeded by `world.seed`, which keeps scripted runs deterministic as long as scripts avoid `Math.random` and `Date`, as the skill instructs. Hook errors are rethrown as `ScriptError` with file, entity, hook and frame; `runTest` turns them into a failed test.
+In a frame, scripts run after player input (`platformer`, then `topdown`) and before patrols and physics (`start` once, then `update`). `touch` runs after physics, for bodies that started overlapping or touching within 1px. Scripts see entities through stable handles whose setters write straight to the entity. Per-entity data lives in `entity.state`, which snapshots copy, so tests can assert on it. `world.random()` is seeded by `world.seed`, which keeps scripted runs deterministic as long as scripts avoid `Math.random` and `Date`, as the skill instructs. Hook errors are rethrown as `ScriptError` with file, entity, hook and frame; `runTest` turns them into a failed test.
 
 ### Presentation is a one-way street
 
 Everything visual or audible reads from the `World` and never writes to it. Effects react to `world.events` (which carry the position where they happened), animations derive from velocity and `grounded`, and particles use their own seeded random numbers. So adding art or effects can never change what `ludra test` verifies, and a test asserts exactly this.
+
+### Drawing in code
+
+Scripts can have `draw` (world space, ordered with sprites by `sprite.layer`) and `drawUI` (screen space) hooks, called by `View.draw` through `World.callDrawHook` with the real Canvas 2D context. While one runs, `World.drawing` is set: handle setters and mutating world methods call `guard()` and throw, and `state` is a frozen copy, so presentation can never change the simulation. Each call is wrapped in `save`/`restore`. Per-entity presentation memory (`ctx.local`) lives in the `View` and resets with it. If any entity has `drawUI`, the default HUD and win screen are skipped. `checkDrawHooks` (used by `ludra check`) runs the hooks in Node against a Proxy that accepts any canvas call, at a few frames of an idle run.
+
+Scene `fonts` load before the game starts (Google Fonts CSS or FontFace, capped at 4 s). With `postfx`, `prepare()` compiles the shader (`postfx.ts`) on a WebGL canvas that replaces the page's canvas; the game keeps drawing into the original, now offscreen, canvas, and each frame is uploaded as a texture and drawn through the shader. Shader errors keep the 2D canvas visible and show the compiler message with the shader file's own line numbers (`#line 1` after the engine's header).
 
 ### `ludra` (CLI)
 
@@ -57,7 +65,7 @@ The CLI is a thin layer over core: project loading (`ludra.json`), output format
 
 ## Physics (v0.1)
 
-Axis-aligned boxes. Dynamic bodies integrate gravity, then move and resolve along x, then along y, against static and kinematic solids. This is simple on purpose. It is predictable, easy to explain to an agent, and easy to replace with a full physics engine (for example Rapier) behind the same component interface later.
+Axis-aligned boxes. Dynamic bodies integrate gravity, then move and resolve along x, then along y, against static and kinematic solids. Top-down movers skip gravity, and a kinematic top-down body (a paddle) is pushed out of static walls; other kinematic movers pass through. `body.bounce` reflects the velocity on the axis that hit (`-v · bounce`) and emits a `bounce` event; rebounds slower than 40 px/s stop instead, so bouncing things come to rest. This is simple on purpose. It is predictable, easy to explain to an agent, and easy to replace with a full physics engine (for example Rapier) behind the same component interface later.
 
 ## Development
 

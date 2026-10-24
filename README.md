@@ -25,7 +25,7 @@ claude > ludra new slime-valley
          Done. Run `ludra dev` to play it.
 ```
 
-> **Status:** early (v0.6). 2D games with a library of ready-made gameplay blocks, custom TypeScript scripts, enemies, hazards, moving platforms, goals, animated SVG sprites, particles and sound, plus the full agent toolchain including real rendered screenshots, work today. 3D is on the [roadmap](#roadmap).
+> **Status:** early (v0.7). 2D games in several genres (platformers, top-down adventures, breakout), art drawn in code with lighting, custom interfaces and GLSL post-processing, a library of ready-made gameplay blocks, custom TypeScript scripts, enemies, hazards, moving platforms, goals, animated SVG sprites, particles and sound, plus the full agent toolchain including real rendered screenshots, work today. 3D is on the [roadmap](#roadmap).
 
 ## Why an engine for agents?
 
@@ -202,6 +202,49 @@ $ ludra add key-and-door --at 400,500
 
 The skill also teaches **taste**: a [design guide](plugins/ludra/skills/make-2d-platformer-games/DESIGN.md) on level design (teach, test, twist), fairness checks it can run (timing windows of at least 0.2 s, no blind jumps), game feel, palettes and SVG art direction, and a finishing checklist.
 
+### Art without limits
+
+Sprites are where looks start, not where they stop. Any script can paint with the real Canvas 2D context, replace the HUD, load Google Fonts and run a GLSL shader over every frame. That's the whole toolbox a human artist-programmer would use, and agents are very good at writing code. Both of these are the templates, untouched:
+
+<p align="center">
+  <img src="docs/media/neon-breakout.png" alt="Neon Breakout: glowing neon bricks over a synthwave sun and a scrolling perspective grid, with +1 popups and shockwaves where bricks broke, a comet-tailed ball and a CRT bloom finish" width="49%">
+  <img src="docs/media/crystal-grove.png" alt="Crystal Grove at night: a lantern lights the hero, crystals glow blue, slimes purple, thorns red and the portal swirls, with fireflies and crystal slots in the corner" width="49%">
+</p>
+
+```ts
+// scripts/ball.ts: game logic and looks side by side
+export default {
+  update({ self, params }) { /* keep the speed constant... */ },
+  draw({ g, self, local }) {
+    g.globalCompositeOperation = "lighter";           // additive light
+    g.shadowColor = "#ffd60a";
+    g.shadowBlur = 18;                                 // glow
+    g.beginPath();
+    g.arc(self.x, self.y, 7, 0, Math.PI * 2);
+    g.fill();
+  },
+} satisfies Script;
+```
+
+```json
+"fonts": { "Orbitron": "google" },
+"postfx": { "shader": "shaders/neon.frag", "uniforms": { "bloom": 1.6, "scanlines": 0.5 } }
+```
+
+Draw hooks can read the game but not change it (that throws), so the browser never drifts from what the tests verified. `ludra check` runs them against a mock canvas to catch errors early, and `ludra play --screenshot` renders the real thing, shader included, for the agent to look at.
+
+### Genres
+
+Start from the template closest to your idea and reshape it:
+
+```bash
+npx @ludra/cli new my-game                       # platformer: run, jump, stomp
+npx @ludra/cli new my-game --template topdown    # seen from above: gems, hedges, slimes
+npx @ludra/cli new my-game --template breakout   # paddle, bouncing ball, bricks
+```
+
+Each template ships with tests that prove it can be won without dying, and its own look: the platformer in SVG sprites, the breakout drawn entirely in code, the grove lit by code over SVG sprites. The breakout route is 28 seconds long, so the skill teaches agents to write a small autopilot that plays the level and prints the input, instead of guessing.
+
 ### Scripts: any game logic, still testable
 
 Built-in components cover the basics. For everything else (enemies that chase, keys and locked doors, timers, shooting, boss phases) the agent writes a short TypeScript script, the way Unity developers write C# behaviours:
@@ -249,14 +292,15 @@ Agents can't use a paint program, so Ludra's art pipeline is text too. Sprites a
 
 No audio files are needed: `jump`, `coin`, `hit`, `explosion`, `powerup`, `blip` and `thud` are synthesized in the browser. Presentation never touches the simulation, so polishing a game can't break its tests, and `ludra check` reports any missing image along with the files that do exist.
 
-## Components (v0.5)
+## Components (v0.7)
 
 | Component | What it does |
 | --- | --- |
 | `transform` | Position (entity center, +y is down) |
-| `body` | Box collider: `static`, `dynamic` (gravity and collisions) or `kinematic`; `sensor` for triggers |
+| `body` | Box collider: `static`, `dynamic` (gravity and collisions) or `kinematic`; `sensor` for triggers; `bounce` for balls that rebound |
 | `sprite` | A colored shape, or an image: animated spritesheets (idle/run/jump/fall), tiles and mirroring |
 | `platformer` | Run and jump controls with coyote time, jump buffering and variable jump height |
+| `topdown` | Movement seen from above: 8 directions, 4 directions, or a single axis for paddles |
 | `collectible` | Picked up by the player and adds to the score |
 | `patrol` | Moves a kinematic body back and forth: moving platforms (they carry the player) and walking enemies |
 | `hazard` | Kills the player on touch, who respawns at the start. `stompable` enemies die when landed on |
@@ -290,7 +334,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how it fits together.
 - ~~**v0.4: real screenshots.** `ludra play --screenshot` renders actual frames headlessly so multimodal agents can see the game.~~ Done.
 - ~~**v0.5: scripting.** Custom game logic in TypeScript, deterministic and testable.~~ Done.
 - ~~**v0.6: blocks and taste.** `ludra blocks` / `ludra add`, a library of tested gameplay blocks, and a design guide in the skill.~~ Done.
-- **v0.7: genres.** A top-down controller, bounce physics, and templates for top-down adventures and breakout-style games; more blocks.
+- ~~**v0.7: genres.** A top-down controller, bounce physics, and templates for top-down adventures and breakout-style games.~~ Done.
 - **v0.8: game structure.** Multiple scenes and level transitions, prefabs, text and UI, lives and checkpoints.
 - **v0.9: worlds.** Tilemaps, camera zones, parallax backgrounds, and a real physics engine (Rapier).
 - **v0.10: shipping.** Export to a single HTML file or a desktop app, touch controls for mobile.

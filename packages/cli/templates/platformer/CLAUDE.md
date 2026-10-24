@@ -28,5 +28,6 @@ Never call a change done until `ludra check` and `ludra test` both pass.
 - Moving platforms and enemies are kinematic bodies with a `patrol`. Players standing on a moving platform are carried.
 - A jump only triggers on a new press, so put a segment without jump between two jump segments.
 - The level is done when a test proves `won == true` with `deaths == 0`.
+- For more than sprites (lighting, glow, your own HUD, fonts, shaders), scripts can have `draw` and `drawUI` hooks with the real Canvas 2D context, and the scene can set `"fonts"` and `"postfx"`. See `npx @ludra/cli components script`.
 - Art and effects never change gameplay. Make it playable first, then dress it. Write new art as SVG in `assets/`.
 - For behavior no component provides (chasing, keys, timers, shooting), write a script and attach it with a `script` component. Use `world.random()`, never `Math.random()`, and test what it does through `self.state` and `world.emit`.

@@ -75,6 +75,9 @@ export async function captureScreenshots(project: Project, request: ScreenshotRe
         "--no-default-browser-check",
         "--mute-audio",
         "--hide-scrollbars",
+        // Software WebGL, so postfx shaders render without a GPU.
+        "--use-angle=swiftshader",
+        "--enable-unsafe-swiftshader",
         `--window-size=${width},${height}`,
         "about:blank",
       ],

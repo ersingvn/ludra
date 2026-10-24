@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">
+  <!-- Tile: a patch of thorns, seen from above. Deadly. -->
+  <rect width="20" height="20" fill="#4a2a35"/>
+  <path d="M5 5 l-3 -3 M5 5 l3 -3 M5 5 l0 4" stroke="#ff5d73" stroke-width="1.6" stroke-linecap="round"/>
+  <path d="M15 12 l-3 -3 M15 12 l3 -3 M15 12 l0 4" stroke="#ff5d73" stroke-width="1.6" stroke-linecap="round"/>
+  <path d="M6 16 l-2 -2 M6 16 l2 -2" stroke="#ff8fa0" stroke-width="1.4" stroke-linecap="round"/>
+</svg>

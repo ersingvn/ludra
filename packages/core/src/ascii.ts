@@ -48,8 +48,8 @@ export function renderAscii(world: World, options: AsciiOptions = {}): string {
     ["G", (e) => !!e.goal],
     ["^", (e) => !!e.hazard && e.body!.type !== "kinematic"],
     ["E", (e) => !!e.hazard && e.body!.type === "kinematic"],
-    ["D", (e) => e.body!.type === "dynamic" && !e.platformer],
-    ["@", (e) => !!e.platformer],
+    ["D", (e) => e.body!.type === "dynamic" && !e.platformer && !e.topdown],
+    ["@", (e) => !!(e.platformer || e.topdown)],
   ];
   for (const [char, test] of passes) {
     for (const e of withBody.filter(test)) paint(e, char);

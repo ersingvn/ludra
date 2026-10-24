@@ -106,6 +106,34 @@ Ready-made palettes:
 
 **Look at it.** Take `--screenshot` frames and check them: sprites sit on the ground (not floating, not sunk), tiles line up, nothing clips through walls, and the player stands out at a glance.
 
+### Paint with code: nothing is off limits
+
+SVG sprites are the starting point, not the ceiling. Draw hooks hand you the real Canvas 2D context, fonts load from Google Fonts, and a GLSL shader can finish every frame. A game made only of flat sprites and the default HUD looks like a prototype; reach for these on every game. The templates show two different moods: `breakout` (synthwave neon, drawn entirely in code) and `topdown` (an enchanted night over SVG sprites).
+
+1. **Pick a mood in one line before you paint:** "a synthwave sunset arcade", "a moonlit grove full of fireflies", "a rainy noir rooftop". Every choice below should serve it.
+2. **Backdrop:** an entity with only a `draw` hook (first in the entity list) can paint a whole sky: gradients, a sun, parallax hills, a scrolling grid, stars from a hash so they don't jitter.
+3. **Light** makes a scene feel real:
+   - Darkness plus light sources is the most transformative trick. In `drawUI`, darken the screen with a radial gradient that leaves a hole around the player, then add colored lights with `globalCompositeOperation = "lighter"`.
+   - Things that glow: `shadowBlur` + `shadowColor`, or an additive radial gradient behind them.
+   - Keep hazards lit in their warning color. Darkness must never hide what kills the player.
+4. **Motion in everything:**
+   - Pulse glows with `Math.sin(time)`. Trails for fast things (keep positions in `ctx.local`). Fireflies, embers, drifting fog.
+   - Flash on impact: read `ctx.recent("bounce" | "die" | "<custom>")` and fade over 0.2-0.6 s.
+5. **Moments deserve ceremony:**
+   - Pop the score where points were earned (`+3` rising and fading).
+   - A shockwave ring and colored shards (`ctx.burst`) where something breaks.
+   - A red vignette pulse on death, a title card that fades as play starts, and a win screen with a flicker-on or slow fade and the result (score, time, deaths).
+6. **Your own interface (`drawUI`):** it replaces the default HUD, so design it:
+   - One display font that fits the mood (Orbitron for neon, Cinzel for fantasy, Press Start 2P for retro).
+   - Show what matters in this game (crystals as icons, bricks as a meter, lives as hearts), not a generic "Score".
+   - Keep it at the edges and small; the play area belongs to the game.
+7. **Post-processing taste:**
+   - Bloom is the single biggest upgrade for anything that glows.
+   - Add one or two signature touches (CRT scanlines and curve for arcade, a warm/cool grade for fantasy, grain for horror), not everything at once.
+   - Use Gaussian-weighted bloom taps: equal-weight wide taps leave a dotted grid around text.
+
+Look at screenshots after every visual step, at the start, mid-action, and at the win screen (`--screenshot 0.5s,2s,end` with a winning input). Ask: does it match the mood line? Can you still read every hazard instantly? Is the player still the eye's first stop?
+
 ## 7. Sound
 
 Every player action and every important event gets a sound. Use presets that match: `jump`, `thud` for landing, `coin`, `hit` for stomps, `explosion` for deaths and big impacts, `powerup` for rewards and wins, `blip` for small UI-like events (turret shots, switches). Don't stack many loud sounds in one moment.
@@ -131,6 +159,7 @@ Most of these are one short script. Use them to make each game feel different:
 - [ ] Screenshots of the start, the hardest moment and the goal look right
 - [ ] Every event in the level has an effect and a sound
 - [ ] The palette is consistent and the player is the most visible thing on screen
+- [ ] It has a mood: a painted backdrop or lighting, its own `drawUI` interface and win screen, and a finishing shader; not flat sprites with the default HUD
 - [ ] `ludra.json` has a real name, not the folder name
 - [ ] You can state the hook in one sentence, and the level is about it
 

@@ -39,6 +39,10 @@ export interface ScriptWorld {
   readonly width: number;
   readonly height: number;
   score: number;
+  /** Times a player has died so far. */
+  readonly deaths: number;
+  /** True once the level is complete. */
+  readonly won: boolean;
   get(id: string): ScriptEntity | undefined;
   /** Every entity, or only those with the given component. */
   all(component?: string): ScriptEntity[];
@@ -73,6 +77,49 @@ export interface ScriptContext {
   dt: number;
 }
 
+/** A game event as draw hooks see it. Custom events carry the name passed to world.emit. */
+export interface DrawEvent {
+  /** Built-in type ("collect", "die", "bounce"...) or the custom event's name. */
+  name: string;
+  time: number;
+  x: number;
+  y: number;
+  /** The entity that caused it. */
+  entity: string;
+  data?: unknown;
+}
+
+/**
+ * What `draw` and `drawUI` receive. `g` is the real Canvas 2D context, so
+ * anything the canvas can do is allowed: gradients, glow (shadowBlur), blend
+ * modes (globalCompositeOperation), paths, text, filters, images.
+ *
+ * Draw hooks only paint. `self` and `world` are read-only here (changing the
+ * game must happen in `update` so tests see it); keep animation memory in `local`.
+ */
+export interface DrawContext {
+  g: CanvasRenderingContext2D;
+  self: ScriptEntity;
+  world: ScriptWorld;
+  params: Record<string, unknown>;
+  /** Simulation time in seconds. Animate with it so screenshots stay reproducible. */
+  time: number;
+  /** Per-entity memory for presentation (trails, tweens). Not part of the game state and not testable. */
+  local: Record<string, unknown>;
+  /** Visible area: canvas size, camera position (world px at the top-left) and zoom. */
+  view: { width: number; height: number; cameraX: number; cameraY: number; zoom: number };
+  /** Events that happened in the last `seconds` (default 0.5), optionally only those named `name`. Newest last. */
+  recent(name?: string, seconds?: number): DrawEvent[];
+  /** An image from the project, e.g. "assets/glow.png". Images in sprites or in string script params are preloaded. */
+  image(path: string): HTMLImageElement | undefined;
+  /** A particle burst through the engine's particle system (same fields as effects particles). */
+  burst(x: number, y: number, particles?: Record<string, unknown>): void;
+  /** Shakes the screen by `amount` px (decays on its own). */
+  shake(amount: number): void;
+  /** A number in [0, 1) for visual variety. Seeded, independent of world.random, so it never affects the game. */
+  random(): number;
+}
+
 /**
  * The default export of a script file. All hooks are optional.
  *
@@ -90,9 +137,20 @@ export interface Script {
   update?(ctx: ScriptContext): void;
   /** Runs when this entity starts touching another one (after physics). */
   touch?(ctx: ScriptContext, other: ScriptEntity): void;
+  /**
+   * Paints this entity in world space, every rendered frame, right after its sprite
+   * (or instead of one: an entity without a sprite is drawn only by this hook).
+   * Order follows `sprite.layer` (0 without a sprite). Browser only; tests never call it.
+   */
+  draw?(ctx: DrawContext): void;
+  /**
+   * Paints in screen space, above the world. If any script has `drawUI`, the engine's
+   * default HUD and "Level complete" screen are turned off: the game draws its own.
+   */
+  drawUI?(ctx: DrawContext): void;
 }
 
-export const SCRIPT_HOOKS = ["start", "update", "touch"] as const;
+export const SCRIPT_HOOKS = ["start", "update", "touch", "draw", "drawUI"] as const;
 
 /** Printed by `ludra components script`. Keep in sync with the interfaces above. */
 export const SCRIPT_API_REFERENCE = `A script file default-exports hooks. Only "import type" is allowed: scripts run without a bundler.
@@ -102,12 +160,14 @@ export const SCRIPT_API_REFERENCE = `A script file default-exports hooks. Only "
     start(ctx) {},           // once, on the entity's first frame
     update(ctx) {},          // every frame, after player input, before physics
     touch(ctx, other) {},    // when this entity starts touching another body (after physics)
+    draw(ctx) {},            // paint this entity in world space (browser only, every rendered frame)
+    drawUI(ctx) {},          // paint screen-space UI; replaces the default HUD and win screen
   } satisfies Script;
 
 ctx.self      the entity: id, x, y, vx, vy (read/write); grounded, width, height, exists (read);
               state (object kept between frames, testable as "<id>.state.<key>");
               has("component"), touches(otherOrId)
-ctx.world     time, frame, width, height, score (read/write)
+ctx.world     time, frame, width, height, deaths, won (read); score (read/write)
               get(id), all(component?), player()
               spawn({ id?, components }) -> entity    destroy(entityOrId)
               kill(entityOrId)  players respawn, others are destroyed
@@ -117,6 +177,24 @@ ctx.world     time, frame, width, height, score (read/write)
 ctx.input     held(action), pressed(action)   actions: left right up down jump action
 ctx.params    the "params" object from the script component
 ctx.dt        seconds per frame (1/60)
+
+Drawing: draw and drawUI get the real Canvas 2D context, so there are no limits on looks.
+ctx.g         CanvasRenderingContext2D: gradients, shadowBlur glow, globalCompositeOperation ("lighter" for
+              additive light), paths, text with any loaded font, ctx.g.filter, drawImage...
+              draw: origin is the world (use self.x/self.y); drawUI: origin is the screen top-left
+ctx.time      simulation seconds; animate with it so screenshots are reproducible
+ctx.local     per-entity presentation memory (trails, tweens); not game state
+ctx.view      width, height, cameraX, cameraY, zoom
+ctx.recent(name?, seconds = 0.5)   recent events [{ name, time, x, y, entity, data }]: flash on hit, pop scores
+ctx.image(path)   a loaded image (sprite images and string params ending in .svg/.png/... are preloaded)
+ctx.burst(x, y, particles?)  ctx.shake(px)  ctx.random()   presentation-only helpers
+self/world/params as in update, but read-only: changing the game in a draw hook is an error.
+
+Scene-level presentation (all optional):
+  "fonts": { "Orbitron": "google", "Pixel": "assets/pixel.woff2" }   load fonts for ctx.g.font
+  "postfx": { "shader": "shaders/crt.frag", "uniforms": { "strength": 0.6 } }
+     a GLSL ES 1.0 fragment shader over the whole frame. It gets: uniform sampler2D u_image;
+     uniform vec2 u_resolution; uniform float u_time; varying vec2 v_uv; plus each uniform as a float.
 
 Scripts in scripts/ are loaded even if no entity uses them, so world.spawn can attach them.
 Errors name the file, entity, hook and frame.`;

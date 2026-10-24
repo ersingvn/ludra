@@ -1,3 +1,4 @@
+import { checkDrawHooks } from "@ludra/core";
 import { formatDiagnostics, paint } from "../format.ts";
 import { loadGame, loadProject } from "../project.ts";
 
@@ -5,6 +6,8 @@ export async function check(dir: string, options: { json?: boolean }): Promise<n
   const project = loadProject(dir);
   const { game, diagnostics } = await loadGame(project);
   const scene = game?.scene;
+  // Draw hooks only run in the browser, so paint once here to catch their errors early.
+  if (game) diagnostics.push(...checkDrawHooks(game.scene, game.scripts));
   const errors = diagnostics.filter((d) => d.severity === "error").length;
   const warnings = diagnostics.length - errors;
 
