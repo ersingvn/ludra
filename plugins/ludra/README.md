@@ -15,10 +15,10 @@ Then ask Claude something like *"make me a platformer with a moving platform and
 
 The `make-2d-platformer-games` skill (listed as `ludra:make-2d-platformer-games`). Claude uses it whenever you ask to make, change, test or polish a game. It teaches Claude to:
 
-- create a game with `npx ludra new` and edit its JSON scenes
+- create a game with `npx @ludra/cli new` and edit its JSON scenes
 - run `ludra check` after every edit and apply the fixes it suggests
 - watch the game with `ludra play` (timeline, events and an ASCII map) and prove it works with `ludra test`, including that the level can be beaten without dying
 - draw sprites and spritesheets as SVG, and add particles, sound and screen shake
 - hand off with `ludra dev` so you can play it in the browser
 
-It needs Node.js 22.18 or newer and the `ludra` npm package (`npx ludra` fetches it).
+It needs Node.js 22.18 or newer. Claude runs the engine through `npx @ludra/cli`, which downloads it from npm on first use.

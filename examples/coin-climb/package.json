@@ -8,6 +8,6 @@
     "test": "ludra test"
   },
   "devDependencies": {
-    "ludra": "^0.1.0"
+    "@ludra/cli": "^0.3.1"
   }
 }
