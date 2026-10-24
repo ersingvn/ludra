@@ -25,14 +25,19 @@ export interface WorldSettings {
   /** Downward acceleration in px/s². Defaults to 1800. */
   gravity?: number;
   background?: string;
+  /** Seed for `world.random()` in scripts. Defaults to 1. */
+  seed?: number;
 }
 
 /** A scene file (`*.scene.json`). */
 export interface SceneDef {
   name?: string;
   world?: WorldSettings;
-  /** Feedback for game events, e.g. `{ "collect": { "sound": "coin" } }`. Visual and audio only. */
-  effects?: Partial<Record<GameEventType, EffectDef>>;
+  /**
+   * Feedback for game events, e.g. `{ "collect": { "sound": "coin" } }`. Visual and audio only.
+   * Keys are built-in event types or names scripts pass to `world.emit`.
+   */
+  effects?: Partial<Record<GameEventType, EffectDef>> & Record<string, EffectDef | undefined>;
   entities: EntityDef[];
 }
 

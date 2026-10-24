@@ -1,6 +1,6 @@
 ---
 name: make-2d-platformer-games
-description: Make 2D games, such as platformers with levels, coins, enemies, hazards, moving platforms, sprites, animations, particles and sound. Use whenever the user asks to make, build, change, fix, test or polish a game, or works in a project with a ludra.json. Builds with the Ludra engine and proves the game works by play-testing it headlessly.
+description: Make 2D games, such as platformers with levels, coins, enemies, hazards, moving platforms, custom game logic in scripts (chasing enemies, keys and doors, timers, shooting, bosses), sprites, animations, particles and sound. Use whenever the user asks to make, build, change, fix, test or polish a game, or works in a project with a ludra.json. Builds with the Ludra engine and proves the game works by play-testing it headlessly.
 ---
 
 # Building games with Ludra
@@ -77,6 +77,45 @@ Prefer routes with some slack: if only one exact timing works, a human will find
 - **Pit**: a gap in the ground. Falling more than 100px below the world kills the player.
 - **Goal**: sensor body + `goal`. Use `requireScore` to make collecting things mandatory. `ludra check` errors if the scene cannot offer enough points.
 - Make the world wider than the window (for example `"width": 1920`) and the camera scrolls with the player.
+
+## Scripts: custom game logic
+
+When no built-in component does what the user wants (an enemy that chases, a door that needs a key, a timer, shooting, a boss with phases, a switch, a jump pad), write a script. Prefer built-ins when they fit; they are already tested.
+
+1. Run `npx @ludra/cli components script` for the full API. It is generated from the engine.
+2. Write `scripts/<name>.ts`:
+
+   ```ts
+   import type { Script } from "@ludra/core";
+
+   /** Runs toward the player once they come within params.range px. */
+   export default {
+     update({ self, world, params }) {
+       const player = world.player();
+       const distance = player ? player.x - self.x : Infinity;
+       self.state.chasing = Math.abs(distance) < (params.range as number);
+       self.vx = self.state.chasing ? Math.sign(distance) * (params.speed as number) : 0;
+     },
+   } satisfies Script;
+   ```
+
+3. Attach it: `"script": { "src": "scripts/chase.ts", "params": { "speed": 70, "range": 220 } }`. Give scripted movers a body (`kinematic` for things that move on their own).
+4. Run `check`: it loads every script and reports syntax errors with the line and a caret, forbidden imports, and misspelled hooks.
+5. Prove the behavior in tests. Scripts expose what they do through `self.state` and `world.emit`:
+   - `"chaser.state.chasing == true"`, `"boss.state.phase == \"angry\""`
+   - `"events.door-open == 1"` for `world.emit("door-open")`
+   - plus everything else: `won`, `deaths`, `<id>.exists`, positions.
+
+Rules:
+- Only `import type` is allowed. Put helpers in the same file.
+- Use `world.random()` (seeded) instead of `Math.random()`, and `world.time` instead of `Date`, so tests stay deterministic.
+- Keep data in `self.state` (or another entity's `state`, e.g. `player.state.hasKey`), not in module variables: module variables are shared by every entity using the script and survive restarts.
+- `touch` fires once when touching starts, including solids that only touch. For "while touching", use `self.touches(other)` in `update`.
+- Custom event names can drive `effects` too: `"effects": { "door-open": { "sound": "explosion", "shake": 6 } }`.
+- Scripts in `scripts/` load even if nothing uses them, so `world.spawn({ components: { ..., script: { src: "scripts/bullet.ts" } } })` works.
+- A script error names the file, entity, hook and frame. Fix the script and rerun.
+
+See `examples/key-quest` in the Ludra repo for a jump pad, a key, a locked door, a chasing enemy and a time limit, all with tests.
 
 ## Level design numbers
 

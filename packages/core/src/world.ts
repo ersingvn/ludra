@@ -8,11 +8,23 @@ import {
   type Hazard,
   type Patrol,
   type Platformer,
+  type ScriptComponent,
   type Sprite,
   type Transform,
 } from "./components.ts";
+import {
+  getScript,
+  ScriptError,
+  type Script,
+  type ScriptContext,
+  type ScriptEntity,
+  type ScriptInput,
+  type ScriptModules,
+  type ScriptWorld,
+  type SpawnDef,
+} from "./script.ts";
 import { FIXED_DT } from "./time.ts";
-import type { Action, Diagnostic, EntityDef, SceneDef } from "./types.ts";
+import { EVENT_TYPES, type Action, type Diagnostic, type EntityDef, type SceneDef } from "./types.ts";
 import { validateScene } from "./validate.ts";
 
 export interface BodyState extends Body {
@@ -23,6 +35,8 @@ export interface BodyState extends Body {
 
 export interface PlatformerState extends Platformer {
   coyoteTimer: number;
+  /** True from a player-initiated jump until the apex, so only those jumps are cut short on release. */
+  jumping: boolean;
   bufferTimer: number;
   spawnX: number;
   spawnY: number;
@@ -33,8 +47,20 @@ export interface PatrolState extends Patrol {
   originY: number;
 }
 
+export interface ScriptState extends ScriptComponent {
+  module: Script;
+  started: boolean;
+  /** Ids of entities touched last frame, so `touch` fires only when touching starts. */
+  touching: Set<string>;
+}
+
 export interface Entity {
   id: string;
+  /** Script-owned data, kept between frames and included in snapshots. */
+  state: Record<string, unknown>;
+  /** Set once destroyed or collected, so stale script handles report `exists: false`. */
+  removed?: boolean;
+  script?: ScriptState;
   transform: Transform;
   body?: BodyState;
   sprite?: Sprite;
@@ -55,6 +81,8 @@ export type GameEvent = { frame: number; time: number; x: number; y: number } & 
   | { type: "die"; entity: string; cause: string }
   | { type: "stomp"; entity: string; enemy: string; score: number }
   | { type: "win"; entity: string; goal: string }
+  /** Fired by a script with world.emit(name, data). */
+  | { type: "custom"; name: string; entity: string; data?: unknown }
 );
 
 type EventPayload = GameEvent extends infer E ? (E extends GameEvent ? Omit<E, "frame" | "time"> : never) : never;
@@ -65,6 +93,13 @@ export interface EntitySnapshot {
   vx: number;
   vy: number;
   grounded: boolean;
+  /** Present when a script stored data on the entity. */
+  state?: Record<string, unknown>;
+}
+
+export interface WorldOptions {
+  /** Loaded script modules, keyed by the `src` path used in the scene. */
+  scripts?: ScriptModules;
 }
 
 export interface WorldSnapshot {
@@ -96,6 +131,8 @@ const STOMP_BOUNCE = 0.6;
 const STOMP_TOLERANCE = 8;
 /** A platformer this far below the bottom of the world has fallen out of it. */
 const FALL_MARGIN = 100;
+/** Bodies this close count as touching for `touch` hooks, so solids (doors, walls) can be touched too. */
+const TOUCH_MARGIN = 1;
 const EPSILON = 1e-4;
 
 /**
@@ -116,20 +153,30 @@ export class World {
   /** Set when a player reaches a goal. The simulation stops changing after that. */
   won = false;
   private previousInput: ReadonlySet<Action> = new Set();
+  private readonly scripts: ScriptModules | undefined;
+  private seed: number;
+  private spawnCount = 0;
+  private readonly handles = new WeakMap<Entity, ScriptEntity>();
+  private scriptApi: ScriptWorld | undefined;
+  private scriptInput: ScriptInput = { held: () => false, pressed: () => false };
+  /** The script hook currently running, for error messages and event attribution. */
+  private current: { entity: Entity; hook: string } | undefined;
 
-  constructor(scene: SceneDef) {
+  constructor(scene: SceneDef, options: WorldOptions = {}) {
     this.width = scene.world?.width ?? 960;
     this.height = scene.world?.height ?? 540;
     this.gravity = scene.world?.gravity ?? DEFAULT_GRAVITY;
     this.background = scene.world?.background ?? "#1d2333";
-    this.entities = scene.entities.map(createEntity);
+    this.seed = scene.world?.seed ?? 1;
+    this.scripts = options.scripts;
+    this.entities = scene.entities.map((def) => this.createEntity(def));
   }
 
   /** Validates raw scene JSON and builds a world, throwing on errors. */
-  static fromJSON(raw: unknown): World {
+  static fromJSON(raw: unknown, options: WorldOptions = {}): World {
     const { scene, diagnostics } = validateScene(raw);
     if (!scene) throw new SceneValidationError(diagnostics);
-    return new World(scene);
+    return new World(scene, options);
   }
 
   get time(): number {
@@ -148,8 +195,12 @@ export class World {
     if (this.won) return;
 
     this.updatePlatformers(input, pressed);
+    this.updateScripts(input, pressed);
+    if (this.won) return;
     this.updatePatrols();
     this.updateBodies();
+    this.updateTouches();
+    if (this.won) return;
     this.updateCollectibles();
     this.updateHazards();
     this.updateGoals();
@@ -165,6 +216,8 @@ export class World {
         vy: e.body?.vy ?? 0,
         grounded: e.body?.grounded ?? false,
       };
+      // A JSON copy, so later frames can't change an earlier snapshot.
+      if (Object.keys(e.state).length > 0) entities[e.id]!.state = JSON.parse(JSON.stringify(e.state));
     }
     return { frame: this.frame, time: this.time, score: this.score, deaths: this.deaths, won: this.won, entities };
   }
@@ -174,8 +227,240 @@ export class World {
   }
 
   private remove(entity: Entity): void {
-    this.entities.splice(this.entities.indexOf(entity), 1);
+    const index = this.entities.indexOf(entity);
+    if (index >= 0) this.entities.splice(index, 1);
+    entity.removed = true;
   }
+
+  // ---------------------------------------------------------------- scripts
+
+  private createEntity(def: EntityDef): Entity {
+    const entity = createEntity(def);
+    const component = def.components.script;
+    if (component) {
+      const resolved = resolveComponent<ScriptComponent>("script", component);
+      const module = getScript(this.scripts, resolved.src);
+      if (!module) {
+        throw new ScriptError(
+          { src: resolved.src, entity: def.id, hook: "load", frame: this.frame },
+          "this script is not loaded. Hosts pass loaded modules as new World(scene, { scripts }); the CLI and browser runtime do this for you.",
+        );
+      }
+      entity.script = { ...resolved, params: { ...resolved.params }, module, started: false, touching: new Set() };
+    }
+    return entity;
+  }
+
+  private updateScripts(held: ReadonlySet<Action>, pressed: ReadonlySet<Action>): void {
+    this.scriptInput = { held: (action) => held.has(action), pressed: (action) => pressed.has(action) };
+    // Iterate over a copy: scripts may spawn or destroy entities.
+    for (const e of [...this.entities]) {
+      if (!e.script || e.removed) continue;
+      if (!e.script.started) {
+        e.script.started = true;
+        this.callHook(e, "start");
+      }
+      if (!e.removed && !this.won) this.callHook(e, "update");
+      if (this.won) return;
+    }
+  }
+
+  /** Calls `touch` on scripted entities that started overlapping or touching another body this frame. */
+  private updateTouches(): void {
+    for (const e of [...this.entities]) {
+      if (!e.script?.module.touch || !e.body || e.removed) continue;
+      const now = new Set<string>();
+      for (const other of this.entities) {
+        if (other !== e && other.body && overlaps(e, other, TOUCH_MARGIN)) now.add(other.id);
+      }
+      for (const id of now) {
+        const other = this.get(id);
+        if (other && !e.script.touching.has(id) && !e.removed && !this.won) this.callHook(e, "touch", this.handle(other));
+      }
+      e.script.touching = now;
+    }
+  }
+
+  private callHook(entity: Entity, hook: "start" | "update" | "touch", other?: ScriptEntity): void {
+    const script = entity.script!;
+    const fn = script.module[hook];
+    if (!fn) return;
+    const ctx: ScriptContext = { self: this.handle(entity), world: this.api(), input: this.scriptInput, params: script.params, dt: FIXED_DT };
+    this.current = { entity, hook };
+    try {
+      (fn as (ctx: ScriptContext, other?: ScriptEntity) => void).call(script.module, ctx, other);
+    } catch (err) {
+      if (err instanceof ScriptError) throw err;
+      const message = err instanceof Error ? err.message : String(err);
+      throw new ScriptError({ src: script.src, entity: entity.id, hook, frame: this.frame }, message, { cause: err });
+    } finally {
+      this.current = undefined;
+    }
+  }
+
+  /** An error caused by how a script used the API, reported against the running script. */
+  private misuse(message: string): ScriptError {
+    const running = this.current;
+    return new ScriptError(
+      { src: running?.entity.script?.src ?? "?", entity: running?.entity.id ?? "?", hook: running?.hook ?? "?", frame: this.frame },
+      message,
+    );
+  }
+
+  /** A stable script-facing view of an entity. */
+  private handle(e: Entity): ScriptEntity {
+    let handle = this.handles.get(e);
+    if (handle) return handle;
+    const world = this;
+    handle = {
+      get id() {
+        return e.id;
+      },
+      get x() {
+        return e.transform.x;
+      },
+      set x(value: number) {
+        e.transform.x = value;
+      },
+      get y() {
+        return e.transform.y;
+      },
+      set y(value: number) {
+        e.transform.y = value;
+      },
+      get vx() {
+        return e.body?.vx ?? 0;
+      },
+      set vx(value: number) {
+        if (e.body) e.body.vx = value;
+      },
+      get vy() {
+        return e.body?.vy ?? 0;
+      },
+      set vy(value: number) {
+        if (e.body) e.body.vy = value;
+      },
+      get grounded() {
+        return e.body?.grounded ?? false;
+      },
+      get width() {
+        return e.body?.width ?? e.sprite?.width ?? 0;
+      },
+      get height() {
+        return e.body?.height ?? e.sprite?.height ?? 0;
+      },
+      get exists() {
+        return !e.removed;
+      },
+      get state() {
+        return e.state;
+      },
+      has(component: string) {
+        return component === "transform" || (component in e && (e as unknown as Record<string, unknown>)[component] !== undefined);
+      },
+      touches(other: ScriptEntity | string) {
+        const target = world.get(typeof other === "string" ? other : other.id);
+        return !!target && target !== e && !e.removed && overlaps(e, target, TOUCH_MARGIN);
+      },
+    };
+    this.handles.set(e, handle);
+    return handle;
+  }
+
+  private resolve(target: ScriptEntity | string): Entity | undefined {
+    return this.get(typeof target === "string" ? target : target.id);
+  }
+
+  /** The `world` object scripts receive. */
+  private api(): ScriptWorld {
+    if (this.scriptApi) return this.scriptApi;
+    const world = this;
+    this.scriptApi = {
+      get time() {
+        return world.time;
+      },
+      get frame() {
+        return world.frame;
+      },
+      get width() {
+        return world.width;
+      },
+      get height() {
+        return world.height;
+      },
+      get score() {
+        return world.score;
+      },
+      set score(value: number) {
+        world.score = value;
+      },
+      get: (id) => {
+        const e = world.get(id);
+        return e ? world.handle(e) : undefined;
+      },
+      all: (component) =>
+        world.entities.filter((e) => !component || world.handle(e).has(component)).map((e) => world.handle(e)),
+      player: () => {
+        const e = world.entities.find((candidate) => candidate.platformer);
+        return e ? world.handle(e) : undefined;
+      },
+      spawn: (def) => world.spawn(def),
+      destroy: (target) => {
+        const e = world.resolve(target);
+        if (e) world.remove(e);
+      },
+      kill: (target) => {
+        const e = world.resolve(target);
+        if (!e) return;
+        if (e.platformer && e.body) world.kill(e, world.current?.entity.id ?? "script");
+        else world.remove(e);
+      },
+      win: () => {
+        if (world.won) return;
+        const by = world.current?.entity;
+        world.won = true;
+        world.emit({ type: "win", entity: by?.id ?? "script", goal: by?.id ?? "script", x: by?.transform.x ?? 0, y: by?.transform.y ?? 0 });
+      },
+      emit: (name, data) => {
+        if (typeof name !== "string" || name === "") throw world.misuse("world.emit needs a non-empty event name.");
+        if ((EVENT_TYPES as readonly string[]).includes(name)) {
+          throw world.misuse(`"${name}" is a built-in event and can't be emitted by scripts. Pick another name, e.g. "${name}-custom".`);
+        }
+        const by = world.current?.entity;
+        world.emit({ type: "custom", name, entity: by?.id ?? "script", data, x: by?.transform.x ?? 0, y: by?.transform.y ?? 0 });
+      },
+      random: () => world.random(),
+    };
+    return this.scriptApi;
+  }
+
+  private spawn(def: SpawnDef): ScriptEntity {
+    if (typeof def !== "object" || def === null || typeof def.components !== "object") {
+      throw this.misuse('world.spawn needs { components: { ... } }, e.g. { components: { transform: { x: 0, y: 0 } } }.');
+    }
+    const id = def.id ?? `${this.current?.entity.id ?? "spawned"}-${++this.spawnCount}`;
+    if (this.get(id)) throw this.misuse(`world.spawn: an entity with id "${id}" already exists. Leave id out to get a unique one.`);
+    const { diagnostics } = validateScene({ entities: [{ id, components: def.components }] });
+    const errors = diagnostics.filter((d) => d.severity === "error" && d.code !== "E_GOAL_UNREACHABLE");
+    if (errors.length > 0) {
+      const details = errors.map((d) => `${d.path.replace("entities[0]", id)}: ${d.message}${d.fix ? ` Fix: ${d.fix}` : ""}`);
+      throw this.misuse(`world.spawn got an invalid entity. ${details.join(" ")}`);
+    }
+    const entity = this.createEntity({ id, components: def.components });
+    this.entities.push(entity);
+    return this.handle(entity);
+  }
+
+  /** mulberry32, seeded by world.seed. */
+  private random(): number {
+    this.seed = (this.seed + 0x6d2b79f5) | 0;
+    let t = this.seed;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+
+  // ------------------------------------------------------------ built-ins
 
   private players(): Entity[] {
     return this.entities.filter((e) => e.platformer && e.body);
@@ -199,10 +484,13 @@ export class World {
         b.standingOn = undefined;
         p.bufferTimer = 0;
         p.coyoteTimer = 0;
+        p.jumping = true;
         this.emit({ type: "jump", entity: e.id, ...feet(e) });
-      } else if (p.variableJump && !held.has("jump") && b.vy < -p.jumpSpeed * JUMP_CUT) {
+      } else if (p.jumping && p.variableJump && !held.has("jump") && b.vy < -p.jumpSpeed * JUMP_CUT) {
+        // Only the player's own jumps are cut short; launches from pads, stomps or scripts are not.
         b.vy = -p.jumpSpeed * JUMP_CUT;
       }
+      if (b.vy >= 0) p.jumping = false;
 
       p.coyoteTimer = Math.max(0, p.coyoteTimer - FIXED_DT);
       p.bufferTimer = Math.max(0, p.bufferTimer - FIXED_DT);
@@ -342,13 +630,14 @@ export class World {
     b.standingOn = undefined;
     p.coyoteTimer = 0;
     p.bufferTimer = 0;
+    p.jumping = false;
   }
 }
 
 function createEntity(def: EntityDef): Entity {
   const c = def.components;
   const transform = c.transform ? resolveComponent<Transform>("transform", c.transform) : { x: 0, y: 0 };
-  const entity: Entity = { id: def.id, transform };
+  const entity: Entity = { id: def.id, state: {}, transform };
   if (c.body) entity.body = { ...resolveComponent<Body>("body", c.body), grounded: false };
   if (c.sprite) entity.sprite = resolveComponent<Sprite>("sprite", c.sprite);
   if (c.platformer) {
@@ -356,6 +645,7 @@ function createEntity(def: EntityDef): Entity {
       ...resolveComponent<Platformer>("platformer", c.platformer),
       coyoteTimer: 0,
       bufferTimer: 0,
+      jumping: false,
       spawnX: transform.x,
       spawnY: transform.y,
     };
@@ -387,11 +677,14 @@ function isStomp(player: Entity, enemy: Entity): boolean {
   return previousBottom <= enemyTop + STOMP_TOLERANCE;
 }
 
-/** Strict overlap: bodies that merely touch (e.g. standing on the ground) do not overlap. */
-export function overlaps(a: Entity, b: Entity): boolean {
+/**
+ * Strict overlap: bodies that merely touch (e.g. standing on the ground) do not overlap.
+ * A positive `margin` grows both boxes, so touching counts too.
+ */
+export function overlaps(a: Entity, b: Entity, margin = 0): boolean {
   if (!a.body || !b.body) return false;
   return (
-    Math.abs(a.transform.x - b.transform.x) < (a.body.width + b.body.width) / 2 - EPSILON &&
-    Math.abs(a.transform.y - b.transform.y) < (a.body.height + b.body.height) / 2 - EPSILON
+    Math.abs(a.transform.x - b.transform.x) < (a.body.width + b.body.width) / 2 + margin - EPSILON &&
+    Math.abs(a.transform.y - b.transform.y) < (a.body.height + b.body.height) / 2 + margin - EPSILON
   );
 }

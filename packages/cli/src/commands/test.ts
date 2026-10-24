@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { runTest, type TestCase, type TestResult } from "@ludra/core";
 import { paint } from "../format.ts";
-import { loadProject, requireScene } from "../project.ts";
+import { loadProject, requireGame } from "../project.ts";
 
 interface FileResult {
   file: string;
@@ -10,9 +10,9 @@ interface FileResult {
   tests: TestResult[];
 }
 
-export function test(dir: string, options: { json?: boolean }): number {
+export async function test(dir: string, options: { json?: boolean }): Promise<number> {
   const project = loadProject(dir);
-  const scene = requireScene(project);
+  const { scene, scripts } = await requireGame(project);
   const testsDir = join(project.dir, "tests");
   const files = existsSync(testsDir) ? readdirSync(testsDir).filter((f) => f.endsWith(".test.json")).sort() : [];
 
@@ -32,7 +32,7 @@ export function test(dir: string, options: { json?: boolean }): number {
     } catch (err) {
       return { file, error: (err as Error).message, tests: [] };
     }
-    return { file, tests: cases.map((c) => runTest(scene, c)) };
+    return { file, tests: cases.map((c) => runTest(scene, c, { scripts })) };
   });
 
   const all = results.flatMap((r) => r.tests);

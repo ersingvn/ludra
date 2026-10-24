@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="44" height="14" viewBox="0 0 44 14">
+  <!-- A springy jump pad. -->
+  <rect x="2" y="10" width="40" height="4" rx="1" fill="#4b5263"/>
+  <path d="M8 10 l4 -4 l4 4 l4 -4 l4 4 l4 -4 l4 4 l4 -4" stroke="#cfd8ff" stroke-width="2" fill="none"/>
+  <rect x="0" y="0" width="44" height="4" rx="2" fill="#ff7eb6"/>
+</svg>

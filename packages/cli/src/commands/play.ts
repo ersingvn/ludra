@@ -3,6 +3,7 @@ import {
   InputScript,
   parseDuration,
   renderAscii,
+  ScriptError,
   secondsToFrames,
   simulate,
   World,
@@ -13,7 +14,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { fixed, pad, padStart, paint } from "../format.ts";
 import { captureScreenshots } from "../headless.ts";
-import { CliError, loadProject, requireScene, type Project } from "../project.ts";
+import { CliError, loadProject, requireGame, type Project } from "../project.ts";
 
 export interface PlayOptions {
   inputs?: string;
@@ -37,12 +38,12 @@ const MAX_EVENTS_SHOWN = 40;
 
 export async function play(dir: string, options: PlayOptions): Promise<number> {
   const project = loadProject(dir);
-  const scene = requireScene(project);
+  const { scene, scripts } = await requireGame(project);
   const script = parse(() => InputScript.parse(options.inputs ?? ""));
   const frames = secondsToFrames(options.duration ? parse(() => parseDuration(options.duration!)) : defaultDuration(script));
   const every = Math.max(1, secondsToFrames(parse(() => parseDuration(options.every ?? "0.25s"))));
 
-  const world = new World(scene);
+  const world = scriptErrors(() => new World(scene, { scripts }));
   const watch = options.watch
     ? options.watch.split(",").map((id) => id.trim()).filter(Boolean)
     : world.entities.filter((e) => e.platformer).map((e) => e.id);
@@ -53,12 +54,14 @@ export async function play(dir: string, options: PlayOptions): Promise<number> {
   }
 
   const rows: Row[] = [];
-  simulate(world, script, frames, (w) => {
-    if (w.frame % every !== 0 && w.frame !== frames) return;
-    const snapshot = w.snapshot();
-    const input = w.frame === 0 ? [] : [...script.at(w.frame - 1)];
-    rows.push({ time: w.time, input, entities: Object.fromEntries(watch.map((id) => [id, snapshot.entities[id] ?? null])) });
-  });
+  scriptErrors(() =>
+    simulate(world, script, frames, (w) => {
+      if (w.frame % every !== 0 && w.frame !== frames) return;
+      const snapshot = w.snapshot();
+      const input = w.frame === 0 ? [] : [...script.at(w.frame - 1)];
+      rows.push({ time: w.time, input, entities: Object.fromEntries(watch.map((id) => [id, snapshot.entities[id] ?? null])) });
+    }),
+  );
   const columns = Number(options.columns ?? 80);
   if (!Number.isInteger(columns) || columns < 10) throw new CliError(`--columns must be a whole number of at least 10, got "${options.columns}".`);
   const ascii = options.ascii ? renderAscii(world, { columns }) : undefined;
@@ -144,7 +147,8 @@ function printTimeline(rows: Row[], watch: string[]): void {
 function printEvents(events: readonly GameEvent[]): void {
   console.log(`\n${paint("bold", "Events")}${events.length === 0 ? paint("dim", " (none)") : ""}`);
   for (const event of events.slice(0, MAX_EVENTS_SHOWN)) {
-    console.log(`  ${pad(`${fixed(event.time, 2)}s`, 7)} ${pad(event.type, 8)} ${describeEvent(event)}`);
+    const name = event.type === "custom" ? event.name : event.type;
+    console.log(`  ${pad(`${fixed(event.time, 2)}s`, 7)} ${pad(name, 9)} ${describeEvent(event)}`);
   }
   if (events.length > MAX_EVENTS_SHOWN) console.log(paint("dim", `  … ${events.length - MAX_EVENTS_SHOWN} more (use --json for all)`));
 }
@@ -158,9 +162,21 @@ function describeEvent(event: GameEvent): string {
     case "die":
       return `${event.entity} ${event.cause === "fall" ? "fell out of the world" : `hit ${event.cause}`}, respawned`;
     case "win":
-      return `${event.entity} reached ${event.goal}`;
+      return event.entity === event.goal ? `${event.entity} (script) completed the level` : `${event.entity} reached ${event.goal}`;
+    case "custom":
+      return `from ${event.entity}'s script${event.data === undefined ? "" : ` ${JSON.stringify(event.data)}`}`;
     default:
       return event.entity;
+  }
+}
+
+/** Reports a failing script as a CLI error naming the file, entity, hook and frame. */
+function scriptErrors<T>(fn: () => T): T {
+  try {
+    return fn();
+  } catch (err) {
+    if (err instanceof ScriptError) throw new CliError(`Script error in ${err.message}`);
+    throw err;
   }
 }
 

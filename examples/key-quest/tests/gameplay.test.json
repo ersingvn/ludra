@@ -1,0 +1,32 @@
+{
+  "tests": [
+    {
+      "name": "the locked door blocks a player without the key",
+      "inputs": "right:0.4s, right+jump:0.45s, right:2s",
+      "duration": "3.2s",
+      "assert": ["door.exists == true", "player.x < 600", "chaser.state.chasing == false", "events.key == 0"]
+    },
+    {
+      "name": "the jump pad launches the player onto the ledge, where the key is",
+      "inputs": "right:0.72s, wait:0.45s, right:0.6s",
+      "duration": "2s",
+      "assert": ["events.boing == 1", "events.key == 1", "key.exists == false", "player.state.hasKey == true", "player.y < 300"]
+    },
+    {
+      "name": "the key opens the door and wakes the chaser",
+      "inputs": "right:0.72s, wait:0.45s, right:1.6s",
+      "duration": "3.4s",
+      "assert": ["events.door-open == 1", "door.exists == false", "chaser.state.chasing == true", "chaser.x < 800"]
+    },
+    {
+      "name": "the clock kills the player when time runs out",
+      "duration": "20.2s",
+      "assert": ["clock.state.left > 19 at 20.1s", "events.timeout == 1", "deaths == 1"]
+    },
+    {
+      "name": "the level can be completed without dying",
+      "inputs": "right:0.72s, wait:0.45s, right:1.6s, wait:1.6s, jump:0.45s, wait:0.6s, right:1.5s",
+      "assert": ["won == true", "deaths == 0", "events.stomp == 1", "score == 1"]
+    }
+  ]
+}

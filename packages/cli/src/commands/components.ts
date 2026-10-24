@@ -6,6 +6,7 @@ import {
   EVENT_TYPES,
   isComponentName,
   PARTICLE_FIELDS,
+  SCRIPT_API_REFERENCE,
   SOUND_PRESETS,
   type FieldSpec,
 } from "@ludra/core";
@@ -36,6 +37,8 @@ export function components(name: string | undefined, options: { json?: boolean }
     console.log(`${paint("bold", n)} — ${spec.description}`);
     if (spec.requires?.length) console.log(paint("dim", `  requires: ${spec.requires.join(", ")}`));
     printFields(spec.fields);
+    if (n === "script" && name === "script") console.log(`\n${SCRIPT_API_REFERENCE.replace(/^/gm, "  ")}`);
+    else if (n === "script") console.log(paint("dim", "  Run `ludra components script` for the script API."));
     console.log();
   }
 

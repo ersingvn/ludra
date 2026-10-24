@@ -44,6 +44,9 @@ export function validateScene(raw: unknown): ValidationResult {
           error("E_INVALID_WORLD", `world.${key}`, `world.${key} must be a non-negative number, got ${describe(value)}.`);
         }
       }
+      if (raw.world.seed !== undefined && (typeof raw.world.seed !== "number" || !Number.isFinite(raw.world.seed))) {
+        error("E_INVALID_WORLD", "world.seed", `world.seed must be a number, got ${describe(raw.world.seed)}.`);
+      }
       if (raw.world.background !== undefined && typeof raw.world.background !== "string") {
         error("E_INVALID_WORLD", "world.background", `world.background must be a CSS color string, got ${describe(raw.world.background)}.`);
       }
@@ -94,7 +97,7 @@ export function validateScene(raw: unknown): ValidationResult {
     for (const [name, value] of Object.entries(components)) {
       const componentPath = `${path}.components.${name}`;
       if (!isComponentName(name)) {
-        const suggestion = closest(name, COMPONENT_NAMES);
+        const suggestion = closestName(name, COMPONENT_NAMES);
         error(
           "E_UNKNOWN_COMPONENT",
           componentPath,
@@ -132,6 +135,16 @@ export function validateScene(raw: unknown): ValidationResult {
         `${path}.components.sprite.image`,
         `"${sprite.image}" on entity ${label} is not an image file.`,
         `Use a path ending in ${IMAGE_EXTENSIONS.join(", ")}. SVG is easiest: you can write it as text.`,
+      );
+    }
+
+    const script = isObject(components.script) ? components.script : undefined;
+    if (script && typeof script.src === "string" && !hasExtension(script.src, SCRIPT_EXTENSIONS)) {
+      error(
+        "E_INVALID_SCRIPT_PATH",
+        `${path}.components.script.src`,
+        `"${script.src}" on entity ${label} is not a script file.`,
+        'Use a path ending in .ts or .js, e.g. "scripts/chase.ts".',
       );
     }
 
@@ -229,7 +242,7 @@ function validateFields(
     if (ignore.includes(field)) continue;
     const spec = fields[field];
     if (!spec) {
-      const suggestion = closest(field, Object.keys(fields));
+      const suggestion = closestName(field, Object.keys(fields));
       warn(
         "W_UNKNOWN_FIELD",
         `${path}.${field}`,
@@ -258,9 +271,16 @@ function validateEffects(effects: unknown, error: Report, warn: Report): void {
   for (const [event, effect] of Object.entries(effects)) {
     const path = `effects.${event}`;
     if (!(EVENT_TYPES as readonly string[]).includes(event)) {
-      const suggestion = closest(event, EVENT_TYPES);
-      error("E_UNKNOWN_EVENT", path, `There is no "${event}" event.`, `${suggestion ? `Did you mean "${suggestion}"? ` : ""}Events: ${EVENT_TYPES.join(", ")}.`);
-      continue;
+      // Any other name is a custom event that scripts fire with world.emit(). Flag likely typos of built-in ones.
+      const suggestion = closestName(event, EVENT_TYPES);
+      if (suggestion) {
+        warn(
+          "W_EVENT_LOOKS_LIKE_TYPO",
+          path,
+          `"${event}" is not a built-in event, so it only fires if a script calls world.emit("${event}").`,
+          `Did you mean "${suggestion}"? Built-in events: ${EVENT_TYPES.join(", ")}.`,
+        );
+      }
     }
     if (!isObject(effect)) {
       error("E_EFFECT_NOT_OBJECT", path, `effects.${event} must be an object.`, `Use { "sound": "blip", "particles": { "count": 8 } }.`);
@@ -268,7 +288,7 @@ function validateEffects(effects: unknown, error: Report, warn: Report): void {
     }
     validateFields(EFFECT_FIELDS, effect, path, `effects.${event}`, "", error, warn, ["particles"]);
     if (typeof effect.sound === "string" && effect.sound !== "" && !isSoundPreset(effect.sound) && !hasExtension(effect.sound, AUDIO_EXTENSIONS)) {
-      const suggestion = closest(effect.sound, SOUND_PRESETS);
+      const suggestion = closestName(effect.sound, SOUND_PRESETS);
       error(
         "E_INVALID_SOUND",
         `${path}.sound`,
@@ -285,6 +305,8 @@ function validateEffects(effects: unknown, error: Report, warn: Report): void {
     }
   }
 }
+
+const SCRIPT_EXTENSIONS = [".ts", ".js"] as const;
 
 function hasExtension(path: string, extensions: readonly string[]): boolean {
   const lower = path.toLowerCase();
@@ -307,6 +329,8 @@ function checkField(spec: FieldSpec, value: unknown): string | undefined {
         : `must be one of ${spec.values.map((v) => `"${v}"`).join(", ")}, got ${describe(value)}.`;
     case "frames":
       return typeof value === "string" && isFrameList(value) ? undefined : `must be a frame list like "0", "1-4" or "0,2-3", got ${describe(value)}.`;
+    case "object":
+      return isObject(value) ? undefined : `must be an object like { "speed": 80 }, got ${describe(value)}.`;
   }
 }
 
@@ -326,7 +350,7 @@ function describe(value: unknown): string {
 }
 
 /** Returns the candidate within a small edit distance of `input`, if any. */
-function closest(input: string, candidates: readonly string[]): string | undefined {
+export function closestName(input: string, candidates: readonly string[]): string | undefined {
   let best: string | undefined;
   let bestDistance = Math.max(2, Math.floor(input.length / 3)) + 1;
   for (const candidate of candidates) {

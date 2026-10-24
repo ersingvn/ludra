@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import type { CapturedFrame } from "@ludra/core/browser";
 import { CliError, type Project } from "./project.ts";
-import { BLANK_PATH, createGameServer, PROJECT_PREFIX } from "./server.ts";
+import { BLANK_PATH, createGameServer, PROJECT_PREFIX, SCRIPT_PREFIX } from "./server.ts";
 
 const TIMEOUT_MS = 60_000;
 
@@ -98,6 +98,8 @@ export async function captureScreenshots(project: Project, request: ScreenshotRe
       document.body.append(canvas);
       return captureFrames(canvas, data.scene, {
         assetBase: ${JSON.stringify(PROJECT_PREFIX)},
+        scriptBase: ${JSON.stringify(SCRIPT_PREFIX)},
+        scriptPaths: await (await fetch("/__ludra/scripts")).json(),
         inputs: ${JSON.stringify(request.inputs)},
         frames: ${JSON.stringify(request.frames)},
       });

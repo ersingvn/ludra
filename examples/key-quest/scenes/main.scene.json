@@ -1,0 +1,97 @@
+{
+  "name": "Key Quest",
+  "world": { "width": 960, "height": 540, "gravity": 1800, "background": "#1b2140" },
+  "effects": {
+    "jump": { "sound": "jump", "particles": { "count": 6, "color": "#cfd8ff", "speed": 60, "direction": 90, "spread": 150, "life": 0.25, "size": 3, "gravity": 0 } },
+    "land": { "sound": "thud", "particles": { "count": 5, "color": "#cfd8ff", "speed": 50, "direction": -90, "spread": 160, "life": 0.2, "size": 2, "gravity": 300 } },
+    "boing": { "sound": "jump", "particles": { "count": 12, "color": "#ff7eb6", "speed": 160, "direction": -90, "spread": 70, "life": 0.4, "size": 3 } },
+    "key": { "sound": "powerup", "particles": { "count": 18, "color": "#ffd166", "speed": 150, "life": 0.6, "size": 3, "gravity": 150 } },
+    "door-open": { "sound": "explosion", "shake": 6, "particles": { "count": 26, "color": "#a0714b", "speed": 200, "life": 0.6, "size": 4 } },
+    "stomp": { "sound": "hit", "shake": 5, "particles": { "count": 18, "color": "#c77dff", "speed": 180, "life": 0.5, "size": 4 } },
+    "die": { "sound": "explosion", "shake": 10, "particles": { "count": 30, "color": "#ff5d73", "speed": 220, "life": 0.7, "size": 4 } },
+    "win": { "sound": "powerup", "shake": 3, "particles": { "count": 60, "color": "#4cc9f0", "speed": 260, "life": 1.2, "size": 4, "gravity": 150 } }
+  },
+  "entities": [
+    {
+      "id": "player",
+      "components": {
+        "transform": { "x": 80, "y": 482 },
+        "body": { "type": "dynamic", "width": 28, "height": 36 },
+        "sprite": { "color": "#7cf29c", "image": "assets/player.svg", "frameWidth": 28, "frameHeight": 36, "idle": "0", "run": "1-2", "jump": "3", "fall": "4", "fps": 10, "layer": 3 },
+        "platformer": { "speed": 240, "jumpSpeed": 680 }
+      }
+    },
+    {
+      "id": "clock",
+      "components": {
+        "transform": { "x": 0, "y": 0 },
+        "script": { "src": "scripts/time-limit.ts", "params": { "seconds": 20 } }
+      }
+    },
+    {
+      "id": "ground",
+      "components": {
+        "transform": { "x": 480, "y": 520 },
+        "body": { "type": "static", "width": 960, "height": 40 },
+        "sprite": { "color": "#3b4766", "image": "assets/ground.svg", "tile": true }
+      }
+    },
+    { "id": "wall-left", "components": { "transform": { "x": -10, "y": 270 }, "body": { "type": "static", "width": 20, "height": 540 } } },
+    { "id": "wall-right", "components": { "transform": { "x": 970, "y": 270 }, "body": { "type": "static", "width": 20, "height": 540 } } },
+    {
+      "id": "jump-pad",
+      "components": {
+        "transform": { "x": 255, "y": 493 },
+        "body": { "type": "static", "width": 44, "height": 14, "sensor": true },
+        "sprite": { "color": "#ff7eb6", "image": "assets/jump-pad.svg", "layer": 1 },
+        "script": { "src": "scripts/jump-pad.ts", "params": { "power": 1000 } }
+      }
+    },
+    {
+      "id": "ledge",
+      "components": {
+        "transform": { "x": 380, "y": 300 },
+        "body": { "type": "static", "width": 160, "height": 20 },
+        "sprite": { "color": "#56658f", "image": "assets/platform.svg", "tile": true }
+      }
+    },
+    {
+      "id": "key",
+      "components": {
+        "transform": { "x": 410, "y": 272 },
+        "body": { "type": "static", "width": 24, "height": 24, "sensor": true },
+        "sprite": { "color": "#ffd166", "image": "assets/key.svg", "layer": 1 },
+        "script": { "src": "scripts/key.ts" }
+      }
+    },
+    {
+      "id": "door",
+      "components": {
+        "transform": { "x": 620, "y": 440 },
+        "body": { "type": "static", "width": 28, "height": 120 },
+        "sprite": { "color": "#7a4e2d", "image": "assets/door.svg", "layer": 1 },
+        "script": { "src": "scripts/locked-door.ts" }
+      }
+    },
+    {
+      "id": "chaser",
+      "components": {
+        "transform": { "x": 820, "y": 487 },
+        "body": { "type": "kinematic", "width": 32, "height": 26, "sensor": true },
+        "sprite": { "color": "#c77dff", "image": "assets/slime.svg", "frameWidth": 32, "idle": "0", "run": "0-1", "fps": 6, "layer": 2 },
+        "hazard": { "stompable": true, "score": 1 },
+        "script": { "src": "scripts/chaser.ts", "params": { "speed": 70, "range": 220 } }
+      }
+    },
+    {
+      "id": "flag",
+      "components": {
+        "transform": { "x": 920, "y": 460 },
+        "body": { "type": "static", "width": 24, "height": 80, "sensor": true },
+        "sprite": { "color": "#4cc9f0", "image": "assets/flag.svg", "frameWidth": 24, "idle": "0-1", "fps": 3, "flip": false, "layer": 1 },
+        "emitter": { "rate": 6, "color": "#fff3b0", "speed": 30, "spread": 70, "life": 1.2, "size": 3, "gravity": -20 },
+        "goal": { "requireScore": 1 }
+      }
+    }
+  ]
+}
