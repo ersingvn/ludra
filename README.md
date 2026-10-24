@@ -18,7 +18,7 @@ claude > ludra new slime-valley
          Done. Run `ludra dev` to play it.
 ```
 
-> **Status:** early (v0.2). 2D platformers with enemies, hazards, moving platforms and goals, plus the full agent toolchain, work today. 3D and an asset pipeline are on the [roadmap](#roadmap).
+> **Status:** early (v0.3). 2D platformers with enemies, hazards, moving platforms, goals, animated SVG sprites, particles and sound, plus the full agent toolchain, work today. 3D is on the [roadmap](#roadmap).
 
 ## Why an engine for agents?
 
@@ -126,21 +126,35 @@ gameplay.test.json
 
 Assertions can check `score`, `deaths`, `won`, event counts (`events.jump`, `events.stomp`, ...) and any entity's `x`, `y`, `vx`, `vy`, `grounded` or `exists`, at the end or `at 1.5s`.
 
-## Components (v0.2)
+### Art, effects and sound, all as text
+
+Agents can't use a paint program, so Ludra's art pipeline is text too. Sprites are **SVG files the agent writes itself**: spritesheets with `idle`, `run`, `jump` and `fall` animations that switch automatically, and tiles for ground and platforms. Game events trigger particles, synthesized sounds and screen shake from a few lines of JSON:
+
+```json
+"effects": {
+  "collect": { "sound": "coin", "particles": { "count": 14, "color": "#ffd166", "speed": 140 } },
+  "die": { "sound": "explosion", "shake": 10, "particles": { "count": 30, "color": "#ff5d73" } }
+}
+```
+
+No audio files are needed: `jump`, `coin`, `hit`, `explosion`, `powerup`, `blip` and `thud` are synthesized in the browser. Presentation never touches the simulation, so polishing a game can't break its tests, and `ludra check` reports any missing image along with the files that do exist.
+
+## Components (v0.3)
 
 | Component | What it does |
 | --- | --- |
 | `transform` | Position (entity center, +y is down) |
 | `body` | Box collider: `static`, `dynamic` (gravity and collisions) or `kinematic`; `sensor` for triggers |
-| `sprite` | Rectangle or circle with a color and draw layer |
+| `sprite` | A colored shape, or an image: animated spritesheets (idle/run/jump/fall), tiles and mirroring |
 | `platformer` | Run and jump controls with coyote time, jump buffering and variable jump height |
 | `collectible` | Picked up by the player and adds to the score |
 | `patrol` | Moves a kinematic body back and forth: moving platforms (they carry the player) and walking enemies |
 | `hazard` | Kills the player on touch, who respawns at the start. `stompable` enemies die when landed on |
 | `goal` | Completes the level, optionally only after reaching `requireScore` |
+| `emitter` | Streams particles continuously: sparkles, fire, smoke |
 | `camera` | The browser camera follows this entity through worlds wider than the window |
 
-Falling out of the bottom of the world also counts as a death.
+Falling out of the bottom of the world also counts as a death. Scene-level `effects` add particles, sound and shake to game events. Run `ludra components effects` for every option.
 
 Run `ludra components` for every field, its type and its default.
 
@@ -161,7 +175,8 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how it fits together.
 
 - ~~**v0.2: more game.** Enemies and patrol paths, hazards, goals, moving platforms that carry the player.~~ Done.
 - **v0.2.x:** multiple scenes and level transitions, checkpoints, lives.
-- **v0.3: looks.** Image sprites and spritesheets, tilemaps, particles, screen shake, text and UI, sound, plus asset packs and AI-generated assets.
+- ~~**v0.3: looks.** Image sprites and spritesheets, particles, screen shake, sound.~~ Done.
+- **v0.3.x:** tilemaps, parallax backgrounds, text and UI, music, and importing asset packs.
 - **v0.4: real screenshots.** `ludra play --screenshot` renders actual frames headlessly so multimodal agents can see the game.
 - **v0.5: 3D.** The same scene format and agent tools on a WebGL renderer with real 3D physics.
 - **Later:** top-down and other genres, a component registry (`ludra add <component>`), multiplayer, and desktop and mobile export.

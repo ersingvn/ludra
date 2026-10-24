@@ -1,6 +1,7 @@
 export * from "./types.ts";
 export * from "./time.ts";
 export * from "./components.ts";
+export * from "./effects.ts";
 export * from "./validate.ts";
 export * from "./input.ts";
 export * from "./world.ts";

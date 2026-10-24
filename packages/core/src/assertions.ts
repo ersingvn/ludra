@@ -1,8 +1,8 @@
 import { InputScript } from "./input.ts";
 import { defaultDuration, simulate } from "./simulate.ts";
 import { FIXED_DT, parseDuration, secondsToFrames } from "./time.ts";
-import type { SceneDef } from "./types.ts";
-import { EVENT_TYPES, World, type GameEvent, type GameEventType, type WorldSnapshot } from "./world.ts";
+import { EVENT_TYPES, type GameEventType, type SceneDef } from "./types.ts";
+import { World, type GameEvent, type WorldSnapshot } from "./world.ts";
 
 const OPERATORS = ["<=", ">=", "==", "!=", "<", ">"] as const;
 type Operator = (typeof OPERATORS)[number];

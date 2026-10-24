@@ -3,6 +3,7 @@ import {
   type Body,
   type Camera,
   type Collectible,
+  type Emitter,
   type Goal,
   type Hazard,
   type Patrol,
@@ -42,10 +43,12 @@ export interface Entity {
   patrol?: PatrolState;
   hazard?: Hazard;
   goal?: Goal;
+  emitter?: Emitter;
   camera?: Camera;
 }
 
-export type GameEvent = { frame: number; time: number } & (
+/** `x`/`y` is where it happened, e.g. the coin's position for "collect" or the feet for "land". */
+export type GameEvent = { frame: number; time: number; x: number; y: number } & (
   | { type: "jump"; entity: string }
   | { type: "land"; entity: string }
   | { type: "collect"; entity: string; item: string; score: number }
@@ -55,9 +58,6 @@ export type GameEvent = { frame: number; time: number } & (
 );
 
 type EventPayload = GameEvent extends infer E ? (E extends GameEvent ? Omit<E, "frame" | "time"> : never) : never;
-
-export type GameEventType = GameEvent["type"];
-export const EVENT_TYPES: readonly GameEventType[] = ["jump", "land", "collect", "die", "stomp", "win"];
 
 export interface EntitySnapshot {
   x: number;
@@ -199,7 +199,7 @@ export class World {
         b.standingOn = undefined;
         p.bufferTimer = 0;
         p.coyoteTimer = 0;
-        this.emit({ type: "jump", entity: e.id });
+        this.emit({ type: "jump", entity: e.id, ...feet(e) });
       } else if (p.variableJump && !held.has("jump") && b.vy < -p.jumpSpeed * JUMP_CUT) {
         b.vy = -p.jumpSpeed * JUMP_CUT;
       }
@@ -280,7 +280,7 @@ export class World {
         b.vy = 0;
       }
 
-      if (b.grounded && !wasGrounded) this.emit({ type: "land", entity: e.id });
+      if (b.grounded && !wasGrounded) this.emit({ type: "land", entity: e.id, ...feet(e) });
     }
   }
 
@@ -291,7 +291,7 @@ export class World {
       if (!collector) continue;
       this.remove(item);
       this.score += item.collectible!.score;
-      this.emit({ type: "collect", entity: collector.id, item: item.id, score: item.collectible!.score });
+      this.emit({ type: "collect", entity: collector.id, item: item.id, score: item.collectible!.score, ...item.transform });
     }
   }
 
@@ -308,7 +308,7 @@ export class World {
           this.remove(hazard);
           b.vy = -player.platformer!.jumpSpeed * STOMP_BOUNCE;
           this.score += hazard.hazard!.score;
-          this.emit({ type: "stomp", entity: player.id, enemy: hazard.id, score: hazard.hazard!.score });
+          this.emit({ type: "stomp", entity: player.id, enemy: hazard.id, score: hazard.hazard!.score, ...hazard.transform });
           continue;
         }
         this.kill(player, hazard.id);
@@ -323,7 +323,7 @@ export class World {
       const player = this.players().find((p) => overlaps(p, goal));
       if (!player) continue;
       this.won = true;
-      this.emit({ type: "win", entity: player.id, goal: goal.id });
+      this.emit({ type: "win", entity: player.id, goal: goal.id, ...goal.transform });
       return;
     }
   }
@@ -333,7 +333,7 @@ export class World {
     const b = player.body!;
     const p = player.platformer!;
     this.deaths++;
-    this.emit({ type: "die", entity: player.id, cause });
+    this.emit({ type: "die", entity: player.id, cause, ...player.transform });
     player.transform.x = p.spawnX;
     player.transform.y = p.spawnY;
     b.vx = 0;
@@ -364,8 +364,13 @@ function createEntity(def: EntityDef): Entity {
   if (c.patrol) entity.patrol = { ...resolveComponent<Patrol>("patrol", c.patrol), originX: transform.x, originY: transform.y };
   if (c.hazard) entity.hazard = resolveComponent<Hazard>("hazard", c.hazard);
   if (c.goal) entity.goal = resolveComponent<Goal>("goal", c.goal);
+  if (c.emitter) entity.emitter = resolveComponent<Emitter>("emitter", c.emitter);
   if (c.camera) entity.camera = resolveComponent<Camera>("camera", c.camera);
   return entity;
+}
+
+function feet(e: Entity): { x: number; y: number } {
+  return { x: e.transform.x, y: e.transform.y + (e.body?.height ?? 0) / 2 };
 }
 
 function clampToPatrol(e: Entity, patrol: PatrolState): void {

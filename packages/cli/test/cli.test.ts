@@ -43,6 +43,27 @@ describe("ludra CLI", () => {
     assert.match(out, /@/);
   });
 
+  test("the template ships every image it references", () => {
+    const { code, out } = ludra("check", game, "--json");
+    assert.equal(code, 0, out);
+    assert.equal(JSON.parse(out).diagnostics.filter((d: { code: string }) => d.code === "E_ASSET_MISSING").length, 0);
+  });
+
+  test("check reports a missing image and lists the available ones", () => {
+    const scenePath = join(game, "scenes", "main.scene.json");
+    const original = readFileSync(scenePath, "utf8");
+    const scene = JSON.parse(original);
+    scene.entities[0].components.sprite.image = "assets/hero.svg";
+    writeFileSync(scenePath, JSON.stringify(scene));
+
+    const { code, out } = ludra("check", game, "--json");
+    writeFileSync(scenePath, original);
+    assert.equal(code, 1);
+    const missing = JSON.parse(out).diagnostics.find((d: { code: string }) => d.code === "E_ASSET_MISSING");
+    assert.equal(missing.path, "entities[0].components.sprite.image");
+    assert.match(missing.fix, /assets\/player\.svg/);
+  });
+
   test("check fails with a fix for a broken scene", () => {
     const scenePath = join(game, "scenes", "main.scene.json");
     const scene = JSON.parse(readFileSync(scenePath, "utf8"));
