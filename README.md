@@ -1,9 +1,16 @@
 # Ludra
 
 [![CI](https://github.com/ersingvn/ludra/actions/workflows/ci.yml/badge.svg)](https://github.com/ersingvn/ludra/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@ludra/cli?label=%40ludra%2Fcli)](https://www.npmjs.com/package/@ludra/cli)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **The game engine built for AI agents.**
+
+<p align="center">
+  <img src="docs/media/demo.gif" alt="A Ludra platformer: a green character collects coins, rides a moving platform over a pit, stomps a slime and reaches the goal flag" width="960">
+  <br>
+  <sub>The <code>platformer</code> template, replayed from its own test script: <code>won == true</code>, <code>deaths == 0</code>.</sub>
+</p>
 
 Unity, Unreal and Godot are designed for humans clicking around an editor. Ludra is designed for an agent like Claude: games are plain JSON, every problem comes with a machine-readable fix, and the agent can **play its own game headlessly** to prove it works before a human ever touches it.
 
