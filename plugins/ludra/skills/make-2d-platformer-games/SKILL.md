@@ -1,6 +1,6 @@
 ---
 name: make-2d-platformer-games
-description: Make 2D games, such as platformers with levels, coins, enemies, hazards, moving platforms, custom game logic in scripts (chasing enemies, keys and doors, timers, shooting, bosses), sprites, animations, particles and sound. Use whenever the user asks to make, build, change, fix, test or polish a game, or works in a project with a ludra.json. Builds with the Ludra engine and proves the game works by play-testing it headlessly.
+description: Make beautiful 2D games of any genre: platformers, top-down adventures and arena games, breakout and other bouncing-ball games, with levels, coins, enemies, hazards, moving platforms, bounce physics, custom game logic in scripts (chasing enemies, keys and doors, timers, shooting, bosses), sprites, animations, particles, sound, code-drawn art and lighting, custom HUDs, fonts and post-processing shaders. Use whenever the user asks to make, build, change, fix, test or polish a game, or works in a project with a ludra.json. Builds with the Ludra engine and proves the game works by play-testing it headlessly.
 ---
 
 # Building games with Ludra
@@ -13,7 +13,12 @@ Working is the floor, not the goal. **Before designing a game, read `DESIGN.md` 
 
 Commands below use `npx @ludra/cli`, which downloads the CLI from npm on first use; its command is `ludra`. Always write the full `@ludra/cli`: a bare `npx ludra` would fetch an unrelated package. Inside a clone of the Ludra repository itself (its root `package.json` is named `ludra-monorepo`), use `npm run ludra -- <command>` from the repo root instead. Ludra needs Node.js 22.18 or newer; if `npx` fails, tell the user and point them to https://github.com/ersingvn/ludra.
 
-- New game: `npx @ludra/cli new <folder>` (template `platformer`), then work inside that folder.
+- New game: `npx @ludra/cli new <folder> --template <name>`, then work inside that folder. Pick the template closest to the genre and reshape it:
+  - `platformer` (default): side view, gravity, running and jumping.
+  - `topdown`: seen from above, no gravity, the hero moves in 8 directions through a maze of walls.
+  - `breakout`: a paddle, a bouncing ball and bricks, all game rules in scripts.
+
+  For other genres, start from the nearest one: a shmup or Pong is `breakout`'s paddle and bounce; a dungeon crawler, twin-stick or snake-like game is `topdown`; an auto-runner or one-button game is `platformer`.
 - Existing game: read `ludra.json`, the entry scene and `tests/` first.
 - Component reference: `npx @ludra/cli components` (or `npx @ludra/cli components <name>`). It is generated from the engine, so it is always current. Trust it over memory.
 - **Blocks:** `npx @ludra/cli blocks` lists ready-made, tested gameplay pieces (jump pads, keys and doors, chasing and patrolling enemies, turrets, falling and moving platforms, teleporters, coins, spikes, time limits). `npx @ludra/cli add <block> --at x,y` copies its scripts and art into the project and places its entities, with `y` being the top of the surface it sits on. Prefer blocks over writing the same thing from scratch, then customize their `params`, art and combinations. Each block prints how to tune it.
@@ -24,7 +29,7 @@ Repeat until the game does what the user asked:
 
 1. **Edit** the scene JSON.
 2. **Check**: `npx @ludra/cli check`. Fix every error before doing anything else. Each diagnostic gives the JSON path and a `fix:` line. Apply it.
-3. **Play**: `npx @ludra/cli play --inputs "<script>" --ascii`. Read the timeline (position, velocity, grounded per sample), the events (jump, land, collect, stomp, die, win) and the ASCII map of the final frame. Use `--watch player,lift,enemy` to time moving things, `--every 0.1s` for finer timing and `--columns 160` for wide worlds.
+3. **Play**: `npx @ludra/cli play --inputs "<script>" --ascii`. Read the timeline (position, velocity, grounded per sample), the events (jump, land, collect, stomp, die, win, bounce) and the ASCII map of the final frame. Use `--watch player,lift,enemy` to time moving things, `--every 0.1s` for finer timing and `--columns 160` for wide worlds.
 4. **Look**: add `--screenshot 1s,end` (any times, or `end`) to `play` to render real frames as PNGs into `screenshots/`, then open them with your image-reading tool. The ASCII map shows layout; screenshots show what players see: art, animation, particles, overlaps, readability. Do this after every visual change. It needs Chrome, Edge or Chromium installed; if none is found, say so and rely on the ASCII map.
 5. **Test**: encode the requirement in `tests/<name>.test.json` and run `npx @ludra/cli test`.
 6. **Hand off**: tell the user to run `npx @ludra/cli dev` to play it.
@@ -57,7 +62,7 @@ Example: `"right:0.55s, right+jump:0.45s, right:0.45s, right+jump:0.45s"`
 
 Assertions: `<subject> <op> <value> [at <time|end>]`, with op one of `< <= > >= == !=`.
 
-- Subjects: `score`, `deaths`, `won`, `events.jump|land|collect|stomp|die|win` (count so far), `<entityId>.x|y|vx|vy|grounded|exists`.
+- Subjects: `score`, `deaths`, `won`, `events.jump|land|collect|stomp|die|win|bounce` (count so far, custom script events too), `<entityId>.x|y|vx|vy|grounded|exists`.
 - `at` defaults to `end`. The run lasts the input script plus 1s unless `duration` is set.
 
 Write at least one test proving the level can be completed: `"won == true"` and `"deaths == 0"`. If you cannot find an input script that completes it, the level is probably impossible. Fix the level, not the test.
@@ -71,6 +76,29 @@ for w in 0.4s 0.5s 0.6s; do npx @ludra/cli play --inputs "<prefix>, wait:$w, rig
 ```
 
 Prefer routes with some slack: if only one exact timing works, a human will find the level frustrating. Widen the platform or slow the enemy.
+
+When a route is long or reactive (a breakout level, an arena), write a small autopilot instead of guessing: a Node script that creates `new World(scene, { scripts })` from `@ludra/core`, picks the input each frame from the world state (steer the paddle under the ball, walk toward the next gem), calls `world.step(new Set([...]))`, and prints the inputs compressed into segments with frame counts (`"left:24f, wait:71f"`). Paste that into the test. Keep the autopilot out of the project.
+
+## Genres
+
+### Platformer
+
+The player has a `platformer` component and a `dynamic` body; gravity pulls everything down. See the building blocks and level numbers below.
+
+### Top-down
+
+- Set `"gravity": 0` on the world. The hero has `topdown` (`speed`, `directions`) and a `dynamic` body. `directions` is `"8"` (default), `"4"` (no diagonals), `"x"` or `"y"`.
+- Arrow keys move it: `"right+up:0.5s"` goes diagonally. Walls are `static` bodies; `clampToWorld` (default true) keeps the hero on screen.
+- Enemies are `patrol` + `hazard` on kinematic sensors, on either axis. They can't be stomped. Make them cross the hero's path so passing them takes timing, then sweep `wait:` values to prove the window is wide.
+- A floor is an entity with only a tiled `sprite` on `layer` -1, sized to the world.
+
+### Bouncing balls (breakout, Pong, pinball-like)
+
+- `body.bounce` is how much speed a dynamic body keeps when it hits a solid: `1` reflects it perfectly, `0.5` loses half each hit, `0` (default) stops it. Each hit emits a `bounce` event (good for a `blip` sound).
+- A ball is `dynamic`, `"bounce": 1`, `"gravityScale": 0`. Keep its speed constant in a script and never let it travel almost horizontally.
+- A paddle is `kinematic` with `topdown` `"directions": "x"`: player-steered kinematic bodies stop at walls, and the ball rebounds off them. Aim the ball in the paddle's `touch` script by where it hit.
+- Bricks are `static` bodies with a script that scores and destroys itself on `touch`. Leave the bottom of the world open and treat a lost ball as a death (`world.kill(paddle)`).
+- With gravity on and `bounce` below 1 you get bouncy balls, rubber enemies and grenades.
 
 ## Gameplay building blocks
 
@@ -167,3 +195,23 @@ Run `npx @ludra/cli components effects` for every field.
 ### Layout and color
 
 Use a coherent palette: a dark background, mid-tone platforms, a bright player and pickups, and a warning color (red, magenta) for anything that kills. Use `layer` so the player draws above everything. Keep sizes consistent, for example a 28x36 player, 20px pickups and 20px-thick platforms.
+
+### No limits: draw hooks, fonts and shaders
+
+Sprites and effects are the floor. For real art, paint with code; read "Paint with code" in `DESIGN.md` for what to do with it.
+
+- **`draw(ctx)`** in any script paints that entity every rendered frame, in world coordinates, after its sprite (or instead of one).
+  - `ctx.g` is the real `CanvasRenderingContext2D`: gradients, `shadowBlur` glow, `globalCompositeOperation = "lighter"` for light, paths, `roundRect`, text, `filter`, `drawImage`. Anything the canvas can do.
+  - Draw order follows `sprite.layer` (0 without a sprite), then entity order. A backdrop is an entity with only a draw hook, first in the list.
+- **`drawUI(ctx)`** paints in screen space above the world. If any script has it, the default HUD and "Level complete" screen disappear and the game draws its own: score, meters, title card, win screen (`world.won`, `world.deaths`, `world.score`).
+- **Draw helpers on `ctx`:**
+  - `time` (animate with it), `local` (per-entity memory for trails and tweens), `view` (size and camera), `recent(name?, seconds)` (events to flash or pop text on; custom event `data` included).
+  - `image(path)` (may be undefined, so check it), `burst(x, y, particles)`, `shake(px)`, `random()`.
+- **Draw hooks only paint.** `self` and `world` are read-only there: setting `x`, `score`, `state`, or calling `emit`, `spawn` or `world.random` throws, so the browser can never drift from what tests verified. Do game logic in `update`/`touch`, and `world.emit("name", data)` there for the visuals to react to.
+- **Fonts:** `"fonts": { "Orbitron": "google" }` in the scene (or a `.woff2` in `assets/`), then `g.font = "900 32px Orbitron, sans-serif"`.
+- **Post-processing:** `"postfx": { "shader": "shaders/x.frag", "uniforms": { "bloom": 1.5 } }`.
+  - It runs a GLSL ES 1.0 fragment shader over every frame. The engine declares `u_image`, `u_resolution`, `u_time`, `v_uv` and each uniform as a `float`; write `void main()` and set `gl_FragColor`.
+  - Bloom, CRT scanlines, chromatic aberration, color grading, vignette, pixelation, water ripples: whatever the mood needs. Compile errors appear in the game and in `play --screenshot` with the line number.
+- `ludra check` runs every draw hook against a mock canvas, so typos and accidental game changes show up as `E_DRAW_HOOK` before the browser. Then look at real frames with `play --screenshot`: that is the only way to judge how it looks.
+
+See `scripts/` and `shaders/` in the `breakout` (everything drawn in code) and `topdown` (lighting over SVG sprites) templates.

@@ -20,6 +20,7 @@ export const COMPONENT_NAMES = [
   "body",
   "sprite",
   "platformer",
+  "topdown",
   "collectible",
   "patrol",
   "hazard",
@@ -65,6 +66,12 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       height: { type: "number", min: 1, description: "Collider height in pixels." },
       sensor: { type: "boolean", default: false, description: "Sensors detect overlaps but never block movement (coins, triggers)." },
       gravityScale: { type: "number", default: 1, description: "Multiplier on world gravity for dynamic bodies." },
+      bounce: {
+        type: "number",
+        min: 0,
+        default: 0,
+        description: "How much speed a dynamic body keeps when it hits a solid: 0 stops it, 1 bounces it back at full speed (balls, pinballs).",
+      },
       vx: { type: "number", default: 0, description: "Initial horizontal velocity in px/s." },
       vy: { type: "number", default: 0, description: "Initial vertical velocity in px/s." },
     },
@@ -102,8 +109,23 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       variableJump: { type: "boolean", default: true, description: "Releasing jump early cuts the jump short." },
     },
   },
+  topdown: {
+    description:
+      "Player control seen from above or for vehicles: moves with the arrow keys, no gravity. directions picks 8-way, 4-way, or one axis (\"x\" for a breakout paddle or a shooter ship). Needs a dynamic body (collides with walls) or a kinematic one (passes through, use clampToWorld).",
+    requires: ["transform", "body"],
+    fields: {
+      speed: { type: "number", min: 0, default: 200, description: "Move speed in px/s." },
+      directions: {
+        type: "enum",
+        values: ["8", "4", "x", "y"],
+        default: "8",
+        description: '"8": any direction (diagonals keep the same speed). "4": up/down/left/right only. "x" or "y": one axis.',
+      },
+      clampToWorld: { type: "boolean", default: true, description: "Keep the entity inside the world bounds." },
+    },
+  },
   collectible: {
-    description: "Removed when a platformer entity touches it and adds to the score. Its body must be a sensor.",
+    description: "Removed when a player (platformer or topdown) touches it and adds to the score. Its body must be a sensor.",
     requires: ["transform", "body"],
     fields: {
       score: { type: "number", default: 1, description: "Points added when collected." },
@@ -172,6 +194,7 @@ export interface Body {
   height: number;
   sensor: boolean;
   gravityScale: number;
+  bounce: number;
   vx: number;
   vy: number;
 }
@@ -220,6 +243,12 @@ export interface Platformer {
   coyoteTime: number;
   jumpBuffer: number;
   variableJump: boolean;
+}
+
+export interface Topdown {
+  speed: number;
+  directions: "8" | "4" | "x" | "y";
+  clampToWorld: boolean;
 }
 
 export interface Collectible {

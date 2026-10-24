@@ -21,12 +21,12 @@ process.emitWarning = ((warning: string | Error, ...rest: unknown[]) => {
 const HELP = `ludra: the game engine built for AI agents
 
 Usage
-  ludra new <folder> [--template platformer]   Create a game project
+  ludra new <folder> [--template <name>]       Create a game project (templates: platformer, topdown, breakout)
   ludra check [folder] [--json]                Validate the scene; every problem comes with a fix
   ludra play [folder] [options]                Simulate the game headlessly
       --inputs "right:1s, jump:0.4s"           Scripted input. Actions: left right up down jump action wait
       --duration 3s                            Run length (default: inputs + 1s)
-      --watch player,enemy                     Entities in the timeline (default: platformer entities)
+      --watch player,enemy                     Entities in the timeline (default: the players)
       --every 0.25s                            Timeline sampling interval
       --ascii                                  Print the final frame as a text map
       --columns 120                            Width of the text map (default: 80)

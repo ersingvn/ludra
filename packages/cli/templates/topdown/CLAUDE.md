@@ -1,0 +1,38 @@
+# {{name}}
+
+A top-down game built with Ludra, a game engine designed for AI agents.
+
+## Layout
+
+- `ludra.json`: project config (name, entry scene, window size)
+- `scenes/main.scene.json`: the level, seen from above. Entities are made of components; `effects` adds particles, sound and shake to game events.
+- `assets/`: SVG art. Spritesheets are frames side by side; tiles repeat.
+- `scripts/`: TypeScript. `night.ts` draws the darkness, the lantern, colored lights and fireflies; `portal.ts` the vortex; `hud.ts` the whole interface. Run `npx @ludra/cli components script` for the API.
+- `shaders/dream.frag`: the post-processing shader (bloom, warm/cool grade, vignette).
+- `tests/*.test.json`: gameplay tests, run headlessly
+
+## Loop
+
+1. Edit `scenes/main.scene.json`. Run `npx @ludra/cli components` for every component and field, and `npx @ludra/cli blocks` for ready-made pieces you can drop in with `npx @ludra/cli add <block> --at x,y`.
+2. Run `npx @ludra/cli check` after every edit. Each problem names the JSON path and a fix.
+3. Run `npx @ludra/cli play --inputs "right:1s, up:0.5s" --ascii` to see what actually happens. Add `--screenshot 0.5s,end` to save real rendered frames to `screenshots/` and look at them.
+4. Write the behavior you want into `tests/*.test.json` and run `npx @ludra/cli test`.
+5. Run `npx @ludra/cli dev` so a human can play it in the browser.
+
+Never call a change done until `ludra check` and `ludra test` both pass.
+
+## Rules of thumb
+
+- Coordinates are entity centers in pixels; +y is down. The world has no gravity (`"gravity": 0`).
+- The hero uses `topdown`: arrow keys move it in 8 directions at `speed` px/s. Inputs like `"right+up:0.5s"` move diagonally. A `dynamic` body collides with walls.
+- Walls are `static` bodies. Hazards, collectibles and goals need `"sensor": true`.
+- Enemies are kinematic sensor bodies with a `patrol` (`axis` "x" or "y") and a `hazard`. In top-down games they can't be stomped.
+- A floor is an entity with only a tiled `sprite` (no body) on `layer` -1, sized to the world.
+- The level is done when a test proves `won == true` with `deaths == 0`, and every enemy crossing works across a wide timing window (sweep `wait:` values with `play`).
+- Art and effects never change gameplay. Make it playable first, then dress it. Write new art as SVG in `assets/`.
+
+## Looks
+
+The sprites are SVG; the mood comes from code. `night.ts` lights the scene (keep every hazard lit in its warning color), and the scene loads the Cinzel font and runs `shaders/dream.frag`.
+
+There are no limits on looks. A script's `draw(ctx)` paints with the real Canvas 2D context (`ctx.g`), `drawUI(ctx)` replaces the HUD, `"fonts"` loads Google Fonts, and `"postfx"` runs a GLSL shader over every frame. Run `npx @ludra/cli components script` for the API. Draw hooks only paint: they can't change the game, so tests stay valid. After every visual change, look at real frames with `play --screenshot`.

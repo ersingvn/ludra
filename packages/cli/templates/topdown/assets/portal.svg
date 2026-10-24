@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="80" height="40" viewBox="0 0 80 40">
+  <!-- Spritesheet: 2 frames of 40x40, a swirling exit portal set in stone. -->
+  <g>
+    <circle cx="20" cy="20" r="18" fill="#56658f"/>
+    <circle cx="20" cy="20" r="14" fill="#7b2cbf"/>
+    <path d="M20 8 a12 12 0 0 1 0 24 a6 6 0 0 1 0 -12 a3 3 0 0 0 0 -6" fill="#c77dff"/>
+    <circle cx="20" cy="20" r="3" fill="#f3d9ff"/>
+  </g>
+  <g transform="translate(40 0)">
+    <circle cx="20" cy="20" r="18" fill="#56658f"/>
+    <circle cx="20" cy="20" r="14" fill="#7b2cbf"/>
+    <path d="M32 20 a12 12 0 0 1 -24 0 a6 6 0 0 1 12 0 a3 3 0 0 0 6 0" fill="#c77dff"/>
+    <circle cx="20" cy="20" r="4" fill="#f3d9ff"/>
+  </g>
+</svg>

@@ -9,3 +9,4 @@ export * from "./world.ts";
 export * from "./simulate.ts";
 export * from "./assertions.ts";
 export * from "./ascii.ts";
+export * from "./drawcheck.ts";

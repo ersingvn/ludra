@@ -1,0 +1,30 @@
+{
+  "tests": [
+    {
+      "name": "the hero stays put without input (no gravity in a top-down game)",
+      "duration": "1s",
+      "assert": ["hero.x == 80", "hero.y == 270", "deaths == 0"]
+    },
+    {
+      "name": "the hero moves diagonally",
+      "inputs": "right+down:0.5s",
+      "duration": "0.5s",
+      "assert": ["hero.x > 130", "hero.y > 320"]
+    },
+    {
+      "name": "hedges block the hero",
+      "inputs": "right:3s",
+      "assert": ["hero.x < 270", "deaths == 0"]
+    },
+    {
+      "name": "rushing through the middle corridor gets the hero caught by the slime",
+      "inputs": "up:1s, right:0.39s, down:2s, right:0.17s, right:1.61s, left:0.5s, wait:0.1s, up:1.95s",
+      "assert": ["deaths == 1", "events.die == 1"]
+    },
+    {
+      "name": "the grove can be cleared without dying",
+      "inputs": "up:1s, right:0.39s, down:2s, right:0.17s, right:1.61s, left:0.5s, wait:1.5s, up:1.95s, right:0.5s, right:1.94s, right:0.44s, wait:1.2s, down:2s",
+      "assert": ["won == true", "deaths == 0", "score == 5"]
+    }
+  ]
+}

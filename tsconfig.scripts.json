@@ -1,0 +1,10 @@
+{
+  "//": "Type-checks the game scripts shipped in templates, blocks and examples against @ludra/core. Run after building core.",
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "lib": ["ES2022", "DOM"],
+    "types": []
+  },
+  "include": ["packages/cli/templates/*/scripts/*.ts", "packages/cli/blocks/*/scripts/*.ts", "examples/*/scripts/*.ts"]
+}

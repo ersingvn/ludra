@@ -3,7 +3,8 @@ import { parseFrames, type Sprite } from "./components.ts";
 import { collectAssetPaths } from "./effects.ts";
 import { InputScript } from "./input.ts";
 import { ParticleSystem } from "./particles.ts";
-import type { Script } from "./script.ts";
+import { PostFx } from "./postfx.ts";
+import type { DrawContext, DrawEvent, Script } from "./script.ts";
 import { FIXED_DT } from "./time.ts";
 import type { Action, SceneDef } from "./types.ts";
 import { World, type Entity } from "./world.ts";
@@ -52,6 +53,88 @@ async function loadScripts(scene: SceneDef, options: GameOptions): Promise<Map<s
   return scripts;
 }
 
+/** Fonts load from Google Fonts or project files; a slow or offline font never blocks the game for long. */
+async function loadFonts(scene: SceneDef, assetBase: string): Promise<void> {
+  const fonts = Object.entries(scene.fonts ?? {});
+  if (fonts.length === 0) return;
+  const load = async ([family, src]: [string, string]) => {
+    if (src === "google") {
+      const name = encodeURIComponent(family).replace(/%20/g, "+");
+      // Not every family has every weight, and Google rejects the request if one is missing.
+      for (const weights of [":wght@400;500;600;700;800;900", ":wght@400;700", ""]) {
+        const response = await fetch(`https://fonts.googleapis.com/css2?family=${name}${weights}&display=block`);
+        if (!response.ok) continue;
+        const style = document.createElement("style");
+        style.textContent = await response.text();
+        document.head.append(style);
+        break;
+      }
+      await Promise.all(["400", "700", "900"].map((weight) => document.fonts.load(`${weight} 16px "${family}"`)));
+    } else {
+      const face = new FontFace(family, `url("${assetBase}${src}")`);
+      // FontFaceSet.add is missing from some TypeScript DOM typings.
+      (document.fonts as unknown as Set<FontFace>).add(await face.load());
+    }
+  };
+  const all = Promise.all(
+    fonts.map((font) => load(font).catch((err) => console.warn(`[ludra] could not load font "${font[0]}": ${err}`))),
+  );
+  await Promise.race([all, new Promise((resolve) => setTimeout(resolve, 4000))]);
+}
+
+interface Stage {
+  /** Where the game draws. With postfx this is an offscreen canvas. */
+  ctx: CanvasRenderingContext2D;
+  /** The canvas players see. */
+  output: HTMLCanvasElement;
+  images: Map<string, HTMLImageElement>;
+  scripts: Map<string, Script>;
+  /** Shows the drawn frame: runs the postfx shader, or does nothing without one. */
+  present(time: number): void;
+  /** Why postfx couldn't start (the game then runs without it and shows this message). */
+  error?: string;
+}
+
+/**
+ * Loads everything a scene needs and sets up its canvases. With `postfx`, `canvas`
+ * becomes the offscreen source and a WebGL canvas takes its place in the page.
+ */
+async function prepare(canvas: HTMLCanvasElement, scene: SceneDef, options: GameOptions): Promise<Stage> {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas 2D context is not available.");
+  const assetBase = options.assetBase ?? "";
+  const shaderPath = scene.postfx?.shader;
+  const [images, scripts, shader] = await Promise.all([
+    loadImages(scene, assetBase),
+    loadScripts(scene, options),
+    shaderPath
+      ? fetch(assetBase + shaderPath).then(async (r) => (r.ok ? r.text() : new Error(`could not load ${shaderPath} (${r.status})`)))
+      : undefined,
+    loadFonts(scene, assetBase),
+  ]);
+  const stage: Stage = { ctx, output: canvas, images, scripts, present: () => {} };
+  if (scene.postfx && shader !== undefined) {
+    try {
+      if (shader instanceof Error) throw shader;
+      const fx = new PostFx(canvas.width, canvas.height, shader, scene.postfx);
+      fx.canvas.id = canvas.id;
+      fx.canvas.className = canvas.className;
+      fx.canvas.style.cssText = canvas.style.cssText;
+      canvas.replaceWith(fx.canvas);
+      stage.output = fx.canvas;
+      stage.present = (time) => fx.render(canvas, time);
+    } catch (err) {
+      stage.error = `postfx: ${message(err)}`;
+      console.error("[ludra]", err);
+    }
+  }
+  return stage;
+}
+
+function message(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 /**
  * Runs a scene in a canvas with keyboard controls, images, particles and
  * sound. The simulation uses the same fixed step as headless runs, so what
@@ -59,19 +142,16 @@ async function loadScripts(scene: SceneDef, options: GameOptions): Promise<Map<s
  * Resolves (after images load) to a function that stops the game.
  */
 export async function startGame(canvas: HTMLCanvasElement, scene: SceneDef, options: GameOptions = {}): Promise<() => void> {
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Canvas 2D context is not available.");
-  const assetBase = options.assetBase ?? "";
-  const [images, scripts] = await Promise.all([loadImages(scene, assetBase), loadScripts(scene, options)]);
-  const sounds = new SoundPlayer(assetBase);
+  const { ctx, images, scripts, present, error } = await prepare(canvas, scene, options);
+  const sounds = new SoundPlayer(options.assetBase ?? "");
   const view = new View(scene, images);
 
   let world = new World(scene, { scripts });
-  let crash: string | undefined;
+  let crash: string | undefined = error;
   const restart = () => {
     world = new World(scene, { scripts });
     view.reset();
-    crash = undefined;
+    crash = error;
   };
 
   const held = new Set<Action>();
@@ -110,15 +190,22 @@ export async function startGame(canvas: HTMLCanvasElement, scene: SceneDef, opti
         world.step(tapped.size > 0 ? new Set([...held, ...tapped]) : held);
       } catch (err) {
         // A script threw: freeze the game and show why, instead of failing silently.
-        crash = err instanceof Error ? err.message : String(err);
+        crash = message(err);
         console.error("[ludra]", err);
       }
       tapped.clear();
       view.step(world, (sound) => sounds.play(sound));
       accumulator -= FIXED_DT;
     }
-    view.draw(ctx, world, sounds.muted);
+    try {
+      view.draw(ctx, world, sounds.muted);
+    } catch (err) {
+      // A draw hook threw. Same treatment as a simulation error.
+      if (!crash) console.error("[ludra]", err);
+      crash ??= message(err);
+    }
     if (crash) drawCrash(ctx, crash);
+    present(world.time);
     raf = requestAnimationFrame(frame);
   };
   raf = requestAnimationFrame(frame);
@@ -152,9 +239,8 @@ export interface CapturedFrame {
  * `ludra play --screenshot`.
  */
 export async function captureFrames(canvas: HTMLCanvasElement, scene: SceneDef, options: CaptureOptions): Promise<CapturedFrame[]> {
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Canvas 2D context is not available.");
-  const [images, scripts] = await Promise.all([loadImages(scene, options.assetBase ?? ""), loadScripts(scene, options)]);
+  const { ctx, output, images, scripts, present, error } = await prepare(canvas, scene, options);
+  if (error) throw new Error(error);
   const view = new View(scene, images);
   const world = new World(scene, { scripts });
   const script = InputScript.parse(options.inputs ?? "");
@@ -165,7 +251,8 @@ export async function captureFrames(canvas: HTMLCanvasElement, scene: SceneDef, 
   for (let frame = 0; ; frame++) {
     if (wanted.has(frame)) {
       view.draw(ctx, world, false);
-      captured.push({ frame, time: frame * FIXED_DT, png: canvas.toDataURL("image/png") });
+      present(world.time);
+      captured.push({ frame, time: frame * FIXED_DT, png: output.toDataURL("image/png") });
     }
     if (frame >= last) break;
     world.step(script.at(frame));
@@ -228,6 +315,8 @@ class View {
   private readonly facing = new Map<string, number>();
   private readonly emitTimers = new Map<string, number>();
   private readonly frameCache = new Map<string, number[]>();
+  /** ctx.local for each entity's draw hooks. */
+  private readonly local = new Map<string, Record<string, unknown>>();
   private shake = 0;
   private handledEvents = 0;
   private readonly scene: SceneDef;
@@ -242,6 +331,7 @@ class View {
     this.particles.clear();
     this.facing.clear();
     this.emitTimers.clear();
+    this.local.clear();
     this.shake = 0;
     this.handledEvents = 0;
   }
@@ -278,7 +368,7 @@ class View {
     ctx.fillStyle = world.background;
     ctx.fillRect(0, 0, viewWidth, viewHeight);
 
-    const target = world.entities.find((e) => e.camera) ?? world.entities.find((e) => e.platformer);
+    const target = world.entities.find((e) => e.camera) ?? world.entities.find((e) => e.platformer || e.topdown);
     const zoom = target?.camera?.zoom ?? 1;
     const visibleWidth = viewWidth / zoom;
     const visibleHeight = viewHeight / zoom;
@@ -289,13 +379,24 @@ class View {
       cameraY += (this.particles.random() - 0.5) * 2 * this.shake;
     }
 
+    const viewInfo = { width: viewWidth, height: viewHeight, cameraX, cameraY, zoom };
     ctx.save();
     ctx.scale(zoom, zoom);
     ctx.translate(-cameraX, -cameraY);
-    const visible = world.entities.filter((e) => e.sprite).sort((a, b) => a.sprite!.layer - b.sprite!.layer);
-    for (const e of visible) this.drawSprite(ctx, e, world.time);
+    const layer = (e: Entity) => e.sprite?.layer ?? 0;
+    const visible = world.entities.filter((e) => e.sprite || e.script?.module.draw).sort((a, b) => layer(a) - layer(b));
+    for (const e of visible) {
+      if (e.sprite) this.drawSprite(ctx, e, world.time);
+      if (e.script?.module.draw) this.drawHook(ctx, world, e, "draw", viewInfo);
+    }
     this.particles.draw(ctx);
     ctx.restore();
+
+    if (world.hasHook("drawUI")) {
+      // The game draws its own interface.
+      for (const e of [...world.entities]) if (e.script?.module.drawUI) this.drawHook(ctx, world, e, "drawUI", viewInfo);
+      return;
+    }
 
     ctx.textAlign = "left";
     ctx.font = "600 18px system-ui, sans-serif";
@@ -316,6 +417,30 @@ class View {
       ctx.font = "500 18px system-ui, sans-serif";
       const winTime = world.events.find((e) => e.type === "win")?.time ?? world.time;
       ctx.fillText(`Score ${world.score} · ${winTime.toFixed(1)}s · Press R to play again`, viewWidth / 2, viewHeight / 2 + 30);
+    }
+  }
+
+  private drawHook(ctx: CanvasRenderingContext2D, world: World, e: Entity, hook: "draw" | "drawUI", view: DrawContext["view"]): void {
+    let local = this.local.get(e.id);
+    if (!local) this.local.set(e.id, (local = {}));
+    ctx.save();
+    try {
+      world.callDrawHook(e, hook, {
+        g: ctx,
+        time: world.time,
+        local,
+        view,
+        recent: (name, seconds = 0.5) => recentEvents(world, name, seconds),
+        image: (path) => this.images.get(path),
+        burst: (x, y, particles = {}) => this.particles.burst(x, y, particles),
+        shake: (amount) => {
+          this.shake = Math.max(this.shake, amount);
+        },
+        random: () => this.particles.random(),
+      });
+    } finally {
+      // Whatever the hook changed (transform, alpha, blend mode, filter) ends with it.
+      ctx.restore();
     }
   }
 
@@ -389,6 +514,20 @@ class View {
 }
 
 type AnimationState = "idle" | "run" | "jump" | "fall";
+
+function recentEvents(world: World, name: string | undefined, seconds: number): DrawEvent[] {
+  const since = world.time - seconds;
+  const result: DrawEvent[] = [];
+  // Events are in time order, so walk back until they get too old.
+  for (let i = world.events.length - 1; i >= 0; i--) {
+    const event = world.events[i]!;
+    if (event.time < since) break;
+    const eventName = event.type === "custom" ? event.name : event.type;
+    if (name !== undefined && eventName !== name) continue;
+    result.push({ name: eventName, time: event.time, x: event.x, y: event.y, entity: event.entity, data: event.type === "custom" ? event.data : undefined });
+  }
+  return result.reverse();
+}
 
 function animationState(e: Entity): AnimationState {
   const b = e.body;

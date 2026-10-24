@@ -7,6 +7,7 @@ export type SoundPreset = (typeof SOUND_PRESETS)[number];
 
 export const AUDIO_EXTENSIONS = [".wav", ".mp3", ".ogg"] as const;
 export const IMAGE_EXTENSIONS = [".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp"] as const;
+export const FONT_EXTENSIONS = [".woff2", ".woff", ".ttf", ".otf"] as const;
 
 export const EFFECT_FIELDS: Record<string, FieldSpec> = {
   sound: {
@@ -29,7 +30,7 @@ export interface AssetReference {
   path: string;
   /** JSON path of the field that references it. */
   at: string;
-  kind: "image" | "audio" | "script";
+  kind: "image" | "audio" | "script" | "font" | "shader";
 }
 
 /** Every file a scene points at, so tools can check that they exist. */
@@ -40,10 +41,23 @@ export function collectAssetPaths(scene: SceneDef): AssetReference[] {
     if (typeof image === "string" && image !== "") refs.push({ path: image, at: `entities[${i}].components.sprite.image`, kind: "image" });
     const src = entity.components.script?.src;
     if (typeof src === "string" && src !== "") refs.push({ path: src, at: `entities[${i}].components.script.src`, kind: "script" });
+    // Images named in script params are preloaded for draw hooks (ctx.image).
+    const params = entity.components.script?.params;
+    if (params && typeof params === "object") {
+      for (const [key, value] of Object.entries(params)) {
+        if (typeof value === "string" && IMAGE_EXTENSIONS.some((ext) => value.toLowerCase().endsWith(ext))) {
+          refs.push({ path: value, at: `entities[${i}].components.script.params.${key}`, kind: "image" });
+        }
+      }
+    }
   });
   for (const [event, effect] of Object.entries(scene.effects ?? {})) {
     const sound = effect?.sound;
     if (typeof sound === "string" && sound !== "" && !isSoundPreset(sound)) refs.push({ path: sound, at: `effects.${event}.sound`, kind: "audio" });
   }
+  for (const [family, src] of Object.entries(scene.fonts ?? {})) {
+    if (typeof src === "string" && src !== "google") refs.push({ path: src, at: `fonts.${family}`, kind: "font" });
+  }
+  if (typeof scene.postfx?.shader === "string" && scene.postfx.shader !== "") refs.push({ path: scene.postfx.shader, at: "postfx.shader", kind: "shader" });
   return refs;
 }

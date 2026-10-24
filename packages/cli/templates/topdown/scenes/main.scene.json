@@ -1,0 +1,499 @@
+{
+  "name": "Crystal Grove",
+  "world": {
+    "width": 960,
+    "height": 540,
+    "gravity": 0,
+    "background": "#1f3a29"
+  },
+  "fonts": {
+    "Cinzel": "google"
+  },
+  "postfx": {
+    "shader": "shaders/dream.frag",
+    "uniforms": {
+      "bloom": 2.2,
+      "warmth": 0.8,
+      "vignette": 1.1
+    }
+  },
+  "effects": {
+    "collect": {
+      "sound": "coin",
+      "particles": {
+        "count": 14,
+        "color": "#7fe0ff",
+        "speed": 120,
+        "life": 0.5,
+        "size": 3,
+        "gravity": 0
+      }
+    },
+    "die": {
+      "sound": "explosion",
+      "shake": 8,
+      "particles": {
+        "count": 26,
+        "color": "#ff5d73",
+        "speed": 200,
+        "life": 0.6,
+        "size": 4,
+        "gravity": 0
+      }
+    },
+    "win": {
+      "sound": "powerup",
+      "shake": 3,
+      "particles": {
+        "count": 60,
+        "color": "#c77dff",
+        "speed": 240,
+        "life": 1.2,
+        "size": 4,
+        "gravity": 0
+      }
+    }
+  },
+  "entities": [
+    {
+      "id": "floor",
+      "components": {
+        "transform": {
+          "x": 480,
+          "y": 270
+        },
+        "sprite": {
+          "color": "#2f5a3a",
+          "image": "assets/grass.svg",
+          "tile": true,
+          "width": 960,
+          "height": 540,
+          "layer": -1
+        }
+      }
+    },
+    {
+      "id": "hero",
+      "components": {
+        "transform": {
+          "x": 80,
+          "y": 270
+        },
+        "body": {
+          "type": "dynamic",
+          "width": 22,
+          "height": 22
+        },
+        "sprite": {
+          "color": "#ff9f68",
+          "image": "assets/hero.svg",
+          "frameWidth": 24,
+          "width": 24,
+          "height": 24,
+          "idle": "0",
+          "run": "0-1",
+          "fps": 8,
+          "layer": 3
+        },
+        "topdown": {
+          "speed": 180
+        }
+      }
+    },
+    {
+      "id": "wall-top",
+      "components": {
+        "transform": {
+          "x": 480,
+          "y": 10
+        },
+        "body": {
+          "type": "static",
+          "width": 960,
+          "height": 20
+        },
+        "sprite": {
+          "color": "#2d6a3e",
+          "image": "assets/hedge.svg",
+          "tile": true
+        }
+      }
+    },
+    {
+      "id": "wall-bottom",
+      "components": {
+        "transform": {
+          "x": 480,
+          "y": 530
+        },
+        "body": {
+          "type": "static",
+          "width": 960,
+          "height": 20
+        },
+        "sprite": {
+          "color": "#2d6a3e",
+          "image": "assets/hedge.svg",
+          "tile": true
+        }
+      }
+    },
+    {
+      "id": "wall-left",
+      "components": {
+        "transform": {
+          "x": 10,
+          "y": 270
+        },
+        "body": {
+          "type": "static",
+          "width": 20,
+          "height": 540
+        },
+        "sprite": {
+          "color": "#2d6a3e",
+          "image": "assets/hedge.svg",
+          "tile": true
+        }
+      }
+    },
+    {
+      "id": "wall-right",
+      "components": {
+        "transform": {
+          "x": 950,
+          "y": 270
+        },
+        "body": {
+          "type": "static",
+          "width": 20,
+          "height": 540
+        },
+        "sprite": {
+          "color": "#2d6a3e",
+          "image": "assets/hedge.svg",
+          "tile": true
+        }
+      }
+    },
+    {
+      "id": "hedge-west",
+      "components": {
+        "transform": {
+          "x": 300,
+          "y": 190
+        },
+        "body": {
+          "type": "static",
+          "width": 40,
+          "height": 340
+        },
+        "sprite": {
+          "color": "#2d6a3e",
+          "image": "assets/hedge.svg",
+          "tile": true
+        }
+      }
+    },
+    {
+      "id": "hedge-east",
+      "components": {
+        "transform": {
+          "x": 640,
+          "y": 350
+        },
+        "body": {
+          "type": "static",
+          "width": 40,
+          "height": 340
+        },
+        "sprite": {
+          "color": "#2d6a3e",
+          "image": "assets/hedge.svg",
+          "tile": true
+        }
+      }
+    },
+    {
+      "id": "gem-1",
+      "components": {
+        "transform": {
+          "x": 150,
+          "y": 90
+        },
+        "body": {
+          "type": "static",
+          "width": 20,
+          "height": 20,
+          "sensor": true
+        },
+        "sprite": {
+          "color": "#4cc9f0",
+          "image": "assets/gem.svg",
+          "frameWidth": 20,
+          "idle": "0-1",
+          "fps": 3,
+          "layer": 1
+        },
+        "collectible": {
+          "score": 1
+        }
+      }
+    },
+    {
+      "id": "gem-2",
+      "components": {
+        "transform": {
+          "x": 180,
+          "y": 460
+        },
+        "body": {
+          "type": "static",
+          "width": 20,
+          "height": 20,
+          "sensor": true
+        },
+        "sprite": {
+          "color": "#4cc9f0",
+          "image": "assets/gem.svg",
+          "frameWidth": 20,
+          "idle": "0-1",
+          "fps": 3,
+          "layer": 1
+        },
+        "collectible": {
+          "score": 1
+        }
+      }
+    },
+    {
+      "id": "gem-3",
+      "components": {
+        "transform": {
+          "x": 470,
+          "y": 100
+        },
+        "body": {
+          "type": "static",
+          "width": 20,
+          "height": 20,
+          "sensor": true
+        },
+        "sprite": {
+          "color": "#4cc9f0",
+          "image": "assets/gem.svg",
+          "frameWidth": 20,
+          "idle": "0-1",
+          "fps": 3,
+          "layer": 1
+        },
+        "collectible": {
+          "score": 1
+        }
+      }
+    },
+    {
+      "id": "gem-4",
+      "components": {
+        "transform": {
+          "x": 470,
+          "y": 450
+        },
+        "body": {
+          "type": "static",
+          "width": 20,
+          "height": 20,
+          "sensor": true
+        },
+        "sprite": {
+          "color": "#4cc9f0",
+          "image": "assets/gem.svg",
+          "frameWidth": 20,
+          "idle": "0-1",
+          "fps": 3,
+          "layer": 1
+        },
+        "collectible": {
+          "score": 1
+        }
+      }
+    },
+    {
+      "id": "gem-5",
+      "components": {
+        "transform": {
+          "x": 820,
+          "y": 110
+        },
+        "body": {
+          "type": "static",
+          "width": 20,
+          "height": 20,
+          "sensor": true
+        },
+        "sprite": {
+          "color": "#4cc9f0",
+          "image": "assets/gem.svg",
+          "frameWidth": 20,
+          "idle": "0-1",
+          "fps": 3,
+          "layer": 1
+        },
+        "collectible": {
+          "score": 1
+        }
+      }
+    },
+    {
+      "id": "slime-middle",
+      "components": {
+        "transform": {
+          "x": 345,
+          "y": 280
+        },
+        "body": {
+          "type": "kinematic",
+          "width": 30,
+          "height": 24,
+          "sensor": true
+        },
+        "sprite": {
+          "color": "#c77dff",
+          "image": "assets/slime.svg",
+          "frameWidth": 32,
+          "idle": "0",
+          "run": "0-1",
+          "fps": 4,
+          "layer": 2
+        },
+        "patrol": {
+          "axis": "x",
+          "distance": 250,
+          "speed": 80
+        },
+        "hazard": {}
+      }
+    },
+    {
+      "id": "slime-east",
+      "components": {
+        "transform": {
+          "x": 690,
+          "y": 300
+        },
+        "body": {
+          "type": "kinematic",
+          "width": 30,
+          "height": 24,
+          "sensor": true
+        },
+        "sprite": {
+          "color": "#c77dff",
+          "image": "assets/slime.svg",
+          "frameWidth": 32,
+          "idle": "0",
+          "run": "0-1",
+          "fps": 4,
+          "layer": 2
+        },
+        "patrol": {
+          "axis": "x",
+          "distance": 230,
+          "speed": 90
+        },
+        "hazard": {}
+      }
+    },
+    {
+      "id": "thorns",
+      "components": {
+        "transform": {
+          "x": 770,
+          "y": 470
+        },
+        "body": {
+          "type": "static",
+          "width": 40,
+          "height": 80,
+          "sensor": true
+        },
+        "sprite": {
+          "color": "#ff5d73",
+          "image": "assets/thorns.svg",
+          "tile": true,
+          "layer": 0
+        },
+        "hazard": {}
+      }
+    },
+    {
+      "id": "portal",
+      "components": {
+        "transform": {
+          "x": 880,
+          "y": 470
+        },
+        "body": {
+          "type": "static",
+          "width": 40,
+          "height": 40,
+          "sensor": true
+        },
+        "sprite": {
+          "color": "#7b2cbf",
+          "image": "assets/portal.svg",
+          "frameWidth": 40,
+          "idle": "0-1",
+          "fps": 4,
+          "flip": false,
+          "layer": 1
+        },
+        "emitter": {
+          "rate": 8,
+          "color": "#e0b0ff",
+          "speed": 40,
+          "spread": 360,
+          "life": 0.9,
+          "size": 3,
+          "gravity": 0
+        },
+        "goal": {
+          "requireScore": 5
+        },
+        "script": {
+          "src": "scripts/portal.ts",
+          "params": {
+            "need": 5
+          }
+        }
+      }
+    },
+    {
+      "id": "night",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": 0
+        },
+        "script": {
+          "src": "scripts/night.ts"
+        }
+      }
+    },
+    {
+      "id": "hud",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": 0
+        },
+        "script": {
+          "src": "scripts/hud.ts",
+          "params": {
+            "crystals": 5
+          }
+        }
+      }
+    }
+  ]
+}

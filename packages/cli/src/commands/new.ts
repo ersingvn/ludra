@@ -8,7 +8,7 @@ import { CliError } from "../project.ts";
 const TEMPLATES_DIR = fileURLToPath(new URL("../../templates/", import.meta.url));
 
 export function create(dir: string | undefined, options: { template?: string }): number {
-  if (!dir) throw new CliError("Usage: ludra new <folder> [--template platformer]");
+  if (!dir) throw new CliError("Usage: ludra new <folder> [--template platformer|topdown|breakout]");
   const template = options.template ?? "platformer";
   const source = join(TEMPLATES_DIR, template);
   if (!existsSync(source)) {

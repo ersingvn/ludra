@@ -10,11 +10,13 @@ import {
   type Platformer,
   type ScriptComponent,
   type Sprite,
+  type Topdown,
   type Transform,
 } from "./components.ts";
 import {
   getScript,
   ScriptError,
+  type DrawContext,
   type Script,
   type ScriptContext,
   type ScriptEntity,
@@ -38,8 +40,6 @@ export interface PlatformerState extends Platformer {
   /** True from a player-initiated jump until the apex, so only those jumps are cut short on release. */
   jumping: boolean;
   bufferTimer: number;
-  spawnX: number;
-  spawnY: number;
 }
 
 export interface PatrolState extends Patrol {
@@ -65,6 +65,9 @@ export interface Entity {
   body?: BodyState;
   sprite?: Sprite;
   platformer?: PlatformerState;
+  topdown?: Topdown;
+  /** Where a player respawns after dying. */
+  spawn?: { x: number; y: number };
   collectible?: Collectible;
   patrol?: PatrolState;
   hazard?: Hazard;
@@ -81,6 +84,7 @@ export type GameEvent = { frame: number; time: number; x: number; y: number } & 
   | { type: "die"; entity: string; cause: string }
   | { type: "stomp"; entity: string; enemy: string; score: number }
   | { type: "win"; entity: string; goal: string }
+  | { type: "bounce"; entity: string; other: string }
   /** Fired by a script with world.emit(name, data). */
   | { type: "custom"; name: string; entity: string; data?: unknown }
 );
@@ -133,6 +137,8 @@ const STOMP_TOLERANCE = 8;
 const FALL_MARGIN = 100;
 /** Bodies this close count as touching for `touch` hooks, so solids (doors, walls) can be touched too. */
 const TOUCH_MARGIN = 1;
+/** Impacts slower than this (px/s, after bounce) stop instead of bouncing. */
+const MIN_BOUNCE_SPEED = 40;
 const EPSILON = 1e-4;
 
 /**
@@ -161,6 +167,8 @@ export class World {
   private scriptInput: ScriptInput = { held: () => false, pressed: () => false };
   /** The script hook currently running, for error messages and event attribution. */
   private current: { entity: Entity; hook: string } | undefined;
+  /** True while a draw hook runs: the game can't be changed then. */
+  private drawing = false;
 
   constructor(scene: SceneDef, options: WorldOptions = {}) {
     this.width = scene.world?.width ?? 960;
@@ -195,6 +203,7 @@ export class World {
     if (this.won) return;
 
     this.updatePlatformers(input, pressed);
+    this.updateTopdown(input);
     this.updateScripts(input, pressed);
     if (this.won) return;
     this.updatePatrols();
@@ -286,15 +295,49 @@ export class World {
     const fn = script.module[hook];
     if (!fn) return;
     const ctx: ScriptContext = { self: this.handle(entity), world: this.api(), input: this.scriptInput, params: script.params, dt: FIXED_DT };
+    this.run(entity, hook, () => (fn as (ctx: ScriptContext, other?: ScriptEntity) => void).call(script.module, ctx, other));
+  }
+
+  /**
+   * Runs an entity's `draw` or `drawUI` hook. Called by the renderer, never by the
+   * simulation. `self` and `world` are read-only for the duration.
+   */
+  callDrawHook(entity: Entity, hook: "draw" | "drawUI", extras: Omit<DrawContext, "self" | "world" | "params">): void {
+    const script = entity.script;
+    const fn = script?.module[hook];
+    if (!script || !fn || entity.removed) return;
+    const ctx: DrawContext = { ...extras, self: this.handle(entity), world: this.api(), params: script.params };
+    this.drawing = true;
+    try {
+      this.run(entity, hook, () => fn.call(script.module, ctx));
+    } finally {
+      this.drawing = false;
+    }
+  }
+
+  /** True when any live entity's script has the given hook. */
+  hasHook(hook: "draw" | "drawUI"): boolean {
+    return this.entities.some((e) => !e.removed && typeof e.script?.module[hook] === "function");
+  }
+
+  private run(entity: Entity, hook: string, call: () => void): void {
+    const script = entity.script!;
     this.current = { entity, hook };
     try {
-      (fn as (ctx: ScriptContext, other?: ScriptEntity) => void).call(script.module, ctx, other);
+      call();
     } catch (err) {
       if (err instanceof ScriptError) throw err;
       const message = err instanceof Error ? err.message : String(err);
       throw new ScriptError({ src: script.src, entity: entity.id, hook, frame: this.frame }, message, { cause: err });
     } finally {
       this.current = undefined;
+    }
+  }
+
+  /** Draw hooks only paint, so the browser can't drift from what tests verified. */
+  private guard(what: string): void {
+    if (this.drawing) {
+      throw this.misuse(`${what} changes the game, which a draw hook can't do. Change the game in update or touch, and keep visual memory in ctx.local.`);
     }
   }
 
@@ -320,24 +363,28 @@ export class World {
         return e.transform.x;
       },
       set x(value: number) {
+        world.guard("Setting x");
         e.transform.x = value;
       },
       get y() {
         return e.transform.y;
       },
       set y(value: number) {
+        world.guard("Setting y");
         e.transform.y = value;
       },
       get vx() {
         return e.body?.vx ?? 0;
       },
       set vx(value: number) {
+        world.guard("Setting vx");
         if (e.body) e.body.vx = value;
       },
       get vy() {
         return e.body?.vy ?? 0;
       },
       set vy(value: number) {
+        world.guard("Setting vy");
         if (e.body) e.body.vy = value;
       },
       get grounded() {
@@ -353,7 +400,8 @@ export class World {
         return !e.removed;
       },
       get state() {
-        return e.state;
+        // A frozen copy while drawing, so a draw hook can't write game state by accident.
+        return world.drawing ? Object.freeze({ ...e.state }) : e.state;
       },
       has(component: string) {
         return component === "transform" || (component in e && (e as unknown as Record<string, unknown>)[component] !== undefined);
@@ -391,7 +439,14 @@ export class World {
       get score() {
         return world.score;
       },
+      get deaths() {
+        return world.deaths;
+      },
+      get won() {
+        return world.won;
+      },
       set score(value: number) {
+        world.guard("Setting score");
         world.score = value;
       },
       get: (id) => {
@@ -401,27 +456,34 @@ export class World {
       all: (component) =>
         world.entities.filter((e) => !component || world.handle(e).has(component)).map((e) => world.handle(e)),
       player: () => {
-        const e = world.entities.find((candidate) => candidate.platformer);
+        const e = world.entities.find(isPlayer);
         return e ? world.handle(e) : undefined;
       },
-      spawn: (def) => world.spawn(def),
+      spawn: (def) => {
+        world.guard("world.spawn");
+        return world.spawn(def);
+      },
       destroy: (target) => {
+        world.guard("world.destroy");
         const e = world.resolve(target);
         if (e) world.remove(e);
       },
       kill: (target) => {
+        world.guard("world.kill");
         const e = world.resolve(target);
         if (!e) return;
-        if (e.platformer && e.body) world.kill(e, world.current?.entity.id ?? "script");
+        if (isPlayer(e)) world.kill(e, world.current?.entity.id ?? "script");
         else world.remove(e);
       },
       win: () => {
+        world.guard("world.win");
         if (world.won) return;
         const by = world.current?.entity;
         world.won = true;
         world.emit({ type: "win", entity: by?.id ?? "script", goal: by?.id ?? "script", x: by?.transform.x ?? 0, y: by?.transform.y ?? 0 });
       },
       emit: (name, data) => {
+        world.guard("world.emit");
         if (typeof name !== "string" || name === "") throw world.misuse("world.emit needs a non-empty event name.");
         if ((EVENT_TYPES as readonly string[]).includes(name)) {
           throw world.misuse(`"${name}" is a built-in event and can't be emitted by scripts. Pick another name, e.g. "${name}-custom".`);
@@ -429,7 +491,10 @@ export class World {
         const by = world.current?.entity;
         world.emit({ type: "custom", name, entity: by?.id ?? "script", data, x: by?.transform.x ?? 0, y: by?.transform.y ?? 0 });
       },
-      random: () => world.random(),
+      random: () => {
+        world.guard("world.random (it advances the game's seed; use ctx.random in draw hooks)");
+        return world.random();
+      },
     };
     return this.scriptApi;
   }
@@ -462,14 +527,33 @@ export class World {
 
   // ------------------------------------------------------------ built-ins
 
+  /** Entities the player controls: platformers and topdown movers. */
   private players(): Entity[] {
-    return this.entities.filter((e) => e.platformer && e.body);
+    return this.entities.filter(isPlayer);
+  }
+
+  private updateTopdown(held: ReadonlySet<Action>): void {
+    for (const e of this.entities) {
+      const t = e.topdown;
+      const b = e.body;
+      if (!t || !b) continue;
+      let dx = (held.has("right") ? 1 : 0) - (held.has("left") ? 1 : 0);
+      let dy = (held.has("down") ? 1 : 0) - (held.has("up") ? 1 : 0);
+      if (t.directions === "x") dy = 0;
+      if (t.directions === "y") dx = 0;
+      if (t.directions === "4" && dx !== 0) dy = 0;
+      // Diagonals move at the same speed as straight lines.
+      const length = Math.hypot(dx, dy) || 1;
+      b.vx = (dx / length) * t.speed;
+      b.vy = (dy / length) * t.speed;
+    }
   }
 
   private updatePlatformers(held: ReadonlySet<Action>, pressed: ReadonlySet<Action>): void {
-    for (const e of this.players()) {
-      const p = e.platformer!;
-      const b = e.body!;
+    for (const e of this.entities) {
+      const p = e.platformer;
+      const b = e.body;
+      if (!p || !b) continue;
 
       const direction = (held.has("right") ? 1 : 0) - (held.has("left") ? 1 : 0);
       b.vx = direction * p.speed;
@@ -517,13 +601,18 @@ export class World {
   private updateBodies(): void {
     // Kinematic bodies move first, so anything standing on them can follow.
     const moved = new Map<Entity, { dx: number; dy: number }>();
+    const walls = this.entities.filter((e) => e.body?.type === "static" && !e.body.sensor);
     for (const e of this.entities) {
       const b = e.body;
       if (!b || b.type !== "kinematic") continue;
       const { x, y } = e.transform;
       e.transform.x += b.vx * FIXED_DT;
+      // A player-steered kinematic body (a paddle) stops at walls; scripted movers pass through.
+      if (e.topdown) for (const wall of walls) if (overlaps(e, wall)) e.transform.x = wall.transform.x + (Math.sign(e.transform.x - wall.transform.x) * (wall.body!.width + b.width)) / 2;
       e.transform.y += b.vy * FIXED_DT;
+      if (e.topdown) for (const wall of walls) if (overlaps(e, wall)) e.transform.y = wall.transform.y + (Math.sign(e.transform.y - wall.transform.y) * (wall.body!.height + b.height)) / 2;
       if (e.patrol) clampToPatrol(e, e.patrol);
+      if (e.topdown?.clampToWorld) this.clampToWorld(e);
       moved.set(e, { dx: e.transform.x - x, dy: e.transform.y - y });
     }
 
@@ -539,7 +628,8 @@ export class World {
         e.transform.y += carried.dy;
       }
 
-      b.vy = Math.min(b.vy + this.gravity * b.gravityScale * FIXED_DT, MAX_FALL_SPEED);
+      // Top-down movers ignore gravity; everything else falls.
+      if (!e.topdown) b.vy = Math.min(b.vy + this.gravity * b.gravityScale * FIXED_DT, MAX_FALL_SPEED);
       const wasGrounded = b.grounded;
       b.grounded = false;
       b.standingOn = undefined;
@@ -551,25 +641,45 @@ export class World {
         const half = (solid.body!.width + b.width) / 2;
         if (b.vx > 0) e.transform.x = solid.transform.x - half;
         else if (b.vx < 0) e.transform.x = solid.transform.x + half;
-        b.vx = 0;
+        b.vx = this.rebound(e, solid, b.vx);
       }
 
       e.transform.y += b.vy * FIXED_DT;
       for (const solid of solids) {
         if (!overlaps(e, solid)) continue;
         const half = (solid.body!.height + b.height) / 2;
-        if (b.vy > 0) {
-          e.transform.y = solid.transform.y - half;
+        const falling = b.vy > 0;
+        if (b.vy > 0) e.transform.y = solid.transform.y - half;
+        else if (b.vy < 0) e.transform.y = solid.transform.y + half;
+        b.vy = this.rebound(e, solid, b.vy);
+        // A body that stopped on top of something is standing on it; one that bounced off is airborne.
+        if (falling && b.vy === 0) {
           b.grounded = true;
           b.standingOn = solid;
-        } else if (b.vy < 0) {
-          e.transform.y = solid.transform.y + half;
         }
-        b.vy = 0;
       }
 
+      if (e.topdown?.clampToWorld) this.clampToWorld(e);
       if (b.grounded && !wasGrounded) this.emit({ type: "land", entity: e.id, ...feet(e) });
     }
+  }
+
+  /**
+   * The velocity along one axis after hitting `solid`: 0, or reversed and scaled by `bounce`.
+   * Slow impacts stop instead, so resting bodies don't jitter.
+   */
+  private rebound(e: Entity, solid: Entity, velocity: number): number {
+    const bounce = e.body!.bounce;
+    if (bounce <= 0 || Math.abs(velocity) * bounce < MIN_BOUNCE_SPEED) return 0;
+    this.emit({ type: "bounce", entity: e.id, other: solid.id, ...e.transform });
+    return -velocity * bounce;
+  }
+
+  private clampToWorld(e: Entity): void {
+    const halfWidth = (e.body?.width ?? 0) / 2;
+    const halfHeight = (e.body?.height ?? 0) / 2;
+    e.transform.x = Math.min(this.width - halfWidth, Math.max(halfWidth, e.transform.x));
+    e.transform.y = Math.min(this.height - halfHeight, Math.max(halfHeight, e.transform.y));
   }
 
   private updateCollectibles(): void {
@@ -592,7 +702,7 @@ export class World {
       }
       for (const hazard of this.entities.filter((e) => e.hazard && e.body)) {
         if (!overlaps(player, hazard)) continue;
-        if (hazard.hazard!.stompable && isStomp(player, hazard)) {
+        if (hazard.hazard!.stompable && player.platformer && isStomp(player, hazard)) {
           this.remove(hazard);
           b.vy = -player.platformer!.jumpSpeed * STOMP_BOUNCE;
           this.score += hazard.hazard!.score;
@@ -619,18 +729,20 @@ export class World {
   /** Sends a player back to where it started. Collected items stay collected. */
   private kill(player: Entity, cause: string): void {
     const b = player.body!;
-    const p = player.platformer!;
     this.deaths++;
     this.emit({ type: "die", entity: player.id, cause, ...player.transform });
-    player.transform.x = p.spawnX;
-    player.transform.y = p.spawnY;
+    player.transform.x = player.spawn?.x ?? player.transform.x;
+    player.transform.y = player.spawn?.y ?? player.transform.y;
     b.vx = 0;
     b.vy = 0;
     b.grounded = false;
     b.standingOn = undefined;
-    p.coyoteTimer = 0;
-    p.bufferTimer = 0;
-    p.jumping = false;
+    const p = player.platformer;
+    if (p) {
+      p.coyoteTimer = 0;
+      p.bufferTimer = 0;
+      p.jumping = false;
+    }
   }
 }
 
@@ -646,10 +758,10 @@ function createEntity(def: EntityDef): Entity {
       coyoteTimer: 0,
       bufferTimer: 0,
       jumping: false,
-      spawnX: transform.x,
-      spawnY: transform.y,
     };
   }
+  if (c.topdown) entity.topdown = resolveComponent<Topdown>("topdown", c.topdown);
+  if (entity.platformer || entity.topdown) entity.spawn = { x: transform.x, y: transform.y };
   if (c.collectible) entity.collectible = resolveComponent<Collectible>("collectible", c.collectible);
   if (c.patrol) entity.patrol = { ...resolveComponent<Patrol>("patrol", c.patrol), originX: transform.x, originY: transform.y };
   if (c.hazard) entity.hazard = resolveComponent<Hazard>("hazard", c.hazard);
@@ -657,6 +769,10 @@ function createEntity(def: EntityDef): Entity {
   if (c.emitter) entity.emitter = resolveComponent<Emitter>("emitter", c.emitter);
   if (c.camera) entity.camera = resolveComponent<Camera>("camera", c.camera);
   return entity;
+}
+
+function isPlayer(e: Entity): boolean {
+  return !!(e.platformer || e.topdown) && !!e.body;
 }
 
 function feet(e: Entity): { x: number; y: number } {

@@ -88,12 +88,14 @@ export function readScene(project: Project): SceneLoad {
   return { scene: missing.length === 0 ? scene : undefined, diagnostics: [...diagnostics, ...missing] };
 }
 
-/** Image and audio files the scene references that are not in the project. */
+const EXAMPLE_FILE = { image: "player.svg", audio: "jump.wav", script: "enemy.ts", font: "pixel.woff2", shader: "crt.frag" } as const;
+
+/** Files the scene references that are not in the project. */
 function missingAssets(project: Project, scene: SceneDef): Diagnostic[] {
   return collectAssetPaths(scene)
     .filter((ref) => !isInside(project.dir, resolve(project.dir, ref.path)) || !existsSync(resolve(project.dir, ref.path)))
     .map((ref) => {
-      const folder = ref.kind === "script" ? "scripts" : "assets";
+      const folder = ref.kind === "script" ? "scripts" : ref.kind === "shader" ? "shaders" : "assets";
       const available = listFiles(project.dir, folder);
       return {
         severity: "error" as const,
@@ -103,7 +105,7 @@ function missingAssets(project: Project, scene: SceneDef): Diagnostic[] {
         fix:
           available.length > 0
             ? `Create it, or use one of: ${available.join(", ")}.`
-            : `Create it (paths are relative to the folder with ludra.json, e.g. "${folder}/${ref.kind === "script" ? "enemy.ts" : "player.svg"}").`,
+            : `Create it (paths are relative to the folder with ludra.json, e.g. "${folder}/${EXAMPLE_FILE[ref.kind]}").`,
       };
     });
 }

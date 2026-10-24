@@ -1,5 +1,5 @@
 import { COMPONENT_NAMES, COMPONENTS, isComponentName, isFrameList, PARTICLE_FIELDS, type ComponentName, type FieldSpec } from "./components.ts";
-import { AUDIO_EXTENSIONS, EFFECT_FIELDS, IMAGE_EXTENSIONS, isSoundPreset, SOUND_PRESETS } from "./effects.ts";
+import { AUDIO_EXTENSIONS, EFFECT_FIELDS, FONT_EXTENSIONS, IMAGE_EXTENSIONS, isSoundPreset, SOUND_PRESETS } from "./effects.ts";
 import { EVENT_TYPES, type Diagnostic, type SceneDef } from "./types.ts";
 
 export interface ValidationResult {
@@ -54,6 +54,8 @@ export function validateScene(raw: unknown): ValidationResult {
   }
 
   if (raw.effects !== undefined) validateEffects(raw.effects, error, warn);
+  if (raw.fonts !== undefined) validateFonts(raw.fonts, error);
+  if (raw.postfx !== undefined) validatePostFx(raw.postfx, error);
 
   if (!Array.isArray(raw.entities)) {
     error("E_NO_ENTITIES", "entities", 'A scene needs an "entities" array.', 'Add "entities": [].');
@@ -63,6 +65,7 @@ export function validateScene(raw: unknown): ValidationResult {
   const ids = new Map<string, number>();
   let hasPlayer = false;
   let hasDynamic = false;
+  const worldGravity = isObject(raw.world) && typeof raw.world.gravity === "number" ? raw.world.gravity : 1800;
   let hasSolid = false;
   let availableScore = 0;
   const goals: { path: string; label: string; requireScore: number }[] = [];
@@ -150,6 +153,22 @@ export function validateScene(raw: unknown): ValidationResult {
 
     const body = isObject(components.body) ? components.body : undefined;
     const bodyType = body?.type ?? "static";
+    if ("topdown" in components && body && bodyType === "static") {
+      error(
+        "E_TOPDOWN_NEEDS_MOVING_BODY",
+        `${path}.components.body.type`,
+        `Entity ${label} has "topdown" but a static body, so it can never move.`,
+        'Use "type": "dynamic" to collide with walls, or "kinematic" to pass through them (a paddle or a ship).',
+      );
+    }
+    if ("topdown" in components && "platformer" in components) {
+      error(
+        "E_TWO_CONTROLLERS",
+        `${path}.components`,
+        `Entity ${label} has both "platformer" and "topdown", which would fight over its movement.`,
+        "Keep one: platformer for side-view games with gravity, topdown for top-down games, paddles and ships.",
+      );
+    }
     if ("platformer" in components && body && bodyType !== "dynamic") {
       error(
         "E_PLATFORMER_NEEDS_DYNAMIC_BODY",
@@ -181,8 +200,10 @@ export function validateScene(raw: unknown): ValidationResult {
     if (isObject(components.hazard) && components.hazard.stompable === true) availableScore += numberOr(components.hazard.score, 0);
     if (isObject(components.goal)) goals.push({ path: `${path}.components.goal.requireScore`, label, requireScore: numberOr(components.goal.requireScore, 0) });
 
-    if ("platformer" in components) hasPlayer = true;
-    if (body && bodyType === "dynamic") hasDynamic = true;
+    if ("platformer" in components || "topdown" in components) hasPlayer = true;
+    // Only bodies that gravity actually pulls down need something to stand on.
+    const falls = body && bodyType === "dynamic" && !("topdown" in components) && body.gravityScale !== 0;
+    if (falls && worldGravity !== 0) hasDynamic = true;
     if (body && bodyType !== "dynamic" && body.sensor !== true) hasSolid = true;
   });
 
@@ -205,7 +226,7 @@ export function validateScene(raw: unknown): ValidationResult {
     }
   }
   if (!hasPlayer) {
-    warn("W_NO_PLAYER", "entities", 'No entity has a "platformer" component, so nothing responds to input.');
+    warn("W_NO_PLAYER", "entities", 'No entity has a "platformer" or "topdown" component, so nothing responds to input (fine if scripts read input).');
   }
 
   return result();
@@ -259,6 +280,35 @@ function validateFields(
   for (const [field, spec] of Object.entries(fields)) {
     if (spec.default === undefined && !(field in value)) {
       error("E_MISSING_FIELD", `${path}.${field}`, `${owner}.${field} is required${where}.`, `Add "${field}": <${spec.type}>. ${spec.description}`);
+    }
+  }
+}
+
+function validateFonts(fonts: unknown, error: Report): void {
+  const example = 'Use "fonts": { "Orbitron": "google", "Pixel": "assets/pixel.woff2" }.';
+  if (!isObject(fonts)) return void error("E_FONTS_NOT_OBJECT", "fonts", '"fonts" must map font family names to "google" or a font file.', example);
+  for (const [family, src] of Object.entries(fonts)) {
+    const ok = typeof src === "string" && (src === "google" || FONT_EXTENSIONS.some((ext) => src.toLowerCase().endsWith(ext)));
+    if (!ok) {
+      error("E_INVALID_FONT", `fonts.${family}`, `fonts.${family} must be "google" or a font file (${FONT_EXTENSIONS.join(", ")}), got ${describe(src)}.`, example);
+    }
+  }
+}
+
+function validatePostFx(postfx: unknown, error: Report): void {
+  const example = 'Use "postfx": { "shader": "shaders/crt.frag", "uniforms": { "strength": 0.5 } }.';
+  if (!isObject(postfx)) return void error("E_POSTFX_NOT_OBJECT", "postfx", '"postfx" must be an object.', example);
+  if (typeof postfx.shader !== "string" || postfx.shader === "") {
+    error("E_POSTFX_SHADER", "postfx.shader", "postfx.shader must be the path of a GLSL fragment shader.", example);
+  }
+  if (postfx.uniforms !== undefined) {
+    if (!isObject(postfx.uniforms)) return void error("E_POSTFX_UNIFORMS", "postfx.uniforms", "postfx.uniforms must map names to numbers.", example);
+    for (const [name, value] of Object.entries(postfx.uniforms)) {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) || name.startsWith("u_")) {
+        error("E_POSTFX_UNIFORMS", `postfx.uniforms.${name}`, `"${name}" is not a usable uniform name. Use a GLSL identifier that doesn't start with "u_" (reserved for the engine).`);
+      } else if (typeof value !== "number" || !Number.isFinite(value)) {
+        error("E_POSTFX_UNIFORMS", `postfx.uniforms.${name}`, `postfx.uniforms.${name} must be a number, got ${describe(value)}.`);
+      }
     }
   }
 }

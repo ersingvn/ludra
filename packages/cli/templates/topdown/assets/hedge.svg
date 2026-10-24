@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">
+  <!-- Tile: a dense hedge, seen from above. Walls of the grove. -->
+  <rect width="20" height="20" fill="#2d6a3e"/>
+  <circle cx="5" cy="5" r="5" fill="#3f8a50"/>
+  <circle cx="15" cy="6" r="5" fill="#357a46"/>
+  <circle cx="10" cy="14" r="6" fill="#3f8a50"/>
+  <circle cx="4" cy="4" r="1.6" fill="#5fbf6a"/>
+  <circle cx="13" cy="12" r="1.8" fill="#5fbf6a"/>
+  <circle cx="17" cy="17" r="1" fill="#1f4d2c"/>
+</svg>
