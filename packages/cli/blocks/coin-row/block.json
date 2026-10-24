@@ -1,0 +1,157 @@
+{
+  "name": "coin-row",
+  "description": "Five spinning coins in a row, 40px apart.",
+  "tags": [
+    "platformer",
+    "collectible"
+  ],
+  "usage": "--at x,y centers the row 40px above (x, y), at head height for a player walking on that surface. Each coin is worth 1 point.",
+  "entities": [
+    {
+      "id": "{id}-1",
+      "components": {
+        "transform": {
+          "dx": -80,
+          "dy": -40
+        },
+        "body": {
+          "type": "static",
+          "width": 20,
+          "height": 20,
+          "sensor": true
+        },
+        "sprite": {
+          "shape": "circle",
+          "color": "#ffd166",
+          "image": "assets/coin.svg",
+          "frameWidth": 20,
+          "idle": "0-3",
+          "layer": 1
+        },
+        "collectible": {
+          "score": 1
+        }
+      }
+    },
+    {
+      "id": "{id}-2",
+      "components": {
+        "transform": {
+          "dx": -40,
+          "dy": -40
+        },
+        "body": {
+          "type": "static",
+          "width": 20,
+          "height": 20,
+          "sensor": true
+        },
+        "sprite": {
+          "shape": "circle",
+          "color": "#ffd166",
+          "image": "assets/coin.svg",
+          "frameWidth": 20,
+          "idle": "0-3",
+          "layer": 1
+        },
+        "collectible": {
+          "score": 1
+        }
+      }
+    },
+    {
+      "id": "{id}-3",
+      "components": {
+        "transform": {
+          "dx": 0,
+          "dy": -40
+        },
+        "body": {
+          "type": "static",
+          "width": 20,
+          "height": 20,
+          "sensor": true
+        },
+        "sprite": {
+          "shape": "circle",
+          "color": "#ffd166",
+          "image": "assets/coin.svg",
+          "frameWidth": 20,
+          "idle": "0-3",
+          "layer": 1
+        },
+        "collectible": {
+          "score": 1
+        }
+      }
+    },
+    {
+      "id": "{id}-4",
+      "components": {
+        "transform": {
+          "dx": 40,
+          "dy": -40
+        },
+        "body": {
+          "type": "static",
+          "width": 20,
+          "height": 20,
+          "sensor": true
+        },
+        "sprite": {
+          "shape": "circle",
+          "color": "#ffd166",
+          "image": "assets/coin.svg",
+          "frameWidth": 20,
+          "idle": "0-3",
+          "layer": 1
+        },
+        "collectible": {
+          "score": 1
+        }
+      }
+    },
+    {
+      "id": "{id}-5",
+      "components": {
+        "transform": {
+          "dx": 80,
+          "dy": -40
+        },
+        "body": {
+          "type": "static",
+          "width": 20,
+          "height": 20,
+          "sensor": true
+        },
+        "sprite": {
+          "shape": "circle",
+          "color": "#ffd166",
+          "image": "assets/coin.svg",
+          "frameWidth": 20,
+          "idle": "0-3",
+          "layer": 1
+        },
+        "collectible": {
+          "score": 1
+        }
+      }
+    }
+  ],
+  "files": [
+    "assets/coin.svg"
+  ],
+  "effects": {
+    "collect": {
+      "sound": "coin",
+      "particles": {
+        "count": 14,
+        "color": "#ffd166",
+        "speed": 140,
+        "life": 0.45,
+        "size": 3,
+        "gravity": 200
+      }
+    }
+  }
+}

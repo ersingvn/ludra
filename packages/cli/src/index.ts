@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
+import { add, blocks } from "./commands/blocks.ts";
 import { check } from "./commands/check.ts";
 import { components } from "./commands/components.ts";
 import { dev } from "./commands/dev.ts";
@@ -34,6 +35,10 @@ Usage
       --json                                   Machine-readable output
   ludra test [folder] [--json]                 Run tests/*.test.json
   ludra components [name] [--json]             Reference for every component and field
+  ludra blocks [--json]                        Catalog of ready-made gameplay blocks
+  ludra add <block> [folder] --at x,y          Add a block: entities, scripts, art and effects
+      --id name                                Id prefix for its entities (default: the block name)
+      --force                                  Replace files you changed that the block also ships
   ludra dev [folder] [--port 5173]             Play the game in the browser with live reload
 
 Folder defaults to the current directory.`;
@@ -54,10 +59,13 @@ async function main(argv: string[]): Promise<number> {
       json: { type: "boolean" },
       template: { type: "string" },
       port: { type: "string" },
+      at: { type: "string" },
+      id: { type: "string" },
+      force: { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },
   });
-  const [command, target] = positionals;
+  const [command, target, extra] = positionals;
 
   if (values.help || !command || command === "help") {
     console.log(HELP);
@@ -76,6 +84,10 @@ async function main(argv: string[]): Promise<number> {
       return components(target, values);
     case "dev":
       return dev(target ?? ".", values);
+    case "blocks":
+      return blocks(values);
+    case "add":
+      return add(target, extra ?? ".", values);
     default:
       throw new CliError(`Unknown command "${command}".\n\n${HELP}`);
   }

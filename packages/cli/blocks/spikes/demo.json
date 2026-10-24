@@ -1,0 +1,16 @@
+{
+  "at": [
+    400,
+    500
+  ],
+  "tests": [
+    {
+      "name": "kill a player who walks into them",
+      "inputs": "right:2s",
+      "assert": [
+        "deaths == 1",
+        "events.die == 1"
+      ]
+    }
+  ]
+}

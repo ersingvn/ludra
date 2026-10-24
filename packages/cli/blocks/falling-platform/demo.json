@@ -1,0 +1,24 @@
+{
+  "at": [
+    400,
+    400
+  ],
+  "tests": [
+    {
+      "name": "shakes, falls, and comes back",
+      "playerAt": [
+        400,
+        372
+      ],
+      "duration": "5s",
+      "assert": [
+        "falling-platform.state.phase == \"shaking\" at 0.3s",
+        "falling-platform.state.phase == \"falling\" at 0.8s",
+        "player.grounded == true at 2s",
+        "player.y > 450 at 2s",
+        "falling-platform.state.phase == \"idle\" at 4.8s",
+        "falling-platform.y == 400 at 4.8s"
+      ]
+    }
+  ]
+}

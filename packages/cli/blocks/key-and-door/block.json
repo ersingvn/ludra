@@ -1,0 +1,90 @@
+{
+  "name": "key-and-door",
+  "description": "A key and the locked door it opens. The door is solid until the player touches it after taking the key.",
+  "tags": [
+    "platformer",
+    "puzzle",
+    "script"
+  ],
+  "usage": "--at x,y floats the key 40px above (x, y) and stands the door 200px to the right on the same surface. Move either freely; they stay linked through the key's params.door.",
+  "entities": [
+    {
+      "id": "{id}-key",
+      "components": {
+        "transform": {
+          "dx": 0,
+          "dy": -40
+        },
+        "body": {
+          "type": "static",
+          "width": 24,
+          "height": 24,
+          "sensor": true
+        },
+        "sprite": {
+          "color": "#ffd166",
+          "image": "assets/key.svg",
+          "layer": 1
+        },
+        "script": {
+          "src": "scripts/key.ts",
+          "params": {
+            "door": "{id}-door"
+          }
+        }
+      }
+    },
+    {
+      "id": "{id}-door",
+      "components": {
+        "transform": {
+          "dx": 200,
+          "dy": -60
+        },
+        "body": {
+          "type": "static",
+          "width": 28,
+          "height": 120
+        },
+        "sprite": {
+          "color": "#7a4e2d",
+          "image": "assets/door.svg",
+          "layer": 1
+        },
+        "script": {
+          "src": "scripts/locked-door.ts"
+        }
+      }
+    }
+  ],
+  "files": [
+    "scripts/key.ts",
+    "scripts/locked-door.ts",
+    "assets/key.svg",
+    "assets/door.svg"
+  ],
+  "effects": {
+    "key": {
+      "sound": "powerup",
+      "particles": {
+        "count": 18,
+        "color": "#ffd166",
+        "speed": 150,
+        "life": 0.6,
+        "size": 3,
+        "gravity": 150
+      }
+    },
+    "door-open": {
+      "sound": "explosion",
+      "shake": 6,
+      "particles": {
+        "count": 26,
+        "color": "#a0714b",
+        "speed": 200,
+        "life": 0.6,
+        "size": 4
+      }
+    }
+  }
+}

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="12" height="6" viewBox="0 0 12 6">
+  <!-- A glowing energy bolt. -->
+  <rect x="0" y="0" width="12" height="6" rx="3" fill="#ff5d73"/>
+  <rect x="2" y="1.5" width="8" height="3" rx="1.5" fill="#ffd1d8"/>
+</svg>

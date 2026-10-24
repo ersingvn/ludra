@@ -1,0 +1,22 @@
+{
+  "at": [
+    500,
+    500
+  ],
+  "tests": [
+    {
+      "name": "walks along its patrol",
+      "duration": "2s",
+      "assert": [
+        "patrol-enemy.x > 600"
+      ]
+    },
+    {
+      "name": "kills the player on contact",
+      "inputs": "right:3s",
+      "assert": [
+        "deaths >= 1"
+      ]
+    }
+  ]
+}

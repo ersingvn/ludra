@@ -1,0 +1,59 @@
+{
+  "name": "turret",
+  "description": "A turret that fires deadly bullets at a steady rhythm. Bullets fly through walls and vanish after params.range px.",
+  "tags": [
+    "platformer",
+    "enemy",
+    "script"
+  ],
+  "usage": "--at x,y sets it on the surface whose top is y. params.direction is -1 (fire left) or 1 (right); params.interval is seconds between shots. Bullets fly at the turret's height, so a normal jump clears them.",
+  "entities": [
+    {
+      "id": "{id}",
+      "components": {
+        "transform": {
+          "dx": 0,
+          "dy": -12
+        },
+        "body": {
+          "type": "static",
+          "width": 32,
+          "height": 24
+        },
+        "sprite": {
+          "color": "#8fa3d9",
+          "image": "assets/turret.svg",
+          "layer": 2
+        },
+        "script": {
+          "src": "scripts/turret.ts",
+          "params": {
+            "interval": 1.5,
+            "speed": 240,
+            "direction": -1,
+            "range": 420
+          }
+        }
+      }
+    }
+  ],
+  "files": [
+    "scripts/turret.ts",
+    "scripts/bullet.ts",
+    "assets/turret.svg",
+    "assets/bullet.svg"
+  ],
+  "effects": {
+    "turret-shot": {
+      "sound": "blip",
+      "particles": {
+        "count": 6,
+        "color": "#ffd166",
+        "speed": 90,
+        "life": 0.2,
+        "size": 2,
+        "gravity": 0
+      }
+    }
+  }
+}

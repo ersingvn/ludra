@@ -1,0 +1,64 @@
+{
+  "name": "chasing-enemy",
+  "description": "An enemy that waits, then runs at the player once they come close. Landing on it stomps it.",
+  "tags": [
+    "platformer",
+    "enemy",
+    "script"
+  ],
+  "usage": "--at x,y puts it on the surface whose top is y. params.range is how close the player must be (px), params.speed how fast it runs. It does not stop at ledges; keep it on a wide floor.",
+  "entities": [
+    {
+      "id": "{id}",
+      "components": {
+        "transform": {
+          "dx": 0,
+          "dy": -13
+        },
+        "body": {
+          "type": "kinematic",
+          "width": 32,
+          "height": 26,
+          "sensor": true
+        },
+        "sprite": {
+          "color": "#c77dff",
+          "image": "assets/slime.svg",
+          "frameWidth": 32,
+          "idle": "0",
+          "run": "0-1",
+          "fps": 6,
+          "layer": 2
+        },
+        "hazard": {
+          "stompable": true,
+          "score": 1
+        },
+        "script": {
+          "src": "scripts/chaser.ts",
+          "params": {
+            "speed": 70,
+            "range": 220
+          }
+        }
+      }
+    }
+  ],
+  "files": [
+    "scripts/chaser.ts",
+    "assets/slime.svg"
+  ],
+  "effects": {
+    "stomp": {
+      "sound": "hit",
+      "shake": 5,
+      "particles": {
+        "count": 18,
+        "color": "#c77dff",
+        "speed": 180,
+        "life": 0.5,
+        "size": 4
+      }
+    }
+  }
+}

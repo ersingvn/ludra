@@ -1,0 +1,36 @@
+{
+  "name": "time-limit",
+  "description": "A countdown. When it reaches zero the player dies and the clock restarts.",
+  "tags": [
+    "rules",
+    "script"
+  ],
+  "usage": "No --at needed. Set params.seconds. Its state.left is the time remaining, so tests can check it.",
+  "positioned": false,
+  "entities": [
+    {
+      "id": "{id}",
+      "components": {
+        "transform": {
+          "dx": 0,
+          "dy": 0
+        },
+        "script": {
+          "src": "scripts/time-limit.ts",
+          "params": {
+            "seconds": 30
+          }
+        }
+      }
+    }
+  ],
+  "files": [
+    "scripts/time-limit.ts"
+  ],
+  "effects": {
+    "timeout": {
+      "sound": "explosion",
+      "shake": 8
+    }
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "name": "patrol-enemy",
+  "description": "An enemy that walks back and forth. Touching it kills; landing on it stomps it.",
+  "tags": [
+    "platformer",
+    "enemy"
+  ],
+  "usage": "--at x,y starts it on the surface whose top is y; it walks patrol.distance px to the right and back.",
+  "entities": [
+    {
+      "id": "{id}",
+      "components": {
+        "transform": {
+          "dx": 0,
+          "dy": -13
+        },
+        "body": {
+          "type": "kinematic",
+          "width": 32,
+          "height": 26,
+          "sensor": true
+        },
+        "sprite": {
+          "color": "#c77dff",
+          "image": "assets/slime.svg",
+          "frameWidth": 32,
+          "idle": "0",
+          "run": "0-1",
+          "fps": 4,
+          "layer": 2
+        },
+        "patrol": {
+          "axis": "x",
+          "distance": 160,
+          "speed": 60
+        },
+        "hazard": {
+          "stompable": true,
+          "score": 1
+        }
+      }
+    }
+  ],
+  "files": [
+    "assets/slime.svg"
+  ],
+  "effects": {
+    "stomp": {
+      "sound": "hit",
+      "shake": 5,
+      "particles": {
+        "count": 18,
+        "color": "#c77dff",
+        "speed": 180,
+        "life": 0.5,
+        "size": 4
+      }
+    }
+  }
+}

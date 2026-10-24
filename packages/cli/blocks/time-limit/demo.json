@@ -1,0 +1,25 @@
+{
+  "at": [
+    0,
+    0
+  ],
+  "tests": [
+    {
+      "name": "counts down",
+      "duration": "1s",
+      "assert": [
+        "time-limit.state.left < 29.1",
+        "time-limit.state.left > 28.9"
+      ]
+    },
+    {
+      "name": "kills the player when time runs out, then restarts",
+      "duration": "31s",
+      "assert": [
+        "deaths == 1",
+        "events.timeout == 1",
+        "time-limit.state.left > 28"
+      ]
+    }
+  ]
+}

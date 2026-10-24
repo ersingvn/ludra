@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="24" viewBox="0 0 32 24">
+  <!-- A squat cannon facing left. Mirror it (or set sprite.flip) for one that fires right. -->
+  <rect x="4" y="14" width="26" height="10" rx="3" fill="#4b5263"/>
+  <rect x="4" y="14" width="26" height="3" rx="1.5" fill="#6b7489"/>
+  <circle cx="18" cy="12" r="8" fill="#8fa3d9"/>
+  <circle cx="18" cy="12" r="5" fill="#c3d0f2"/>
+  <rect x="0" y="8" width="14" height="7" rx="2" fill="#5d6f9e"/>
+  <rect x="0" y="9" width="3" height="5" fill="#2b3150"/>
+  <circle cx="20" cy="11" r="2" fill="#ff5d73"/>
+</svg>

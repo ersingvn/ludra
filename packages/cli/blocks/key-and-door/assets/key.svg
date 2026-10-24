@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <!-- A gold key. -->
+  <circle cx="8" cy="12" r="6" fill="#e0a526"/>
+  <circle cx="8" cy="12" r="2.6" fill="#1b2140"/>
+  <rect x="12" y="10.5" width="11" height="3" rx="1" fill="#e0a526"/>
+  <rect x="18" y="13" width="2.5" height="4" fill="#e0a526"/>
+  <rect x="21" y="13" width="2" height="3" fill="#e0a526"/>
+  <circle cx="6" cy="9.5" r="1.4" fill="#fff3b0"/>
+</svg>

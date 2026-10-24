@@ -1,0 +1,17 @@
+{
+  "at": [
+    300,
+    500
+  ],
+  "tests": [
+    {
+      "name": "walking onto the pad launches the player high",
+      "inputs": "right:1s",
+      "duration": "1.6s",
+      "assert": [
+        "events.boing >= 1",
+        "player.y < 320 at 1.2s"
+      ]
+    }
+  ]
+}

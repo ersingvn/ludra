@@ -1,0 +1,35 @@
+{
+  "at": [
+    700,
+    500
+  ],
+  "tests": [
+    {
+      "name": "fires on a steady rhythm",
+      "duration": "4s",
+      "assert": [
+        "turret.state.shots >= 2",
+        "events.turret-shot >= 2"
+      ]
+    },
+    {
+      "name": "its bullets kill a player in their path",
+      "playerAt": [
+        400,
+        482
+      ],
+      "duration": "3s",
+      "assert": [
+        "deaths >= 1"
+      ]
+    },
+    {
+      "name": "bullets vanish after their range, so a far-away player is safe",
+      "duration": "4s",
+      "assert": [
+        "deaths == 0",
+        "turret-1.exists == false"
+      ]
+    }
+  ]
+}

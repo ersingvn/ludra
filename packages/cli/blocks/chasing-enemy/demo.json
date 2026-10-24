@@ -1,0 +1,32 @@
+{
+  "at": [
+    600,
+    500
+  ],
+  "tests": [
+    {
+      "name": "waits while the player is far away",
+      "duration": "1s",
+      "assert": [
+        "chasing-enemy.state.chasing == false",
+        "chasing-enemy.x == 600"
+      ]
+    },
+    {
+      "name": "chases once the player comes within range",
+      "inputs": "right:1.3s",
+      "duration": "1.5s",
+      "assert": [
+        "chasing-enemy.state.chasing == true",
+        "chasing-enemy.x < 600"
+      ]
+    },
+    {
+      "name": "kills the player on contact",
+      "inputs": "right:2.5s",
+      "assert": [
+        "deaths >= 1"
+      ]
+    }
+  ]
+}

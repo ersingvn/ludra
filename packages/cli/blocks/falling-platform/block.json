@@ -1,0 +1,55 @@
+{
+  "name": "falling-platform",
+  "description": "A cracked platform that shakes when stood on, falls after params.delay seconds, then comes back after params.respawn seconds.",
+  "tags": [
+    "platformer",
+    "movement",
+    "script"
+  ],
+  "usage": "--at x,y is the platform's center. Its state.phase is idle, shaking, falling or gone, so tests can check it.",
+  "entities": [
+    {
+      "id": "{id}",
+      "components": {
+        "transform": {
+          "dx": 0,
+          "dy": 0
+        },
+        "body": {
+          "type": "static",
+          "width": 100,
+          "height": 20
+        },
+        "sprite": {
+          "color": "#a0714b",
+          "image": "assets/falling-platform.svg"
+        },
+        "script": {
+          "src": "scripts/falling-platform.ts",
+          "params": {
+            "delay": 0.5,
+            "respawn": 3
+          }
+        }
+      }
+    }
+  ],
+  "files": [
+    "scripts/falling-platform.ts",
+    "assets/falling-platform.svg"
+  ],
+  "effects": {
+    "platform-crack": {
+      "sound": "thud",
+      "particles": {
+        "count": 8,
+        "color": "#a0714b",
+        "speed": 60,
+        "direction": 90,
+        "spread": 120,
+        "life": 0.5,
+        "size": 3
+      }
+    }
+  }
+}

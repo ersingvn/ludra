@@ -7,6 +7,8 @@ description: Make 2D games, such as platformers with levels, coins, enemies, haz
 
 Ludra is a game engine designed for agents. A game is plain JSON (scenes made of entities and components) and every step has a command whose output you can read: validate, simulate, look at a frame, run tests. Use them. Never guess whether a game works.
 
+Working is the floor, not the goal. **Before designing a game, read `DESIGN.md` in this skill's folder.** It covers level design, fairness checks, game feel, art direction and palettes, and a checklist to finish with.
+
 ## Start
 
 Commands below use `npx @ludra/cli`, which downloads the CLI from npm on first use; its command is `ludra`. Always write the full `@ludra/cli`: a bare `npx ludra` would fetch an unrelated package. Inside a clone of the Ludra repository itself (its root `package.json` is named `ludra-monorepo`), use `npm run ludra -- <command>` from the repo root instead. Ludra needs Node.js 22.18 or newer; if `npx` fails, tell the user and point them to https://github.com/ersingvn/ludra.
@@ -14,6 +16,7 @@ Commands below use `npx @ludra/cli`, which downloads the CLI from npm on first u
 - New game: `npx @ludra/cli new <folder>` (template `platformer`), then work inside that folder.
 - Existing game: read `ludra.json`, the entry scene and `tests/` first.
 - Component reference: `npx @ludra/cli components` (or `npx @ludra/cli components <name>`). It is generated from the engine, so it is always current. Trust it over memory.
+- **Blocks:** `npx @ludra/cli blocks` lists ready-made, tested gameplay pieces (jump pads, keys and doors, chasing and patrolling enemies, turrets, falling and moving platforms, teleporters, coins, spikes, time limits). `npx @ludra/cli add <block> --at x,y` copies its scripts and art into the project and places its entities, with `y` being the top of the surface it sits on. Prefer blocks over writing the same thing from scratch, then customize their `params`, art and combinations. Each block prints how to tune it.
 
 ## The loop
 
