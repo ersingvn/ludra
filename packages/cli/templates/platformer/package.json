@@ -8,6 +8,6 @@
     "test": "ludra test"
   },
   "devDependencies": {
-    "ludra": "^0.1.0"
+    "ludra": "^0.2.0"
   }
 }

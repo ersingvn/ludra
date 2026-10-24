@@ -7,15 +7,15 @@ Unity, Unreal and Godot are designed for humans clicking around an editor. Ludra
 You describe the game. The agent builds it with Ludra, checks it, plays it, tests it and hands it to you.
 
 ```
-you    > make me a platformer where you climb three ledges to collect coins
-claude > ludra new coin-climb
-         ludra check     ✓ 10 entities, no problems
-         ludra play --inputs "right:0.55s, right+jump:0.45s, ..." --ascii
-         ludra test      ✓ 4 passed, 0 failed
+you    > make me a platformer with spikes, a moving platform over a pit and an enemy to stomp
+claude > ludra new slime-valley
+         ludra check     ✓ 15 entities, no problems
+         ludra play --inputs "right:0.3s, right+jump:0.45s, ..." --watch player,lift,slime
+         ludra test      ✓ 6 passed, 0 failed (won == true, deaths == 0)
          Done. Run `ludra dev` to play it.
 ```
 
-> **Status:** early (v0.1). 2D platformer core and the agent toolchain work today. 3D, more components and an asset pipeline are on the [roadmap](#roadmap).
+> **Status:** early (v0.2). 2D platformers with enemies, hazards, moving platforms and goals, plus the full agent toolchain, work today. 3D and an asset pipeline are on the [roadmap](#roadmap).
 
 ## Why an engine for agents?
 
@@ -103,13 +103,9 @@ Add `--json` to any command for machine-readable output.
 
 ```json
 {
-  "tests": [
-    {
-      "name": "the level can be completed",
-      "inputs": "right:0.55s, right+jump:0.45s, right:0.45s, right+jump:0.45s, right:0.3s, wait:0.1s, right:0.25s, right+jump:0.45s, right:0.3s",
-      "assert": ["coin-1.exists == false at 1.2s", "score == 3", "player.y < 220"]
-    }
-  ]
+  "name": "the level can be completed without dying",
+  "inputs": "right:0.3s, right+jump:0.45s, right:0.85s, ..., right:1.5s",
+  "assert": ["won == true", "deaths == 0", "score == 4", "events.stomp == 1"]
 }
 ```
 
@@ -118,12 +114,16 @@ gameplay.test.json
   ✓ player rests on the ground
   ✓ player runs right
   ✓ jumping leaves the ground and lands again
-  ✓ the level can be completed
+  ✓ spikes kill the player, who respawns at the start
+  ✓ the lift carries the player over the pit
+  ✓ the level can be completed without dying
 
-4 passed, 0 failed
+6 passed, 0 failed
 ```
 
-## Components (v0.1)
+Assertions can check `score`, `deaths`, `won`, event counts (`events.jump`, `events.stomp`, ...) and any entity's `x`, `y`, `vx`, `vy`, `grounded` or `exists`, at the end or `at 1.5s`.
+
+## Components (v0.2)
 
 | Component | What it does |
 | --- | --- |
@@ -132,7 +132,12 @@ gameplay.test.json
 | `sprite` | Rectangle or circle with a color and draw layer |
 | `platformer` | Run and jump controls with coyote time, jump buffering and variable jump height |
 | `collectible` | Picked up by the player and adds to the score |
-| `camera` | The browser camera follows this entity |
+| `patrol` | Moves a kinematic body back and forth: moving platforms (they carry the player) and walking enemies |
+| `hazard` | Kills the player on touch, who respawns at the start. `stompable` enemies die when landed on |
+| `goal` | Completes the level, optionally only after reaching `requireScore` |
+| `camera` | The browser camera follows this entity through worlds wider than the window |
+
+Falling out of the bottom of the world also counts as a death.
 
 Run `ludra components` for every field, its type and its default.
 
@@ -151,7 +156,8 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how it fits together.
 
 ## Roadmap
 
-- **v0.2: more game.** Enemies and patrol paths, hazards, goals and level transitions, moving platforms that carry the player, multiple scenes.
+- ~~**v0.2: more game.** Enemies and patrol paths, hazards, goals, moving platforms that carry the player.~~ Done.
+- **v0.2.x:** multiple scenes and level transitions, checkpoints, lives.
 - **v0.3: looks.** Image sprites and spritesheets, tilemaps, particles, screen shake, text and UI, sound, plus asset packs and AI-generated assets.
 - **v0.4: real screenshots.** `ludra play --screenshot` renders actual frames headlessly so multimodal agents can see the game.
 - **v0.5: 3D.** The same scene format and agent tools on a WebGL renderer with real 3D physics.

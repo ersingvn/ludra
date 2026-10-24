@@ -11,7 +11,17 @@ export interface ComponentSpec {
   fields: Record<string, FieldSpec>;
 }
 
-export const COMPONENT_NAMES = ["transform", "body", "sprite", "platformer", "collectible", "camera"] as const;
+export const COMPONENT_NAMES = [
+  "transform",
+  "body",
+  "sprite",
+  "platformer",
+  "collectible",
+  "patrol",
+  "hazard",
+  "goal",
+  "camera",
+] as const;
 export type ComponentName = (typeof COMPONENT_NAMES)[number];
 
 /**
@@ -70,6 +80,32 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       score: { type: "number", default: 1, description: "Points added when collected." },
     },
   },
+  patrol: {
+    description:
+      "Moves a kinematic body back and forth between its start position and `distance` pixels along +axis. Use it for moving platforms (players standing on them are carried) and walking enemies.",
+    requires: ["transform", "body"],
+    fields: {
+      axis: { type: "enum", values: ["x", "y"], default: "x", description: "x = right and back, y = down and back." },
+      distance: { type: "number", min: 0, description: "Travel in pixels from the start position along +axis." },
+      speed: { type: "number", min: 0, default: 80, description: "Speed in px/s." },
+    },
+  },
+  hazard: {
+    description:
+      "Touching it kills a platformer, which respawns at its start position. Use for spikes, lava and enemies. Its body must be a sensor.",
+    requires: ["transform", "body"],
+    fields: {
+      stompable: { type: "boolean", default: false, description: "Landing on it from above destroys it and bounces the player instead." },
+      score: { type: "number", default: 0, description: "Points added when stomped." },
+    },
+  },
+  goal: {
+    description: "Touching it completes the level: the `won` flag is set and the simulation stops. Its body must be a sensor.",
+    requires: ["transform", "body"],
+    fields: {
+      requireScore: { type: "number", min: 0, default: 0, description: "Score needed before the goal accepts the player." },
+    },
+  },
   camera: {
     description: "The browser camera follows this entity. Without it, the camera follows the first platformer.",
     requires: ["transform"],
@@ -112,6 +148,21 @@ export interface Platformer {
 
 export interface Collectible {
   score: number;
+}
+
+export interface Patrol {
+  axis: "x" | "y";
+  distance: number;
+  speed: number;
+}
+
+export interface Hazard {
+  stompable: boolean;
+  score: number;
+}
+
+export interface Goal {
+  requireScore: number;
 }
 
 export interface Camera {
