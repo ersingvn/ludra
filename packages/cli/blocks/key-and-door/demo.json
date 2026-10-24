@@ -1,0 +1,31 @@
+{
+  "at": [
+    300,
+    500
+  ],
+  "tests": [
+    {
+      "name": "the door blocks a player without the key",
+      "playerAt": [
+        360,
+        482
+      ],
+      "inputs": "right:2s",
+      "assert": [
+        "key-and-door-door.exists == true",
+        "player.x < 490",
+        "events.key == 0"
+      ]
+    },
+    {
+      "name": "taking the key unlocks the door, which opens on contact",
+      "inputs": "right:2.5s",
+      "assert": [
+        "events.key == 1",
+        "events.door-open == 1",
+        "key-and-door-door.exists == false",
+        "player.x > 520"
+      ]
+    }
+  ]
+}

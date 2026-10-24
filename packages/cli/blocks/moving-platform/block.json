@@ -1,0 +1,38 @@
+{
+  "name": "moving-platform",
+  "description": "A platform that moves back and forth and carries whoever stands on it.",
+  "tags": [
+    "platformer",
+    "movement"
+  ],
+  "usage": "--at x,y is the platform's center where it starts. It moves patrol.distance px right and back; set patrol.axis to \"y\" for an elevator (it moves down first).",
+  "entities": [
+    {
+      "id": "{id}",
+      "components": {
+        "transform": {
+          "dx": 0,
+          "dy": 0
+        },
+        "body": {
+          "type": "kinematic",
+          "width": 120,
+          "height": 20
+        },
+        "sprite": {
+          "color": "#8fa3d9",
+          "image": "assets/lift.svg",
+          "tile": true
+        },
+        "patrol": {
+          "axis": "x",
+          "distance": 160,
+          "speed": 80
+        }
+      }
+    }
+  ],
+  "files": [
+    "assets/lift.svg"
+  ]
+}

@@ -1,0 +1,89 @@
+{
+  "name": "teleporter",
+  "description": "Two linked pads. Stepping on one moves the player to the other.",
+  "tags": [
+    "platformer",
+    "movement",
+    "script"
+  ],
+  "usage": "--at x,y puts pad A on the surface whose top is y and pad B 300px to the right. Move B anywhere (even onto a high ledge); each pad's params.target names the other.",
+  "entities": [
+    {
+      "id": "{id}-a",
+      "components": {
+        "transform": {
+          "dx": 0,
+          "dy": -6
+        },
+        "body": {
+          "type": "static",
+          "width": 40,
+          "height": 12,
+          "sensor": true
+        },
+        "sprite": {
+          "color": "#4cc9f0",
+          "image": "assets/teleporter.svg",
+          "frameWidth": 40,
+          "idle": "0-1",
+          "fps": 4,
+          "layer": 1
+        },
+        "script": {
+          "src": "scripts/teleporter.ts",
+          "params": {
+            "target": "{id}-b"
+          }
+        }
+      }
+    },
+    {
+      "id": "{id}-b",
+      "components": {
+        "transform": {
+          "dx": 300,
+          "dy": -6
+        },
+        "body": {
+          "type": "static",
+          "width": 40,
+          "height": 12,
+          "sensor": true
+        },
+        "sprite": {
+          "color": "#4cc9f0",
+          "image": "assets/teleporter.svg",
+          "frameWidth": 40,
+          "idle": "0-1",
+          "fps": 4,
+          "layer": 1
+        },
+        "script": {
+          "src": "scripts/teleporter.ts",
+          "params": {
+            "target": "{id}-a"
+          }
+        }
+      }
+    }
+  ],
+  "files": [
+    "scripts/teleporter.ts",
+    "assets/teleporter.svg"
+  ],
+  "effects": {
+    "teleport": {
+      "sound": "powerup",
+      "particles": {
+        "count": 20,
+        "color": "#4cc9f0",
+        "speed": 120,
+        "direction": -90,
+        "spread": 90,
+        "life": 0.5,
+        "size": 3,
+        "gravity": -60
+      }
+    }
+  }
+}

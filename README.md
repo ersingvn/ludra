@@ -25,7 +25,7 @@ claude > ludra new slime-valley
          Done. Run `ludra dev` to play it.
 ```
 
-> **Status:** early (v0.5). 2D games with custom TypeScript scripts, enemies, hazards, moving platforms, goals, animated SVG sprites, particles and sound, plus the full agent toolchain including real rendered screenshots, work today. 3D is on the [roadmap](#roadmap).
+> **Status:** early (v0.6). 2D games with a library of ready-made gameplay blocks, custom TypeScript scripts, enemies, hazards, moving platforms, goals, animated SVG sprites, particles and sound, plus the full agent toolchain including real rendered screenshots, work today. 3D is on the [roadmap](#roadmap).
 
 ## Why an engine for agents?
 
@@ -175,6 +175,33 @@ gameplay.test.json
 
 Assertions can check `score`, `deaths`, `won`, event counts (`events.jump`, `events.stomp`, ...) and any entity's `x`, `y`, `vx`, `vy`, `grounded` or `exists`, at the end or `at 1.5s`.
 
+### Blocks: tested pieces, combined with taste
+
+Like a video agent assembling scenes from a library of transitions and titles, a Ludra agent starts from **blocks**: ready-made, tested pieces of gameplay, each with its scripts, SVG art and effects.
+
+```
+$ ludra blocks
+chasing-enemy     An enemy that waits, then runs at the player once they come close.
+falling-platform  A cracked platform that shakes when stood on, falls, then comes back.
+key-and-door      A key and the locked door it opens.
+teleporter        Two linked pads. Stepping on one moves the player to the other.
+turret            A turret that fires deadly bullets at a steady rhythm.
+...
+
+$ ludra add key-and-door --at 400,500
+✓ Added "key-and-door" to scenes/main.scene.json
+  entity  key-and-door-key       at (400, 460)
+  entity  key-and-door-door      at (600, 440)
+  file    scripts/key.ts         added
+  ...
+```
+
+- Blocks link their parts by id, so you can add several, and never overwrite files you changed.
+- Every block ships a demo that CI plays on each commit, so the library stays working.
+- The agent then makes them its own: tuning `params`, restyling art, and combining blocks into new mechanics.
+
+The skill also teaches **taste**: a [design guide](plugins/ludra/skills/make-2d-platformer-games/DESIGN.md) on level design (teach, test, twist), fairness checks it can run (timing windows of at least 0.2 s, no blind jumps), game feel, palettes and SVG art direction, and a finishing checklist.
+
 ### Scripts: any game logic, still testable
 
 Built-in components cover the basics. For everything else (enemies that chase, keys and locked doors, timers, shooting, boss phases) the agent writes a short TypeScript script, the way Unity developers write C# behaviours:
@@ -247,7 +274,7 @@ Run `ludra components` for every field, its type and its default.
 ```
 packages/core     Engine: scene format, validation, deterministic world, input scripts,
                   assertions, ASCII renderer, browser runtime (zero dependencies)
-packages/cli      The `ludra` command and project templates
+packages/cli      The `ludra` command, project templates and the block library (blocks/)
 plugins/ludra     Claude Code plugin: the skill that teaches agents the workflow
 .claude-plugin    Marketplace manifest, so the repo installs with /plugin
 examples/         Games built with Ludra
@@ -259,15 +286,14 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how it fits together.
 ## Roadmap
 
 - ~~**v0.2: more game.** Enemies and patrol paths, hazards, goals, moving platforms that carry the player.~~ Done.
-- **v0.2.x:** multiple scenes and level transitions, checkpoints, lives.
 - ~~**v0.3: looks.** Image sprites and spritesheets, particles, screen shake, sound.~~ Done.
-- **v0.3.x:** tilemaps, parallax backgrounds, text and UI, music, and importing asset packs.
 - ~~**v0.4: real screenshots.** `ludra play --screenshot` renders actual frames headlessly so multimodal agents can see the game.~~ Done.
 - ~~**v0.5: scripting.** Custom game logic in TypeScript, deterministic and testable.~~ Done.
-- **v0.6: game structure.** Multiple scenes and level transitions, prefabs, text and UI, lives and checkpoints.
-- **v0.7: worlds.** Tilemaps, top-down games, camera zones, parallax backgrounds.
-- **v0.8: physics.** A real physics engine (Rapier): slopes, rotating bodies, joints; pathfinding for enemies.
-- **v0.9: shipping.** Export to a single HTML file or a desktop app, touch controls for mobile.
+- ~~**v0.6: blocks and taste.** `ludra blocks` / `ludra add`, a library of tested gameplay blocks, and a design guide in the skill.~~ Done.
+- **v0.7: genres.** A top-down controller, bounce physics, and templates for top-down adventures and breakout-style games; more blocks.
+- **v0.8: game structure.** Multiple scenes and level transitions, prefabs, text and UI, lives and checkpoints.
+- **v0.9: worlds.** Tilemaps, camera zones, parallax backgrounds, and a real physics engine (Rapier).
+- **v0.10: shipping.** Export to a single HTML file or a desktop app, touch controls for mobile.
 - **v1.0: 3D.** The same scene format and agent tools on a WebGL renderer with 3D physics.
 
 ## Contributing

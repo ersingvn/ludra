@@ -1,0 +1,49 @@
+{
+  "name": "spikes",
+  "description": "A row of spikes. Touching them kills the player.",
+  "tags": [
+    "platformer",
+    "hazard"
+  ],
+  "usage": "--at x,y sets them on the surface whose top is y. Widen body.width in multiples of 20 so the art tiles cleanly.",
+  "entities": [
+    {
+      "id": "{id}",
+      "components": {
+        "transform": {
+          "dx": 0,
+          "dy": -8
+        },
+        "body": {
+          "type": "static",
+          "width": 80,
+          "height": 16,
+          "sensor": true
+        },
+        "sprite": {
+          "color": "#ff5d73",
+          "image": "assets/spikes.svg",
+          "tile": true,
+          "layer": 1
+        },
+        "hazard": {}
+      }
+    }
+  ],
+  "files": [
+    "assets/spikes.svg"
+  ],
+  "effects": {
+    "die": {
+      "sound": "explosion",
+      "shake": 10,
+      "particles": {
+        "count": 30,
+        "color": "#ff5d73",
+        "speed": 220,
+        "life": 0.7,
+        "size": 4
+      }
+    }
+  }
+}

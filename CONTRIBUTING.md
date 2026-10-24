@@ -26,6 +26,16 @@ npm run build
 5. Draw it in `ascii.ts` (and `browser.ts` if it has visuals).
 6. Add tests in `packages/core/test/`, and update `plugins/ludra/skills/make-2d-platformer-games/SKILL.md` if agents need to know new rules.
 
+## Adding a block
+
+Blocks are the easiest way to contribute gameplay. A block lives in `packages/cli/blocks/<name>/`:
+
+- `block.json`: `name`, `description`, `tags`, `usage` (what `--at` means and how to tune it), `entities` (with `transform: { dx, dy }` offsets from the anchor, where the anchor's y is the top of the surface), `files` (copied into projects at the same path) and optional `effects`. Use `{id}` in strings so several copies can coexist and parts can find each other.
+- `scripts/` and `assets/`: what the block needs. Draw art as SVG, following the style of the existing blocks.
+- `demo.json`: an anchor (`at`) in a plain test level (ground top at y 500, player at (100, 482), walls at the edges) and tests that prove the block works. Isolate each behavior in its own test. `playerAt` per test moves the player.
+
+`npm test` places every block in its demo level and runs its tests, so a block that stops working fails CI.
+
 ## Pull requests
 
 - Keep PRs focused. Include tests.

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="80" height="20" viewBox="0 0 80 20">
+  <!-- Spritesheet: 4 frames of 20x20, a spinning coin. -->
+  <g>
+    <circle cx="10" cy="10" r="9" fill="#e0a526"/>
+    <circle cx="10" cy="10" r="7" fill="#ffd166"/>
+    <rect x="8.5" y="5" width="3" height="10" rx="1.5" fill="#e0a526"/>
+    <circle cx="7" cy="6.5" r="1.6" fill="#fff3b0"/>
+  </g>
+  <g transform="translate(20 0)">
+    <ellipse cx="10" cy="10" rx="6.5" ry="9" fill="#e0a526"/>
+    <ellipse cx="10" cy="10" rx="4.8" ry="7" fill="#ffd166"/>
+    <rect x="9" y="5" width="2" height="10" rx="1" fill="#e0a526"/>
+  </g>
+  <g transform="translate(40 0)">
+    <ellipse cx="10" cy="10" rx="2.2" ry="9" fill="#e0a526"/>
+    <rect x="9.3" y="2" width="1.4" height="16" fill="#fff3b0"/>
+  </g>
+  <g transform="translate(60 0)">
+    <ellipse cx="10" cy="10" rx="6.5" ry="9" fill="#e0a526"/>
+    <ellipse cx="10" cy="10" rx="4.8" ry="7" fill="#f2bb3d"/>
+  </g>
+</svg>

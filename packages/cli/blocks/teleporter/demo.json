@@ -1,0 +1,17 @@
+{
+  "at": [
+    300,
+    500
+  ],
+  "tests": [
+    {
+      "name": "stepping on pad A moves the player to pad B",
+      "inputs": "right:0.9s",
+      "duration": "1.5s",
+      "assert": [
+        "events.teleport == 1",
+        "player.x > 600"
+      ]
+    }
+  ]
+}

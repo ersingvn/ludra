@@ -1,0 +1,56 @@
+{
+  "name": "jump-pad",
+  "description": "A pad that launches players straight up when they step on it.",
+  "tags": [
+    "platformer",
+    "movement",
+    "script"
+  ],
+  "usage": "--at x,y sets the pad on the surface whose top is y. Launch height is about power² / (2 · gravity): power 900 gives ~225px with the default gravity 1800.",
+  "entities": [
+    {
+      "id": "{id}",
+      "components": {
+        "transform": {
+          "dx": 0,
+          "dy": -7
+        },
+        "body": {
+          "type": "static",
+          "width": 44,
+          "height": 14,
+          "sensor": true
+        },
+        "sprite": {
+          "color": "#ff7eb6",
+          "image": "assets/jump-pad.svg",
+          "layer": 1
+        },
+        "script": {
+          "src": "scripts/jump-pad.ts",
+          "params": {
+            "power": 900
+          }
+        }
+      }
+    }
+  ],
+  "files": [
+    "scripts/jump-pad.ts",
+    "assets/jump-pad.svg"
+  ],
+  "effects": {
+    "boing": {
+      "sound": "jump",
+      "particles": {
+        "count": 12,
+        "color": "#ff7eb6",
+        "speed": 160,
+        "direction": -90,
+        "spread": 70,
+        "life": 0.4,
+        "size": 3
+      }
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "at": [
+    400,
+    400
+  ],
+  "tests": [
+    {
+      "name": "moves along its patrol",
+      "duration": "1s",
+      "assert": [
+        "moving-platform.x > 470"
+      ]
+    },
+    {
+      "name": "carries a player standing on it",
+      "playerAt": [
+        400,
+        372
+      ],
+      "duration": "1s",
+      "assert": [
+        "player.grounded == true",
+        "player.x > 470"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="80" height="12" viewBox="0 0 80 12">
+  <!-- Spritesheet: 2 frames of 40x12, a pulsing teleporter pad. -->
+  <g>
+    <rect x="0" y="6" width="40" height="6" rx="2" fill="#2b3150"/>
+    <ellipse cx="20" cy="6" rx="18" ry="4" fill="#4cc9f0"/>
+    <ellipse cx="20" cy="6" rx="11" ry="2.4" fill="#c9f4ff"/>
+  </g>
+  <g transform="translate(40 0)">
+    <rect x="0" y="6" width="40" height="6" rx="2" fill="#2b3150"/>
+    <ellipse cx="20" cy="6" rx="18" ry="4" fill="#3aa6c8"/>
+    <ellipse cx="20" cy="6" rx="14" ry="3" fill="#7fe0ff"/>
+    <ellipse cx="20" cy="6" rx="6" ry="1.4" fill="#ffffff"/>
+  </g>
+</svg>

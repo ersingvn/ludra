@@ -1,0 +1,15 @@
+{
+  "at": [
+    400,
+    500
+  ],
+  "tests": [
+    {
+      "name": "a player walking along the surface collects all five",
+      "inputs": "right:2.5s",
+      "assert": [
+        "score == 5"
+      ]
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 {
   "name": "@ludra/cli",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "The game engine built for AI agents. The ludra command: create, check, play, test and run Ludra games.",
   "license": "MIT",
   "repository": {
@@ -31,10 +31,11 @@
   },
   "files": [
     "dist",
-    "templates"
+    "templates",
+    "blocks"
   ],
   "dependencies": {
-    "@ludra/core": "0.5.0"
+    "@ludra/core": "0.6.0"
   },
   "keywords": [
     "game-engine",

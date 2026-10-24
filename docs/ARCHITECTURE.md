@@ -41,6 +41,10 @@ The CLI is a thin layer over core: project loading (`ludra.json`), output format
 
 `server.ts` serves a project to a browser: the engine's browser module (type-stripped on the fly when running from source; no bundler), the validated scene, and only media files from the project. `ludra dev` puts a game page in front of it and reloads when the scene or any asset changes.
 
+### Blocks
+
+`blocks.ts` reads the library in `packages/cli/blocks/` (shipped in the npm package). `placeBlock` turns a block's entity templates into entities: transforms are offsets from the `--at` anchor, `{id}` is replaced by a prefix that doesn't clash with the scene (`turret`, `turret-2`…), so linked parts (a key and its door) find each other. `addBlock` copies the block's files without overwriting ones the user changed (unless `--force`), appends the entities and merges only effects the scene lacks. The block test places every block in its `demo.json` level with that same code and runs the demo tests, so the library is verified on every commit.
+
 ### Screenshots
 
 `ludra play --screenshot` starts that server on a random port, launches the Chrome, Edge or Chromium already installed in headless mode (`headless.ts` finds it, or uses `LUDRA_BROWSER`), and drives it over the DevTools protocol with Node's built-in WebSocket. The page calls core's `captureFrames`, which steps a `World` and the same view as `startGame` frame by frame with no clock, so a given frame always renders the same. PNGs come back as data URLs and are written to `screenshots/`. No npm dependencies are involved, and the browser and its temporary profile are removed afterwards. In development it type-strips the engine's TypeScript on request, and in a published install it serves the compiled JavaScript.
