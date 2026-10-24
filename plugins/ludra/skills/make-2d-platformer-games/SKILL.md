@@ -1,6 +1,6 @@
 ---
-name: ludra
-description: Build, debug, test and polish 2D games with the Ludra engine. Use when the user asks to make, change or fix a game (platformer, level, player movement, coins, enemies, hazards, moving platforms, goals, sprites, animations, particles, sound) in a project that has a ludra.json, or asks to start a new game with Ludra.
+name: make-2d-platformer-games
+description: Make 2D games, such as platformers with levels, coins, enemies, hazards, moving platforms, sprites, animations, particles and sound. Use whenever the user asks to make, build, change, fix, test or polish a game, or works in a project with a ludra.json. Builds with the Ludra engine and proves the game works by play-testing it headlessly.
 ---
 
 # Building games with Ludra

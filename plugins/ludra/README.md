@@ -13,7 +13,7 @@ Then ask Claude something like *"make me a platformer with a moving platform and
 
 ## What it adds
 
-The `ludra` skill. Claude uses it whenever you ask to make, change, test or polish a game. It teaches Claude to:
+The `make-2d-platformer-games` skill (listed as `ludra:make-2d-platformer-games`). Claude uses it whenever you ask to make, change, test or polish a game. It teaches Claude to:
 
 - create a game with `npx ludra new` and edit its JSON scenes
 - run `ludra check` after every edit and apply the fixes it suggests
