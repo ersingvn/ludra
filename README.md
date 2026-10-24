@@ -52,7 +52,7 @@ Then just ask, in any folder:
 
 > make me a platformer with spikes, a moving platform and an enemy to stomp
 
-The plugin's [`ludra` skill](plugins/ludra/skills/ludra/SKILL.md) teaches Claude the whole loop: create the game, `check` after every edit, `play` it headlessly, prove it with `test`, add art and effects, and hand it to you with `ludra dev`. Every project created with `ludra new` also has a `CLAUDE.md` with the same loop, so other agents know how to work in it too.
+The plugin's [`make-2d-platformer-games` skill](plugins/ludra/skills/make-2d-platformer-games/SKILL.md) teaches Claude the whole loop: create the game, `check` after every edit, `play` it headlessly, prove it with `test`, add art and effects, and hand it to you with `ludra dev`. Every project created with `ludra new` also has a `CLAUDE.md` with the same loop, so other agents know how to work in it too.
 
 To update later, run `/plugin marketplace update ludra`.
 
