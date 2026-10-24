@@ -1,7 +1,7 @@
 {
-  "name": "ludra",
-  "version": "0.3.0",
-  "description": "The game engine built for AI agents. CLI: create, check, play, test and run Ludra games.",
+  "name": "@ludra/cli",
+  "version": "0.3.1",
+  "description": "The game engine built for AI agents. The ludra command: create, check, play, test and run Ludra games.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -20,7 +20,7 @@
   },
   "type": "module",
   "bin": {
-    "ludra": "./dist/index.js"
+    "ludra": "dist/index.js"
   },
   "exports": {
     ".": {
@@ -34,7 +34,7 @@
     "templates"
   ],
   "dependencies": {
-    "@ludra/core": "0.3.0"
+    "@ludra/core": "0.3.1"
   },
   "keywords": [
     "game-engine",
@@ -44,5 +44,8 @@
     "llm",
     "gamedev",
     "headless-testing"
-  ]
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }

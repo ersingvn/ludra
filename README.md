@@ -56,8 +56,15 @@ The plugin's [`make-2d-platformer-games` skill](plugins/ludra/skills/make-2d-pla
 
 To update later, run `/plugin marketplace update ludra`.
 
-> [!NOTE]
-> The skill runs the CLI through `npx ludra`, which needs the `ludra` npm package. Until it is published, clone this repo and work inside it with `npm run ludra -- <command>` instead (see below).
+### From npm
+
+```bash
+npx @ludra/cli new my-game
+npx @ludra/cli play my-game --inputs "right:1s, jump:0.4s" --ascii
+npx @ludra/cli dev my-game
+```
+
+Or install it once with `npm install -g @ludra/cli` and run `ludra new my-game`. The packages are [`@ludra/cli`](https://www.npmjs.com/package/@ludra/cli) and [`@ludra/core`](https://www.npmjs.com/package/@ludra/core).
 
 ### From source
 
@@ -68,8 +75,6 @@ npm run ludra -- new my-game
 npm run ludra -- play my-game --inputs "right:1s, jump:0.4s" --ascii
 npm run ludra -- dev my-game
 ```
-
-Once the packages are published, this becomes `npx ludra new my-game`.
 
 ## A tour
 

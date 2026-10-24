@@ -11,11 +11,11 @@ A game built with Ludra, a game engine designed for AI agents.
 
 ## Loop
 
-1. Edit `scenes/main.scene.json`. Run `npx ludra components` for every component and field.
-2. Run `npx ludra check` after every edit. Each problem names the JSON path and a fix.
-3. Run `npx ludra play --inputs "right:1s, jump:0.4s" --ascii` to see what actually happens.
-4. Write the behavior you want into `tests/*.test.json` and run `npx ludra test`.
-5. Run `npx ludra dev` so a human can play it in the browser.
+1. Edit `scenes/main.scene.json`. Run `npx @ludra/cli components` for every component and field.
+2. Run `npx @ludra/cli check` after every edit. Each problem names the JSON path and a fix.
+3. Run `npx @ludra/cli play --inputs "right:1s, jump:0.4s" --ascii` to see what actually happens.
+4. Write the behavior you want into `tests/*.test.json` and run `npx @ludra/cli test`.
+5. Run `npx @ludra/cli dev` so a human can play it in the browser.
 
 Never call a change done until `ludra check` and `ludra test` both pass.
 

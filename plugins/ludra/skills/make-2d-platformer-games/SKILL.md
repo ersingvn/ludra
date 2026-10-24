@@ -9,21 +9,21 @@ Ludra is a game engine designed for agents. A game is plain JSON (scenes made of
 
 ## Start
 
-Commands below use `npx ludra`. Inside a clone of the Ludra repository itself (its root `package.json` is named `ludra-monorepo`), use `npm run ludra -- <command>` from the repo root instead. If `npx ludra` cannot find the package, tell the user it requires Node.js 22.18+ and the `ludra` npm package, and point them to https://github.com/ersingvn/ludra.
+Commands below use `npx @ludra/cli`, which downloads the CLI from npm on first use; its command is `ludra`. Always write the full `@ludra/cli`: a bare `npx ludra` would fetch an unrelated package. Inside a clone of the Ludra repository itself (its root `package.json` is named `ludra-monorepo`), use `npm run ludra -- <command>` from the repo root instead. Ludra needs Node.js 22.18 or newer; if `npx` fails, tell the user and point them to https://github.com/ersingvn/ludra.
 
-- New game: `npx ludra new <folder>` (template `platformer`), then work inside that folder.
+- New game: `npx @ludra/cli new <folder>` (template `platformer`), then work inside that folder.
 - Existing game: read `ludra.json`, the entry scene and `tests/` first.
-- Component reference: `npx ludra components` (or `npx ludra components <name>`). It is generated from the engine, so it is always current. Trust it over memory.
+- Component reference: `npx @ludra/cli components` (or `npx @ludra/cli components <name>`). It is generated from the engine, so it is always current. Trust it over memory.
 
 ## The loop
 
 Repeat until the game does what the user asked:
 
 1. **Edit** the scene JSON.
-2. **Check**: `npx ludra check`. Fix every error before doing anything else. Each diagnostic gives the JSON path and a `fix:` line. Apply it.
-3. **Play**: `npx ludra play --inputs "<script>" --ascii`. Read the timeline (position, velocity, grounded per sample), the events (jump, land, collect, stomp, die, win) and the ASCII map of the final frame. Use `--watch player,lift,enemy` to time moving things, `--every 0.1s` for finer timing and `--columns 160` for wide worlds.
-4. **Test**: encode the requirement in `tests/<name>.test.json` and run `npx ludra test`.
-5. **Hand off**: tell the user to run `npx ludra dev` to play it.
+2. **Check**: `npx @ludra/cli check`. Fix every error before doing anything else. Each diagnostic gives the JSON path and a `fix:` line. Apply it.
+3. **Play**: `npx @ludra/cli play --inputs "<script>" --ascii`. Read the timeline (position, velocity, grounded per sample), the events (jump, land, collect, stomp, die, win) and the ASCII map of the final frame. Use `--watch player,lift,enemy` to time moving things, `--every 0.1s` for finer timing and `--columns 160` for wide worlds.
+4. **Test**: encode the requirement in `tests/<name>.test.json` and run `npx @ludra/cli test`.
+5. **Hand off**: tell the user to run `npx @ludra/cli dev` to play it.
 
 ## Input scripts
 
@@ -63,7 +63,7 @@ Write at least one test proving the level can be completed: `"won == true"` and 
 Build it section by section. Get past one obstacle, print the timeline to see where the player is and when, then extend the script. Moving things are deterministic, so you can compute where a lift or enemy will be. To try several timings, loop in the shell and grep the events:
 
 ```bash
-for w in 0.4s 0.5s 0.6s; do npx ludra play --inputs "<prefix>, wait:$w, right+jump:0.45s" | grep -E "stomp|die|win"; done
+for w in 0.4s 0.5s 0.6s; do npx @ludra/cli play --inputs "<prefix>, wait:$w, right+jump:0.45s" | grep -E "stomp|die|win"; done
 ```
 
 Prefer routes with some slack: if only one exact timing works, a human will find the level frustrating. Widen the platform or slow the enemy.
@@ -119,7 +119,7 @@ Scene-level `effects` map events (`jump`, `land`, `collect`, `stomp`, `die`, `wi
 - An `emitter` component streams particles continuously (sparkles on a goal, torch fire, steam).
 - Feedback for every player action makes a game feel good: a small dust puff on jump and land, a burst plus sound on pickups, and shake plus a big burst on death.
 
-Run `npx ludra components effects` for every field.
+Run `npx @ludra/cli components effects` for every field.
 
 ### Layout and color
 

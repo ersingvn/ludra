@@ -1,9 +1,10 @@
 name: Release
 
-# Publishes @ludra/core and ludra to npm when a version tag is pushed:
-#   git tag v0.3.0 && git push origin v0.3.0
-# Needs an NPM_TOKEN repository secret (an npm automation or granular token
-# allowed to publish both packages).
+# Publishes @ludra/core and @ludra/cli to npm when a version tag is pushed:
+#   git tag v0.3.1 && git push origin v0.3.1
+# Needs an NPM_TOKEN repository secret (an npm token allowed to publish
+# both packages). A version that is already on npm is skipped, so a
+# release that failed halfway can be finished by re-running this workflow.
 
 on:
   push:
@@ -45,12 +46,16 @@ jobs:
           npm test
 
       # core first: the CLI depends on it.
-      - name: Publish @ludra/core
-        run: npm publish --workspace packages/core --provenance --access public
+      - name: Publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Publish ludra
-        run: npm publish --workspace packages/cli --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          for pkg in packages/core packages/cli; do
+            name=$(node -p "require('./$pkg/package.json').name")
+            version=$(node -p "require('./$pkg/package.json').version")
+            if [ -n "$(npm view "$name@$version" version 2>/dev/null)" ]; then
+              echo "::notice::$name@$version is already on npm, skipping."
+              continue
+            fi
+            npm publish --workspace "$pkg" --provenance --access public
+          done

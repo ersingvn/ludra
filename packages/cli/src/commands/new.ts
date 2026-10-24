@@ -31,10 +31,10 @@ export function create(dir: string | undefined, options: { template?: string }):
   console.log(paint("green", `✓ Created ${name} from the "${template}" template in ${shown}`));
   console.log(`
 Next steps:
-  ludra check ${shown}          validate the scene
-  ludra play ${shown} --ascii   simulate it headlessly and see the final frame
-  ludra test ${shown}           run tests/*.test.json
-  ludra dev ${shown}            play it in the browser`);
+  npx @ludra/cli check ${shown}          validate the scene
+  npx @ludra/cli play ${shown} --ascii   simulate it headlessly and see the final frame
+  npx @ludra/cli test ${shown}           run tests/*.test.json
+  npx @ludra/cli dev ${shown}            play it in the browser`);
   return 0;
 }
 

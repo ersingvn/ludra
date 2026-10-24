@@ -1,6 +1,6 @@
 # @ludra/core
 
-The runtime of [Ludra](https://github.com/ersingvn/ludra), the game engine built for AI agents. Most people want the [`ludra`](https://www.npmjs.com/package/ludra) CLI instead; use this package to embed the engine.
+The runtime of [Ludra](https://github.com/ersingvn/ludra), the game engine built for AI agents. Most people want the [`@ludra/cli`](https://www.npmjs.com/package/@ludra/cli) command instead; use this package to embed the engine.
 
 - **Scene format and validation:** `validateScene(json)` returns diagnostics with a JSON path and a concrete fix.
 - **Deterministic simulation:** `new World(scene)` advances only through `world.step(heldActions)` at a fixed 60 Hz.
