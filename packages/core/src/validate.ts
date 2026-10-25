@@ -60,6 +60,21 @@ export function validateScene(input: unknown): ValidationResult {
       if (physics !== undefined && physics !== "arcade" && physics !== "rapier") {
         error("E_INVALID_WORLD", "world.physics", `world.physics must be "arcade" or "rapier", got ${describe(physics)}.`, '"arcade" (default) for tight box physics, "rapier" for rotation, round shapes and real collisions.');
       }
+      const dimensions = raw.world.dimensions;
+      if (dimensions !== undefined && dimensions !== 2 && dimensions !== 3) {
+        error("E_INVALID_WORLD", "world.dimensions", `world.dimensions must be 2 or 3, got ${describe(dimensions)}.`, "Leave it out for 2D.");
+      }
+      if (dimensions === 3 && physics === "arcade") {
+        error(
+          "E_3D_NEEDS_RAPIER",
+          "world.physics",
+          '3D worlds run on Rapier 3D; "arcade" physics is 2D only.',
+          'Remove "physics" (3D always uses Rapier) or set it to "rapier".',
+        );
+      }
+      if (raw.world.fallLimit !== undefined && (typeof raw.world.fallLimit !== "number" || !Number.isFinite(raw.world.fallLimit))) {
+        error("E_INVALID_WORLD", "world.fallLimit", `world.fallLimit must be a number (a height in metres), got ${describe(raw.world.fallLimit)}.`);
+      }
       const lives = raw.world.lives;
       if (lives !== undefined && (typeof lives !== "number" || !Number.isInteger(lives) || lives < 1)) {
         error("E_INVALID_WORLD", "world.lives", `world.lives must be a whole number of at least 1, got ${describe(lives)}.`, "Leave it out for unlimited retries.");
@@ -69,6 +84,7 @@ export function validateScene(input: unknown): ValidationResult {
 
   if (raw.sounds !== undefined) validateSounds(raw.sounds, error);
   if (raw.music !== undefined) validateMusic(raw.music, error);
+  if (raw.environment !== undefined) validateEnvironment(raw.environment, isObject(raw.world) && raw.world.dimensions === 3, error, warn);
   if (raw.effects !== undefined) validateEffects(raw.effects, isObject(raw.sounds) ? raw.sounds : undefined, error, warn);
   if (raw.fonts !== undefined) validateFonts(raw.fonts, error);
   if (raw.postfx !== undefined) validatePostFx(raw.postfx, error);
@@ -80,7 +96,8 @@ export function validateScene(input: unknown): ValidationResult {
 
   const ids = new Map<string, number>();
   let hasPlayer = false;
-  const usesRapier = isObject(raw.world) && raw.world.physics === "rapier";
+  const is3D = isObject(raw.world) && raw.world.dimensions === 3;
+  const usesRapier = is3D || (isObject(raw.world) && raw.world.physics === "rapier");
   const jointTargets: { path: string; label: string; to: string }[] = [];
   let hasDynamic = false;
   const worldGravity = isObject(raw.world) && typeof raw.world.gravity === "number" ? raw.world.gravity : 1800;
@@ -213,6 +230,14 @@ export function validateScene(input: unknown): ValidationResult {
         "Keep one: platformer for side-view games with gravity, topdown for top-down games, paddles and ships.",
       );
     }
+    if ("character" in components && body && bodyType !== "dynamic") {
+      error(
+        "E_CHARACTER_NEEDS_DYNAMIC_BODY",
+        `${path}.components.body.type`,
+        `Entity ${label} has "character" but its body is "${String(bodyType)}", so it can never move.`,
+        'Set "type": "dynamic" on its body.',
+      );
+    }
     if ("platformer" in components && body && bodyType !== "dynamic") {
       error(
         "E_PLATFORMER_NEEDS_DYNAMIC_BODY",
@@ -246,8 +271,12 @@ export function validateScene(input: unknown): ValidationResult {
       const jointPath = Array.isArray(components.joint) ? `${path}.components.joint[${i}]` : `${path}.components.joint`;
       for (const field of ["anchor", "toAnchor"] as const) {
         const value = joint[field];
-        if (value !== undefined && !(isObject(value) && typeof value.x === "number" && typeof value.y === "number")) {
-          error("E_INVALID_FIELD", `${jointPath}.${field}`, `joint.${field} on entity ${label} must be { "x": number, "y": number }, an offset in px.`);
+        if (value !== undefined && !(isObject(value) && typeof value.x === "number" && typeof value.y === "number" && (value.z === undefined || typeof value.z === "number"))) {
+          error(
+            "E_INVALID_FIELD",
+            `${jointPath}.${field}`,
+            `joint.${field} on entity ${label} must be ${is3D ? '{ "x", "y", "z" }, an offset in metres' : '{ "x": number, "y": number }, an offset in px'}.`,
+          );
         }
       }
       if (typeof joint.to === "string" && joint.to !== "") jointTargets.push({ path: `${jointPath}.to`, label, to: joint.to });
@@ -272,9 +301,10 @@ export function validateScene(input: unknown): ValidationResult {
         );
       }
     });
+    validateDimensions(components, path, label, is3D, error, warn);
     // Free shapes need their points.
-    if (body && (body.shape === "polygon" || body.shape === "polyline")) {
-      const needed = body.shape === "polygon" ? 3 : 2;
+    if (body && (body.shape === "polygon" || body.shape === "polyline" || body.shape === "convex")) {
+      const needed = body.shape === "polygon" ? 3 : body.shape === "convex" ? 4 : 2;
       const points = Array.isArray(body.points) ? body.points : [];
       if (points.length < needed) {
         error(
@@ -292,7 +322,7 @@ export function validateScene(input: unknown): ValidationResult {
     if (isObject(components.hazard) && components.hazard.stompable === true) availableScore += numberOr(components.hazard.score, 0);
     if (isObject(components.goal)) goals.push({ path: `${path}.components.goal.requireScore`, label, requireScore: numberOr(components.goal.requireScore, 0) });
 
-    if ("platformer" in components || "topdown" in components) hasPlayer = true;
+    if ("platformer" in components || "topdown" in components || "character" in components) hasPlayer = true;
     // Only bodies that gravity actually pulls down need something to stand on.
     const falls = body && bodyType === "dynamic" && !("topdown" in components) && body.gravityScale !== 0;
     if (falls && worldGravity !== 0) hasDynamic = true;
@@ -323,7 +353,7 @@ export function validateScene(input: unknown): ValidationResult {
     }
   }
   if (!hasPlayer) {
-    warn("W_NO_PLAYER", "entities", 'No entity has a "platformer" or "topdown" component, so nothing responds to input (fine if scripts read input).');
+    warn("W_NO_PLAYER", "entities", is3D ? 'No entity has a "character" component, so nothing responds to input (fine if scripts read input).' : 'No entity has a "platformer" or "topdown" component, so nothing responds to input (fine if scripts read input).');
   }
 
   return result();
@@ -331,6 +361,84 @@ export function validateScene(input: unknown): ValidationResult {
 
 /** Body fields that only rapier physics reads. */
 const RAPIER_BODY_FIELDS = ["shape", "friction", "density", "fixedRotation", "bullet"] as const;
+
+const SHAPES_2D = ["circle", "polygon", "polyline"];
+const SHAPES_3D = ["sphere", "cylinder", "convex"];
+/** The 3D shape to suggest for a 2D one, and back. */
+const SHAPE_COUNTERPART: Record<string, string> = { circle: "sphere", polygon: "convex", polyline: "convex", sphere: "circle", cylinder: "box", convex: "polygon" };
+/** 2D-only components, and what to use in 3D instead. */
+const ONLY_2D: Record<string, string> = {
+  platformer: '3D players use the "character" component.',
+  topdown: '3D players use the "character" component.',
+  sprite: '3D entities are drawn with "mesh".',
+  emitter: "Particles in 3D come with the 3D renderer.",
+  camera: '3D uses "camera3d".',
+  cameraZone: '3D uses "camera3d".',
+};
+
+/** Keeps 2D and 3D apart: fields, shapes and components that only mean something in one of them. */
+function validateDimensions(components: Record<string, unknown>, path: string, label: string, is3D: boolean, error: Report, warn: Report): void {
+  const transform = isObject(components.transform) ? components.transform : undefined;
+  const body = isObject(components.body) ? components.body : undefined;
+  const shape = typeof body?.shape === "string" ? body.shape : "box";
+  const points = Array.isArray(body?.points) ? (body.points as unknown[]) : [];
+  if (is3D) {
+    if (typeof transform?.rotation === "number" && transform.rotation !== 0) {
+      error(
+        "E_3D_ROTATION",
+        `${path}.components.transform.rotation`,
+        `In 3D, rotation on entity ${label} is { "x", "y", "z" } in degrees, not one number.`,
+        `Use "rotation": { "y": ${transform.rotation} } to turn it around the vertical axis.`,
+      );
+    }
+    if (SHAPES_2D.includes(shape)) {
+      error("E_2D_SHAPE", `${path}.components.body.shape`, `"${shape}" on entity ${label} is a 2D shape.`, `Use "${SHAPE_COUNTERPART[shape]}" in 3D.`);
+    }
+    if (points.some((p) => Array.isArray(p) && p.length !== 3)) {
+      error("E_SHAPE_POINTS", `${path}.components.body.points`, `3D points on entity ${label} are [x, y, z] in metres.`, 'Use e.g. [[0, 1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1]].');
+    }
+    for (const [name, instead] of Object.entries(ONLY_2D)) {
+      if (!(name in components)) continue;
+      const controller = name === "platformer" || name === "topdown";
+      (controller ? error : warn)(
+        controller ? "E_2D_ONLY" : "W_2D_ONLY",
+        `${path}.components.${name}`,
+        `"${name}" on entity ${label} is 2D only${controller ? "" : ", so a 3D world ignores it"}.`,
+        instead,
+      );
+    }
+    return;
+  }
+  const extras = [
+    ...(transform && typeof transform.z === "number" && transform.z !== 0 ? ["transform.z"] : []),
+    ...(transform && isObject(transform.rotation) ? ["a { x, y, z } rotation"] : []),
+    ...(body && typeof body.depth === "number" && body.depth !== 0 ? ["body.depth"] : []),
+    ...(body && typeof body.vz === "number" && body.vz !== 0 ? ["body.vz"] : []),
+    ...(isObject(components.patrol) && components.patrol.axis === "z" ? ['patrol axis "z"'] : []),
+  ];
+  if (extras.length > 0) {
+    warn("W_3D_ONLY", `${path}.components`, `Entity ${label} sets ${extras.join(", ")}, which only a 3D world uses.`, 'Add "dimensions": 3 to "world" for a 3D game, or remove it.');
+  }
+  for (const name of ["mesh", "light", "camera3d"]) {
+    if (name in components) warn("W_3D_ONLY", `${path}.components.${name}`, `"${name}" on entity ${label} is for 3D scenes, so a 2D scene ignores it.`, 'Use "sprite" (and draw hooks) in 2D, or add "dimensions": 3 to "world".');
+  }
+  if ("character" in components) {
+    error("E_3D_ONLY", `${path}.components.character`, `"character" on entity ${label} is the 3D player.`, 'Use "platformer" or "topdown" in 2D, or add "dimensions": 3 to "world".');
+  }
+  const joints = Array.isArray(components.joint) ? components.joint : components.joint !== undefined ? [components.joint] : [];
+  joints.forEach((joint: unknown, i: number) => {
+    if (!isObject(joint)) return;
+    const at = Array.isArray(components.joint) ? `${path}.components.joint[${i}]` : `${path}.components.joint`;
+    if (joint.type === "spherical") error("E_3D_ONLY", `${at}.type`, `A spherical joint on entity ${label} turns any way in 3D, which a 2D world can't.`, 'Use "revolute" in 2D.');
+    if (isObject(joint.axis)) error("E_3D_ONLY", `${at}.axis`, `joint.axis on entity ${label} is a 3D vector.`, "In 2D, axis is the slide direction in degrees clockwise from right.");
+  });
+  if (SHAPES_3D.includes(shape)) {
+    error("E_3D_SHAPE", `${path}.components.body.shape`, `"${shape}" on entity ${label} is a 3D shape.`, `Use "${SHAPE_COUNTERPART[shape]}" in 2D, or add "dimensions": 3 to "world".`);
+  }
+  if (points.some((p) => Array.isArray(p) && p.length !== 2)) {
+    error("E_SHAPE_POINTS", `${path}.components.body.points`, `2D points on entity ${label} are [x, y] in px.`, 'Use e.g. [[-40, 20], [40, 20], [0, -20]].');
+  }
+}
 const RAPIER_PLATFORMER_FIELDS = ["maxSlope", "stepHeight", "push"] as const;
 
 /** Components that only work on sensor bodies, and what goes wrong otherwise. */
@@ -446,6 +554,34 @@ function validateFields(
   }
 }
 
+function validateEnvironment(env: unknown, is3D: boolean, error: Report, warn: Report): void {
+  const example = 'Use "environment": { "sky": ["#7fb2ff", "#e8f1ff"], "fog": { "color": "#cfe0ff", "near": 30, "far": 120 }, "toneMapping": "aces", "exposure": 1 }.';
+  if (!isObject(env)) return void error("E_ENVIRONMENT", "environment", '"environment" must be an object.', example);
+  if (!is3D) warn("W_3D_ONLY", "environment", '"environment" is for 3D scenes, so a 2D scene ignores it.', 'Add "dimensions": 3 to "world", or remove it.');
+  for (const key of Object.keys(env)) {
+    if (!["sky", "fog", "toneMapping", "exposure", "shadows"].includes(key)) error("E_ENVIRONMENT", `environment.${key}`, `environment has no field "${key}". Fields: sky, fog, toneMapping, exposure, shadows.`);
+  }
+  const sky = env.sky;
+  if (sky !== undefined && typeof sky !== "string" && !(Array.isArray(sky) && sky.length === 2 && sky.every((c) => typeof c === "string"))) {
+    error("E_ENVIRONMENT", "environment.sky", `environment.sky must be a color or [top, bottom] colors, got ${describe(sky)}.`, example);
+  }
+  if (env.fog !== undefined) {
+    const fog = env.fog;
+    if (!isObject(fog)) error("E_ENVIRONMENT", "environment.fog", "environment.fog must be { color, near, far }.", example);
+    else {
+      for (const key of ["near", "far"] as const) {
+        if (fog[key] !== undefined && (typeof fog[key] !== "number" || (fog[key] as number) < 0)) error("E_ENVIRONMENT", `environment.fog.${key}`, `environment.fog.${key} must be metres (a number ≥ 0), got ${describe(fog[key])}.`);
+      }
+      if (typeof fog.near === "number" && typeof fog.far === "number" && fog.far <= fog.near) error("E_ENVIRONMENT", "environment.fog.far", "environment.fog.far must be beyond near.");
+    }
+  }
+  if (env.toneMapping !== undefined && !["aces", "neutral", "agx", "none"].includes(env.toneMapping as string)) {
+    error("E_ENVIRONMENT", "environment.toneMapping", `environment.toneMapping must be "aces", "neutral", "agx" or "none", got ${describe(env.toneMapping)}.`);
+  }
+  if (env.exposure !== undefined && (typeof env.exposure !== "number" || env.exposure < 0)) error("E_ENVIRONMENT", "environment.exposure", `environment.exposure must be a number ≥ 0, got ${describe(env.exposure)}.`);
+  if (env.shadows !== undefined && typeof env.shadows !== "boolean") error("E_ENVIRONMENT", "environment.shadows", "environment.shadows must be true or false.");
+}
+
 function validateFonts(fonts: unknown, error: Report): void {
   const example = 'Use "fonts": { "Orbitron": "google", "Pixel": "assets/pixel.woff2" }.';
   if (!isObject(fonts)) return void error("E_FONTS_NOT_OBJECT", "fonts", '"fonts" must map font family names to "google" or a font file.', example);
@@ -546,8 +682,18 @@ function checkField(spec: FieldSpec, value: unknown): string | undefined {
       return isObject(value) ? undefined : `must be an object like { "speed": 80 }, got ${describe(value)}.`;
     case "strings":
       return Array.isArray(value) && value.every((s) => typeof s === "string") ? undefined : `must be a list of strings, got ${describe(value)}.`;
+    case "axis":
+      if (typeof value === "number" && Number.isFinite(value)) return undefined;
+      return isObject(value) && Object.entries(value).every(([k, v]) => ["x", "y", "z"].includes(k) && typeof v === "number" && Number.isFinite(v)) && Object.values(value).some((v) => v !== 0)
+        ? undefined
+        : `must be degrees in 2D, or a direction like { "y": 1 } in 3D, got ${describe(value)}.`;
+    case "rotation":
+      if (typeof value === "number" && Number.isFinite(value)) return undefined;
+      return isObject(value) && Object.entries(value).every(([k, v]) => ["x", "y", "z"].includes(k) && typeof v === "number" && Number.isFinite(v))
+        ? undefined
+        : `must be degrees: a number in 2D, or { "x": 0, "y": 45, "z": 0 } in 3D, got ${describe(value)}.`;
     case "points":
-      return Array.isArray(value) && value.every((p) => Array.isArray(p) && p.length === 2 && p.every((n) => typeof n === "number" && Number.isFinite(n)))
+      return Array.isArray(value) && value.every((p) => Array.isArray(p) && (p.length === 2 || p.length === 3) && p.every((n) => typeof n === "number" && Number.isFinite(n)))
         ? undefined
         : `must be a list of [x, y] points like [[-40, 20], [40, 20], [40, -20]], got ${describe(value)}.`;
   }

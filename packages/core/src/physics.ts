@@ -21,13 +21,14 @@ export interface PhysicsHost {
 /** Where a ray first hits a body. */
 export interface RayHit {
   entity: Entity;
-  /** The hit point in px. */
+  /** The hit point in px (3D: metres, with z). */
   x: number;
   y: number;
+  z?: number;
   /** From the ray's start to the hit point, in px. */
   distance: number;
   /** The surface's outward normal at the hit point (unit length, +y down). */
-  normal: { x: number; y: number };
+  normal: { x: number; y: number; z?: number };
 }
 
 export interface RayOptions {
@@ -67,12 +68,15 @@ export interface PhysicsEngine {
    * Strikes a dynamic body: its velocity changes by impulse / mass. Applied `at` a point
    * (px, in the world) it also spins the body, where the engine supports rotation.
    */
-  applyImpulse(e: Entity, x: number, y: number, at?: { x: number; y: number }): void;
+  applyImpulse(e: Entity, x: number, y: number, at?: { x: number; y: number; z?: number }, z?: number): void;
   /** Spin in degrees per second, clockwise. 0 where the engine doesn't rotate bodies. */
   angularVelocity(e: Entity): number;
   setAngularVelocity(e: Entity, value: number): void;
   /** The first body a ray from `from` to `to` hits, if any. */
-  raycast(host: PhysicsHost, from: { x: number; y: number }, to: { x: number; y: number }, options?: RayOptions): RayHit | undefined;
+  raycast(host: PhysicsHost, from: { x: number; y: number; z?: number }, to: { x: number; y: number; z?: number }, options?: RayOptions): RayHit | undefined;
+  /** 3D: spin around each axis, in degrees per second. */
+  spin?(e: Entity): { x: number; y: number; z: number };
+  setSpin?(e: Entity, value: { x: number; y: number; z: number }): void;
   /**
    * The engine's own objects, for scripts that need more than Ludra's components.
    * `resolve` turns what a script passes (an entity handle or id) into an entity.
@@ -135,6 +139,7 @@ export function raycastBoxes(host: PhysicsHost, from: { x: number; y: number }, 
 /** Keeps a patrolling body between its start and `distance` along its axis. */
 export function clampToPatrol(e: Entity, patrol: PatrolState): void {
   if (patrol.axis === "x") e.transform.x = Math.min(patrol.originX + patrol.distance, Math.max(patrol.originX, e.transform.x));
+  else if (patrol.axis === "z") e.transform.z = Math.min(patrol.originZ + patrol.distance, Math.max(patrol.originZ, e.transform.z));
   else e.transform.y = Math.min(patrol.originY + patrol.distance, Math.max(patrol.originY, e.transform.y));
 }
 

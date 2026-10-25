@@ -1,0 +1,51 @@
+{
+  "name": "@ludra/three",
+  "version": "0.91.0",
+  "description": "The 3D renderer for Ludra: Three.js meshes, PBR materials, lights, shadows, cameras and environments for 3D scenes.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ersingvn/ludra.git",
+    "directory": "packages/three"
+  },
+  "homepage": "https://github.com/ersingvn/ludra#readme",
+  "bugs": {
+    "url": "https://github.com/ersingvn/ludra/issues"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "prepack": "tsc -b --clean && tsc -b"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "ludra-dev": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "dependencies": {
+    "@ludra/core": "0.91.0",
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "@types/three": "0.186.0"
+  },
+  "keywords": [
+    "game-engine",
+    "3d",
+    "three",
+    "webgl",
+    "ai",
+    "agents"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

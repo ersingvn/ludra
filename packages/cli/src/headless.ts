@@ -64,7 +64,7 @@ export async function captureScreenshots(project: Project, request: ScreenshotRe
     );
   }
 
-  const { server, browserModule, physicsModule } = createGameServer(project, () => "");
+  const { server, browserModule, physicsModule, threeModule } = createGameServer(project, () => "");
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const port = (server.address() as AddressInfo).port;
   const profile = mkdtempSync(join(tmpdir(), "ludra-browser-"));
@@ -116,7 +116,9 @@ export async function captureScreenshots(project: Project, request: ScreenshotRe
         debug: ${JSON.stringify(!!request.debug)},
         loadPhysics: async (name) => {
           if (name === "rapier") await (await import(${JSON.stringify(physicsModule)})).loadRapierPhysics();
+          if (name === "rapier3d") await (await import(${JSON.stringify(physicsModule)})).loadRapier3DPhysics();
         },
+        loadRenderer3D: async () => (await import(${JSON.stringify(threeModule)})).createRenderer3D,
       });
     })()`;
     return await evaluate<CapturedFrame[]>(cdp, sessionId, script);

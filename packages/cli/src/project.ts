@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import {
   collectAssetPaths,
   findRuntimeImports,
+  physicsEngineName,
   validateScene,
   validateScriptModule,
   type Diagnostic,
@@ -183,7 +184,9 @@ export async function loadGame(project: Project, scenePath?: string): Promise<{ 
   const { scene, diagnostics, label } = readScene(project, scenePath);
   if (!scene) return { diagnostics, label };
   // Rapier is WebAssembly loaded on demand, so arcade games never pay for it.
-  if (scene.world?.physics === "rapier") await (await import("@ludra/physics")).loadRapierPhysics();
+  const engine = physicsEngineName(scene);
+  if (engine === "rapier") await (await import("@ludra/physics")).loadRapierPhysics();
+  if (engine === "rapier3d") await (await import("@ludra/physics")).loadRapier3DPhysics();
 
   const scripts = new Map<string, Script>();
   for (const src of scriptPaths(project, scene)) {

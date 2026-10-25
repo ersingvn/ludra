@@ -3,7 +3,7 @@ import { createServer, type Server, type ServerResponse } from "node:http";
 import { stripTypeScriptTypes } from "node:module";
 import { createRequire } from "node:module";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { collectAssetPaths } from "@ludra/core";
 import { isInside, listScenes, readScene, scriptPaths, type Project } from "./project.ts";
 
@@ -36,6 +36,8 @@ export interface GameServer {
   browserModule: string;
   /** URL path of @ludra/physics, imported only by pages whose scene uses rapier. */
   physicsModule: string;
+  /** URL path of @ludra/three, imported only by pages whose scene is 3D. */
+  threeModule: string;
   /**
    * A `<script type="importmap">` tag that lets the browser resolve "@ludra/core" and Rapier
    * without a bundler. Pages put it before their first module script.
@@ -52,14 +54,28 @@ function enginePaths() {
   const physicsDir = dirname(physicsEntry);
   // Rapier's ES module sits next to the CommonJS entry require() finds.
   const rapierFile = join(dirname(createRequire(physicsEntry).resolve("@dimforge/rapier2d-deterministic-compat")), "rapier.mjs");
+  const rapier3dFile = join(dirname(createRequire(physicsEntry).resolve("@dimforge/rapier3d-deterministic-compat")), "rapier.mjs");
+  const threeEntry = fileURLToPath(import.meta.resolve("@ludra/three"));
+  const threeDir = dirname(threeEntry);
+  // three.js itself: its build/ folder (three.module.js imports three.core.js beside it) and its addons.
+  const threeLibDir = dirname(fileURLToPath(import.meta.resolve("three", pathToFileURL(threeEntry).href)));
+  const threeAddonsDir = join(threeLibDir, "..", "examples", "jsm");
   const url = (prefix: string, dir: string, file: string) => `${prefix}${relative(dir, file).replaceAll(sep, "/")}`;
   return {
     coreDir,
     physicsDir,
     rapierFile,
+    rapier3dFile,
+    threeDir,
+    threeLibDir,
+    threeAddonsDir,
+    threeModule: url("/__ludra/three/", threeDir, threeEntry),
     browserModule: url("/__ludra/core/", coreDir, coreEntry),
     physicsModule: url("/__ludra/physics/", physicsDir, physicsEntry),
-    imports: { "@ludra/core": url("/__ludra/core/", coreDir, coreIndex), "@dimforge/rapier2d-deterministic-compat": "/__ludra/rapier.mjs" },
+    imports: { "@ludra/core": url("/__ludra/core/", coreDir, coreIndex), "@dimforge/rapier2d-deterministic-compat": "/__ludra/rapier.mjs", "@dimforge/rapier3d-deterministic-compat": "/__ludra/rapier3d.mjs",
+      three: "/__ludra/three-lib/three.module.js",
+      "three/addons/": "/__ludra/three-addons/",
+    },
   };
 }
 
@@ -78,7 +94,7 @@ function serveModule(res: ServerResponse, dir: string, path: string): void {
  * source, its TypeScript files are type-stripped on the fly.
  * `indexHtml` builds the page served at "/".
  */
-export function createGameServer(project: Project, indexHtml: (page: { browserModule: string; physicsModule: string; importMap: string }) => string): GameServer {
+export function createGameServer(project: Project, indexHtml: (page: { browserModule: string; physicsModule: string; threeModule: string; importMap: string }) => string): GameServer {
   const paths = enginePaths();
   const { browserModule, physicsModule } = paths;
   const importMap = `<script type="importmap">${JSON.stringify({ imports: paths.imports })}</script>`;
@@ -88,7 +104,7 @@ export function createGameServer(project: Project, indexHtml: (page: { browserMo
     try {
       if (url.pathname === "/") {
         res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-        res.end(indexHtml({ browserModule, physicsModule, importMap }));
+        res.end(indexHtml({ browserModule, physicsModule, threeModule: paths.threeModule, importMap }));
       } else if (url.pathname === BLANK_PATH) {
         res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
         res.end(`<!doctype html><html><head><meta charset="utf-8"><title>Ludra</title>${importMap}</head><body style="margin:0"></body></html>`);
@@ -124,6 +140,16 @@ export function createGameServer(project: Project, indexHtml: (page: { browserMo
         serveModule(res, paths.coreDir, url.pathname.slice("/__ludra/core/".length));
       } else if (url.pathname.startsWith("/__ludra/physics/")) {
         serveModule(res, paths.physicsDir, url.pathname.slice("/__ludra/physics/".length));
+      } else if (url.pathname.startsWith("/__ludra/three/")) {
+        serveModule(res, paths.threeDir, url.pathname.slice("/__ludra/three/".length));
+      } else if (url.pathname.startsWith("/__ludra/three-lib/")) {
+        serveModule(res, paths.threeLibDir, url.pathname.slice("/__ludra/three-lib/".length));
+      } else if (url.pathname.startsWith("/__ludra/three-addons/")) {
+        serveModule(res, paths.threeAddonsDir, url.pathname.slice("/__ludra/three-addons/".length));
+      } else if (url.pathname === "/__ludra/rapier3d.mjs") {
+        // Rapier 3D, inlined the same way: only 3D scenes ask for it.
+        res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "max-age=3600" });
+        res.end(readFileSync(paths.rapier3dFile));
       } else if (url.pathname === "/__ludra/rapier.mjs") {
         // Rapier with its WebAssembly inlined: one file, a few MB, loaded only by rapier scenes.
         res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "max-age=3600" });
@@ -136,7 +162,7 @@ export function createGameServer(project: Project, indexHtml: (page: { browserMo
       res.end((err as Error).message);
     }
   });
-  return { server, browserModule, physicsModule, importMap };
+  return { server, browserModule, physicsModule, threeModule: paths.threeModule, importMap };
 }
 
 /** Changes whenever a scene, prefab or any file they reference changes, so the page knows to reload. */

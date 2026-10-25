@@ -31,6 +31,11 @@ export function registerPhysics(name: string, factory: PhysicsFactory): void {
   factories.set(name, factory);
 }
 
+/** The engine a scene runs on: "rapier3d" for every 3D scene, else its "physics" (arcade by default). */
+export function physicsEngineName(scene: { world?: { physics?: string; dimensions?: number } }): string {
+  return scene.world?.dimensions === 3 ? "rapier3d" : (scene.world?.physics ?? "arcade");
+}
+
 export function isPhysicsLoaded(name: string): boolean {
   return factories.has(name);
 }
@@ -41,7 +46,9 @@ export function createPhysics(name: string, settings: PhysicsSettings): PhysicsE
     throw new PhysicsUnavailableError(
       name === "rapier"
         ? 'This scene uses "rapier" physics, which isn\'t loaded. Call await loadRapierPhysics() from @ludra/physics before creating the world (the ludra CLI and dev server do this for you).'
-        : `Unknown physics engine "${name}". Use one of: ${PHYSICS_ENGINES.join(", ")}.`,
+        : name === "rapier3d"
+          ? 'This scene is 3D ("dimensions": 3), which runs on Rapier 3D, and it isn\'t loaded. Call await loadRapier3DPhysics() from @ludra/physics before creating the world (the ludra CLI and dev server do this for you).'
+          : `Unknown physics engine "${name}". Use one of: ${PHYSICS_ENGINES.join(", ")}.`,
     );
   }
   return factory(settings);

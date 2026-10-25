@@ -1,0 +1,108 @@
+{
+  "tests": [
+    {
+      "name": "the start island holds the player up",
+      "duration": "1s",
+      "assert": [
+        "player.grounded == true",
+        "player.y > 0.8",
+        "deaths == 0"
+      ]
+    },
+    {
+      "name": "up walks away from the camera (-z); a running jump crosses the first gap",
+      "inputs": "up:1s, up+jump:0.6s, up:1s",
+      "duration": "3.2s",
+      "assert": [
+        "player.z < 0 at 0.5s",
+        "events.jump == 1",
+        "player.z < -7.5",
+        "player.grounded == true",
+        "score == 1",
+        "deaths == 0"
+      ]
+    },
+    {
+      "name": "a crystal floating overhead needs a jump",
+      "inputs": "up:1s, up+jump:0.6s, up:1s, wait:0.2s, jump:0.6s",
+      "duration": "4.5s",
+      "assert": [
+        "crystal-2.exists == false",
+        "score == 2"
+      ]
+    },
+    {
+      "name": "falling into the sky costs a life and starts over on the island",
+      "inputs": "left:2s",
+      "duration": "4s",
+      "assert": [
+        "deaths == 1",
+        "lives == 2",
+        "player.grounded == true",
+        "player.z > 1"
+      ]
+    },
+    {
+      "name": "the beacon is a checkpoint on the high ledge",
+      "inputs": "up:1s, up+jump:0.6s, up:1s, wait:0.2s, jump:0.6s, wait:0.9s, up+right:0.6s, up+right+jump:0.6s, up+right:0.9s",
+      "duration": "7s",
+      "assert": [
+        "events.checkpoint == 1",
+        "score == 3",
+        "player.y > 1.8"
+      ]
+    },
+    {
+      "name": "the raft rests against each shore and carries the player across",
+      "duration": "8s",
+      "inputs": "",
+      "assert": [
+        "raft.z < -29.3 at 0s",
+        "raft.z > -22.3 at 3.65s",
+        "raft.z < -29.3 at 7.3s"
+      ]
+    },
+    {
+      "name": "riding the raft collects the crystal over the gap and lands on the far shore",
+      "inputs": "up:1s, up+jump:0.6s, up:1s, wait:0.2s, jump:0.6s, wait:0.9s, up+right:0.6s, up+right+jump:0.6s, up+right:0.9s, left:0.48s, wait:3.4s, up:0.84s, wait:2.6s, up:0.7s",
+      "duration": "17s",
+      "assert": [
+        "crystal-4.exists == false",
+        "player.z < -30.6",
+        "player.grounded == true",
+        "deaths == 0"
+      ]
+    },
+    {
+      "name": "the storm puff is deadly, and the player comes back at the beacon",
+      "inputs": "up:1s, up+jump:0.6s, up:1s, wait:0.2s, jump:0.6s, wait:0.9s, up+right:0.6s, up+right+jump:0.6s, up+right:0.9s, left:0.48s, wait:3.4s, up:0.84s, wait:2.6s, up:1.15s, wait:3s",
+      "duration": "20s",
+      "assert": [
+        "deaths == 1",
+        "events.die == 1",
+        "player.z > -20",
+        "player.z < -17"
+      ]
+    },
+    {
+      "name": "the portal stays shut until all five crystals are found",
+      "inputs": "up:1s, up+jump:0.6s, up:1s, wait:0.2s, wait:0.6s, wait:0.9s, up+right:0.6s, up+right+jump:0.6s, up+right:0.9s, left:0.48s, wait:3.4s, up:0.84s, wait:2.6s, up:0.7s, left:0.6s, up:0.7s, up+jump:0.6s, up:1.6s",
+      "duration": "22s",
+      "assert": [
+        "score == 4",
+        "won == false",
+        "player.z < -44"
+      ]
+    },
+    {
+      "name": "Sky Islands can be completed without falling",
+      "inputs": "up:1s, up+jump:0.6s, up:1s, wait:0.2s, jump:0.6s, wait:0.9s, up+right:0.6s, up+right+jump:0.6s, up+right:0.9s, left:0.48s, wait:3.4s, up:0.84s, wait:2.6s, up:0.7s, left:0.6s, up:0.7s, up+jump:0.6s, up:1.6s",
+      "duration": "22s",
+      "assert": [
+        "won == true",
+        "deaths == 0",
+        "score == 5"
+      ]
+    }
+  ]
+}

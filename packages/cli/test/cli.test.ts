@@ -203,6 +203,70 @@ describe("rapier physics through the CLI", () => {
     assert.equal(code, 0, out);
   });
 
+  test("a 3D scene loads Rapier 3D on its own for check, play and test", () => {
+    const dir = join(workDir, "cubes");
+    mkdirSync(join(dir, "scenes"), { recursive: true });
+    mkdirSync(join(dir, "tests"), { recursive: true });
+    writeFileSync(join(dir, "ludra.json"), JSON.stringify({ name: "Cubes" }));
+    writeFileSync(
+      join(dir, "scenes", "main.scene.json"),
+      JSON.stringify({
+        world: { dimensions: 3 },
+        entities: [
+          { id: "floor", components: { transform: { x: 0, y: -0.5, z: 0 }, body: { width: 20, height: 1, depth: 20 } } },
+          { id: "hero", components: { transform: { x: 0, y: 0.9, z: 0 }, body: { type: "dynamic", width: 0.6, height: 1.8, shape: "capsule" }, character: {} } },
+          { id: "cube", components: { transform: { x: 3, y: 4, z: -2, rotation: { x: 30, y: 20 } }, body: { type: "dynamic", width: 1, height: 1 } } },
+        ],
+      }),
+    );
+    writeFileSync(
+      join(dir, "tests", "world.test.json"),
+      JSON.stringify({
+        tests: [
+          { name: "the cube lands", duration: "2s", assert: ["cube.y < 0.6", "cube.grounded == true"] },
+          { name: "up walks away from the viewer", inputs: "up:1s", assert: ["hero.z < -4 at 1s", "hero.x > -0.01", "hero.x < 0.01"] },
+        ],
+      }),
+    );
+    assert.equal(ludra("check", dir).code, 0);
+    const played = ludra("play", dir, "--inputs", "up:1s", "--duration", "1s", "--watch", "hero", "--every", "1s");
+    assert.equal(played.code, 0, played.out);
+    assert.match(played.out, / z +vx +vy +vz +grounded/, "play --watch shows z and vz for 3D scenes");
+    const { code, out } = ludra("test", dir);
+    assert.equal(code, 0, out);
+  });
+
+  test("screenshots of a 3D scene are drawn by Three.js, with and without --debug", { skip: findBrowser() ? false : "no Chrome, Edge or Chromium installed" }, () => {
+    const dir = join(workDir, "cubes");
+    const scenePath = join(dir, "scenes", "main.scene.json");
+    const scene = JSON.parse(readFileSync(scenePath, "utf8"));
+    scene.environment = { sky: "#87b5ff" };
+    scene.entities.push({ id: "sun", components: { transform: { x: 5, y: 10, z: 5 }, light: { type: "directional", intensity: 2.5 } } });
+    for (const e of scene.entities) if (e.components.body) e.components.mesh = { color: e.id === "floor" ? "#6f9a52" : "#ff7a59" };
+    writeFileSync(scenePath, JSON.stringify(scene));
+    const normal = ludra("play", dir, "--duration", "1s", "--screenshot", "1s", "--out", "shots", "--json");
+    assert.equal(normal.code, 0, normal.out);
+    const debug = ludra("play", dir, "--duration", "1s", "--screenshot", "1s", "--out", "shots-debug", "--debug", "--json");
+    assert.equal(debug.code, 0, debug.out);
+    const [plain, overlay] = [join(dir, "shots", "t-1.00s.png"), join(dir, "shots-debug", "t-1.00s.png")].map((p) => readFileSync(p));
+    assert.equal(plain!.subarray(1, 4).toString(), "PNG");
+    assert.ok(plain!.length > 20000, `a real 3D frame, not a blank one (${plain!.length} bytes)`);
+    assert.notDeepEqual(plain, overlay, "the debug view draws colliders over the frame");
+
+    // A render hook builds with the real three.js: its object shows up in the frame.
+    mkdirSync(join(dir, "scripts"), { recursive: true });
+    writeFileSync(
+      join(dir, "scripts", "knot.ts"),
+      `export default { render({ THREE, object, local }) { if (!local.knot) { local.knot = new THREE.Mesh(new THREE.TorusKnotGeometry(1.2, 0.35, 96, 16), new THREE.MeshBasicMaterial({ color: "#ff00ff" })); object.add(local.knot); } } };
+`,
+    );
+    scene.entities.push({ id: "knot", components: { transform: { x: 0, y: 2, z: -2 }, script: { src: "scripts/knot.ts" } } });
+    writeFileSync(scenePath, JSON.stringify(scene));
+    const hooked = ludra("play", dir, "--duration", "1s", "--screenshot", "1s", "--out", "shots-hook", "--json");
+    assert.equal(hooked.code, 0, hooked.out);
+    assert.notDeepEqual(readFileSync(join(dir, "shots-hook", "t-1.00s.png")), plain, "the render hook's knot is in the frame");
+  });
+
   test("screenshots of a rapier scene load Rapier in the browser, with and without --debug", { skip: findBrowser() ? false : "no Chrome, Edge or Chromium installed" }, () => {
     const dir = join(workDir, "tumble");
     const normal = ludra("play", dir, "--duration", "1s", "--screenshot", "1s", "--out", "shots", "--json");

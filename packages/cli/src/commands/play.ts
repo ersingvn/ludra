@@ -132,10 +132,13 @@ function printTimeline(rows: Row[], watch: string[]): void {
   const idWidth = Math.max(6, ...watch.map((id) => id.length));
   // A rotation column only when something watched turns (rapier physics).
   const turns = rows.some((row) => watch.some((id) => row.entities[id]?.rotation !== undefined));
+  // 3D worlds put z in every snapshot.
+  const deep = rows.some((row) => watch.some((id) => row.entities[id]?.z !== undefined));
+  const z = (label: string) => (deep ? ` ${padStart(label, 8)}` : "");
   console.log(
     paint(
       "dim",
-      `\n  ${pad("time", 7)} ${pad("input", 14)} ${pad("entity", idWidth)} ${padStart("x", 8)} ${padStart("y", 8)} ${padStart("vx", 8)} ${padStart("vy", 8)}${turns ? ` ${padStart("rot°", 8)}` : ""}  grounded`,
+      `\n  ${pad("time", 7)} ${pad("input", 14)} ${pad("entity", idWidth)} ${padStart("x", 8)} ${padStart("y", 8)}${z("z")} ${padStart("vx", 8)} ${padStart("vy", 8)}${z("vz")}${turns ? ` ${padStart("rot°", 8)}` : ""}  grounded`,
     ),
   );
   for (const row of rows) {
@@ -145,7 +148,7 @@ function printTimeline(rows: Row[], watch: string[]): void {
       const input = i === 0 ? pad(row.input.join("+") || "-", 14) : " ".repeat(14);
       const rotation = turns ? ` ${padStart(fixed(e?.rotation ?? 0), 8)}` : "";
       const values = e
-        ? `${padStart(fixed(e.x), 8)} ${padStart(fixed(e.y), 8)} ${padStart(fixed(e.vx), 8)} ${padStart(fixed(e.vy), 8)}${rotation}  ${e.grounded ? "yes" : "no"}`
+        ? `${padStart(fixed(e.x), 8)} ${padStart(fixed(e.y), 8)}${z(fixed(e.z ?? 0))} ${padStart(fixed(e.vx), 8)} ${padStart(fixed(e.vy), 8)}${z(fixed(e.vz ?? 0))}${rotation}  ${e.grounded ? "yes" : "no"}`
         : paint("dim", "(removed)");
       console.log(`  ${time} ${input} ${pad(id, idWidth)} ${values}`);
     });

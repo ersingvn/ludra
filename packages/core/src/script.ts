@@ -10,14 +10,22 @@ export interface ScriptEntity {
   readonly id: string;
   x: number;
   y: number;
-  /** Velocity in px/s. Always 0 for entities without a body. */
+  /** Velocity in px/s (3D: m/s). Always 0 for entities without a body. */
   vx: number;
   vy: number;
+  /** 3D only: position and velocity along z (0 in 2D). */
+  z: number;
+  vz: number;
   readonly grounded: boolean;
   /** Degrees, clockwise. Only rapier physics turns bodies by itself; setting it turns one. */
   rotation: number;
-  /** Spin in degrees per second, clockwise. Always 0 under arcade physics. */
+  /** Spin in degrees per second, clockwise. Always 0 under arcade physics. 3D: around z. */
   angularVelocity: number;
+  /** 3D only: turn (around y) and tilt (around x), in degrees. With rotation (z), applied y, x, z. */
+  rotationX: number;
+  rotationY: number;
+  /** 3D: spin around each axis in degrees per second (read/write). In 2D only z, the same as angularVelocity. */
+  spin: { x: number; y: number; z: number };
   /** Density × area. Heavier bodies move less when struck and push lighter ones. */
   readonly mass: number;
   /**
@@ -25,14 +33,18 @@ export interface ScriptEntity {
    * world (rapier) it also spins the body. For a jump pad, a kick, an explosion.
    */
   applyImpulse(x: number, y: number, at?: { x: number; y: number }): void;
+  /** 3D: strikes the body with an { x, y, z } impulse, optionally at a point in the world (it then spins too). */
+  applyImpulse(impulse: { x?: number; y?: number; z?: number }, at?: { x: number; y: number; z?: number }): void;
   /**
    * Eases a value over time: { property: "x" | "y" | "rotation" | "scale" | "opacity", to or by,
    * duration, ease?, delay?, repeat? }. Same fields as the tween component; starts now and
    * replaces a running tween of the same property. A door: self.tween({ property: "y", by: -120, duration: 0.6, ease: "quadOut" }).
    */
-  tween(def: { property: "x" | "y" | "rotation" | "scale" | "opacity"; to?: number; by?: number; duration: number; delay?: number; ease?: Ease; repeat?: "once" | "loop" | "pingpong" }): void;
+  tween(def: { property: "x" | "y" | "z" | "rotation" | "rotationX" | "rotationY" | "scale" | "opacity"; to?: number; by?: number; duration: number; delay?: number; ease?: Ease; repeat?: "once" | "loop" | "pingpong" }): void;
   /** Pushes the body steadily: call it every frame (thrusters, wind, magnets). */
   applyForce(x: number, y: number, at?: { x: number; y: number }): void;
+  /** 3D: pushes with an { x, y, z } force every frame. */
+  applyForce(force: { x?: number; y?: number; z?: number }, at?: { x: number; y: number; z?: number }): void;
   readonly width: number;
   readonly height: number;
   /** False once the entity has been destroyed or collected. */
@@ -52,9 +64,11 @@ export interface ScriptRayHit {
   entity: ScriptEntity;
   x: number;
   y: number;
+  /** 3D only. */
+  z?: number;
   distance: number;
-  /** The surface's outward normal (unit length, +y down). */
-  normal: { x: number; y: number };
+  /** The surface's outward normal (unit length; +y down in 2D, up in 3D, with z in 3D). */
+  normal: { x: number; y: number; z?: number };
 }
 
 export interface SpawnDef {
@@ -109,8 +123,8 @@ export interface ScriptWorld {
    * ground ahead?". Sensors are skipped unless `sensors` is true.
    */
   raycast(
-    from: { x: number; y: number },
-    to: { x: number; y: number },
+    from: { x: number; y: number; z?: number },
+    to: { x: number; y: number; z?: number },
     options?: { ignore?: ScriptEntity | string | (ScriptEntity | string)[]; sensors?: boolean },
   ): ScriptRayHit | undefined;
   /**
@@ -207,6 +221,42 @@ export interface SoundContext {
 }
 
 /**
+ * What the `render` hook receives in a 3D scene: the real three.js, so there are no limits on
+ * 3D looks: custom geometry and shaders, particles, instancing, post-processing. The three.js
+ * objects are typed loosely (core doesn't depend on three.js); see https://threejs.org/docs.
+ * Like draw hooks, it only presents: `self` and `world` are read-only.
+ */
+export interface RenderContext {
+  /** The three.js module: THREE.Mesh, THREE.ShaderMaterial, THREE.Points, THREE.InstancedMesh... */
+  THREE: any;
+  /** The THREE.Scene everything is drawn in. */
+  scene: any;
+  /** The THREE.PerspectiveCamera, already placed by the camera3d for this frame. */
+  camera: any;
+  /** The THREE.WebGLRenderer. */
+  renderer: any;
+  /** This entity's own THREE.Group, placed and turned with it every frame: add children in its local space. */
+  object: any;
+  self: ScriptEntity;
+  world: ScriptWorld;
+  params: Record<string, unknown>;
+  /** Simulation time in seconds. */
+  time: number;
+  /** Per-entity memory for meshes, materials and anything else you build. Not game state. */
+  local: Record<string, unknown>;
+  /** The canvas size in pixels. */
+  view: { width: number; height: number };
+  /** Events in the last `seconds` (default 0.5), optionally only those named `name`. */
+  recent(name?: string, seconds?: number): DrawEvent[];
+  /** Loads a three.js addon, e.g. ctx.addon("postprocessing/EffectComposer.js"). Await it once and keep it in local. */
+  addon(path: string): Promise<any>;
+  /** Draws each frame yourself (an EffectComposer chain): fn replaces renderer.render(scene, camera). undefined goes back. */
+  setRender(fn: (() => void) | undefined): void;
+  /** A number in [0, 1) for variety. Never affects the game. */
+  random(): number;
+}
+
+/**
  * The default export of a script file. All hooks are optional.
  *
  * ```ts
@@ -239,9 +289,14 @@ export interface Script {
    * player has pressed a key (browsers block audio before that). Tests never call it.
    */
   sound?(ctx: SoundContext): void;
+  /**
+   * 3D scenes: builds and animates anything with the real three.js, every rendered frame,
+   * right before the frame is drawn. Browser only; tests never call it.
+   */
+  render?(ctx: RenderContext): void;
 }
 
-export const SCRIPT_HOOKS = ["start", "update", "touch", "draw", "drawUI", "sound"] as const;
+export const SCRIPT_HOOKS = ["start", "update", "touch", "draw", "drawUI", "sound", "render"] as const;
 
 /** Printed by `ludra components script`. Keep in sync with the interfaces above. */
 export const SCRIPT_API_REFERENCE = `A script file default-exports hooks. Only "import type" is allowed: scripts run without a bundler.
@@ -254,9 +309,10 @@ export const SCRIPT_API_REFERENCE = `A script file default-exports hooks. Only "
     draw(ctx) {},            // paint this entity in world space (browser only, every rendered frame)
     drawUI(ctx) {},          // paint screen-space UI; replaces the default HUD and win screen
     sound(ctx) {},           // make sound with the real Web Audio API (browser only, every rendered frame)
+    render(ctx) {},          // 3D: build and animate anything with the real three.js (browser only, every frame)
   } satisfies Script;
 
-ctx.self      the entity: id, x, y, vx, vy, rotation, angularVelocity (read/write); grounded, mass, width, height, exists (read);
+ctx.self      the entity: id, x, y, vx, vy, rotation, angularVelocity, 3D: z, vz (read/write); grounded, mass, width, height, exists (read);
               applyImpulse(x, y, at?)  strike it (velocity += impulse / mass)    applyForce(x, y, at?)  push every frame;
               tween({ property, to | by, duration, ease?, delay?, repeat? })  ease x, y, rotation, scale or opacity;
               state (object kept between frames, testable as "<id>.state.<key>");
@@ -296,6 +352,17 @@ ctx.events    game events since the last call: answer them with sound
 ctx.play(name, { volume?, pitch? })   a preset, one of the scene's "sounds", or an audio file
 ctx.local, ctx.time, ctx.random(), self/world/params read-only, as in draw hooks
 Run "ludra components sounds" for scene "sounds" (your own synthesized sounds) and "music" (tracks of notes).
+
+3D: the render hook gets the real three.js, so 3D looks have no limits either.
+ctx.THREE     the three.js module (Mesh, ShaderMaterial, Points, InstancedMesh, Line, CanvasTexture...)
+ctx.object    this entity's THREE.Group, moved and turned with it: add children in its local space
+ctx.scene, ctx.camera, ctx.renderer   the THREE.Scene, the camera placed by camera3d, the WebGLRenderer
+ctx.addon(path)      await a three.js addon once, e.g. "postprocessing/EffectComposer.js", keep it in ctx.local
+ctx.setRender(fn)    draw each frame yourself (an EffectComposer chain); undefined goes back to the default
+ctx.local, ctx.time, ctx.recent(), ctx.view, ctx.random(), self/world/params read-only, as in draw hooks
+3D game logic: self.z, self.vz, self.rotationX, self.rotationY, self.spin { x, y, z } (deg/s),
+self.applyImpulse({ x, y, z }, at?), self.applyForce({ x, y, z }, at?), world.raycast({ x, y, z }, { x, y, z }),
+world.physics.raw: { RAPIER, world, body(e), collider(e), joint(e, i?) }, the whole Rapier 3D API.
 
 Scene-level presentation (all optional):
   "fonts": { "Orbitron": "google", "Pixel": "assets/pixel.woff2" }   load fonts for ctx.g.font

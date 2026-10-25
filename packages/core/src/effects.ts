@@ -39,6 +39,8 @@ export function collectAssetPaths(scene: SceneDef): AssetReference[] {
   scene.entities.forEach((entity, i) => {
     const image = entity.components.sprite?.image;
     if (typeof image === "string" && image !== "") refs.push({ path: image, at: `entities[${i}].components.sprite.image`, kind: "image" });
+    const texture = entity.components.mesh?.texture;
+    if (typeof texture === "string" && texture !== "") refs.push({ path: texture, at: `entities[${i}].components.mesh.texture`, kind: "image" });
     const next = entity.components.goal?.next;
     if (typeof next === "string" && next !== "") refs.push({ path: next, at: `entities[${i}].components.goal.next`, kind: "scene" });
     const src = entity.components.script?.src;

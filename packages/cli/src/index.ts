@@ -22,7 +22,7 @@ process.emitWarning = ((warning: string | Error, ...rest: unknown[]) => {
 const HELP = `ludra: the game engine built for AI agents
 
 Usage
-  ludra new <folder> [--template <name>]       Create a game project (templates: platformer, topdown, breakout, physics)
+  ludra new <folder> [--template <name>]       Create a game project (templates: platformer, topdown, breakout, physics, 3d)
   ludra check [folder] [--json]                Validate every scene; every problem comes with a fix
   ludra play [folder] [options]                Simulate the game headlessly
       --scene scenes/level-2.scene.json        Scene to play (default: the entry scene in ludra.json)

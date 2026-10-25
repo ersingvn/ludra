@@ -1,5 +1,6 @@
 import { SoundPlayer } from "./audio.ts";
 import { CameraRig } from "./camera.ts";
+import { physicsEngineName } from "./engines.ts";
 import { parseFrames, type Sprite } from "./components.ts";
 import { collectAssetPaths } from "./effects.ts";
 import { InputScript } from "./input.ts";
@@ -31,6 +32,28 @@ const MAX_FRAME_TIME = 0.25;
 /** Screen shake decays by this factor every step. */
 const SHAKE_DECAY = 0.88;
 
+/**
+ * Draws a 3D scene. @ludra/three provides one (createRenderer3D); core only calls it, so
+ * 2D games never load Three.js. The frame is drawn into `canvas` and copied into the game's
+ * 2D canvas, where the HUD, drawUI hooks and the postfx shader go on top.
+ */
+export interface Renderer3D {
+  readonly canvas: HTMLCanvasElement;
+  /** Draw colliders, joints and lights over the frame. */
+  debug: boolean;
+  /** Once per simulation step: the camera's smoothing and anything else that moves with the game. */
+  step(world: World): void;
+  /** Draws the world as it is now. */
+  render(world: World): void;
+  /** The scene restarted: snap the camera back, forget per-entity state. */
+  reset(world: World): void;
+  dispose(): void;
+  /** Waits for anything still loading (render hooks' addons), so a screenshot shows the finished frame. */
+  settle?(): Promise<void>;
+}
+
+export type Renderer3DFactory = (scene: SceneDef, options: { width: number; height: number; assetBase: string }) => Promise<Renderer3D>;
+
 export interface GameOptions {
   /** URL prefix for image and audio paths in the scene. Defaults to "". */
   assetBase?: string;
@@ -50,6 +73,19 @@ export interface GameOptions {
   loadPhysics?: (name: string) => Promise<void>;
   /** Start with the debug view on: colliders, sensors, joints and ids drawn over the game. */
   debug?: boolean;
+  /**
+   * Loads the 3D renderer for scenes with "dimensions": 3, e.g.
+   * `async () => (await import("@ludra/three")).createRenderer3D`.
+   */
+  loadRenderer3D?: () => Promise<Renderer3DFactory>;
+}
+
+/** A 3D scene's renderer, or undefined for 2D. */
+async function useRenderer3D(scene: SceneDef, options: GameOptions, width: number, height: number): Promise<Renderer3D | undefined> {
+  if (scene.world?.dimensions !== 3) return undefined;
+  if (!options.loadRenderer3D) throw new Error('This scene is 3D ("dimensions": 3), which @ludra/three draws. Pass loadRenderer3D to startGame (the ludra CLI does this for you).');
+  const create = await options.loadRenderer3D();
+  return create(scene, { width, height, assetBase: options.assetBase ?? "" });
 }
 
 /** Imports the game's script modules, keyed by their path in the scene. */
@@ -157,8 +193,8 @@ class Screen {
 
 /** Loads the physics engine a scene names, if it isn't arcade. */
 async function usePhysics(scene: SceneDef, options: GameOptions): Promise<void> {
-  const name = scene.world?.physics;
-  if (name && name !== "arcade") await options.loadPhysics?.(name);
+  const name = physicsEngineName(scene);
+  if (name !== "arcade") await options.loadPhysics?.(name);
 }
 
 /** What a scene needs before it can be drawn. */
@@ -216,7 +252,8 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
     await usePhysics(next, options);
     scene = next;
     startCarry = carry;
-    view = new View(next, images);
+    view?.renderer?.dispose();
+    view = new View(next, images, await useRenderer3D(next, options, canvas.width, canvas.height));
     view.debug = debug;
     sounds.setScene(next.sounds, next.music);
     soundEvents = 0;
@@ -242,7 +279,7 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
       return;
     }
     world = new World(scene, { scripts, carry: startCarry });
-    view.reset();
+    view.reset(world);
     sounds.setScene(scene.sounds, scene.music);
     soundEvents = 0;
     soundLocals.clear();
@@ -402,7 +439,7 @@ export async function captureFrames(canvas: HTMLCanvasElement, scene: SceneDef, 
   await usePhysics(scene, options);
   const error = screen.use(scene.postfx, shader);
   if (error) throw new Error(error);
-  const view = new View(scene, images);
+  const view = new View(scene, images, await useRenderer3D(scene, options, canvas.width, canvas.height));
   view.debug = options.debug ?? false;
   const world = new World(scene, { scripts });
   const script = InputScript.parse(options.inputs ?? "");
@@ -412,6 +449,11 @@ export async function captureFrames(canvas: HTMLCanvasElement, scene: SceneDef, 
 
   for (let frame = 0; ; frame++) {
     if (wanted.has(frame)) {
+      if (view.renderer?.settle) {
+        // Let render hooks start their loads, wait for them, then draw the real frame.
+        view.renderer.render(world);
+        await view.renderer.settle();
+      }
       view.draw(screen.ctx, world, false, false);
       screen.present(world.time);
       captured.push({ frame, time: frame * FIXED_DT, png: screen.output.toDataURL("image/png") });
@@ -497,15 +539,20 @@ class View {
   /** Whether the scene can award points at all, so the default HUD can leave the score out. */
   private readonly scoring: boolean;
 
-  constructor(scene: SceneDef, images: Map<string, HTMLImageElement>) {
+  /** 3D scenes: draws the world; the View adds the HUD on top. */
+  readonly renderer: Renderer3D | undefined;
+
+  constructor(scene: SceneDef, images: Map<string, HTMLImageElement>, renderer?: Renderer3D) {
     this.scene = scene;
     this.images = images;
+    this.renderer = renderer;
     this.scoring = scene.entities.some(
       (e) => e.components.collectible || (e.components.hazard && Number(e.components.hazard.score) > 0) || Number(e.components.goal?.requireScore) > 0,
     );
   }
 
-  reset(): void {
+  reset(world?: World): void {
+    if (world) this.renderer?.reset(world);
     this.camera.reset();
     this.particles.clear();
     this.facing.clear();
@@ -519,7 +566,8 @@ class View {
 
   /** Runs once per simulation step: turns new events into effects, moves the camera and advances particles. */
   step(world: World, playSound: (sound: string) => void): void {
-    if (this.size) this.camera.update(world.entities, world, this.size, FIXED_DT);
+    this.renderer?.step(world);
+    if (this.size && !this.renderer) this.camera.update(world.entities, world, this.size, FIXED_DT);
     for (const event of world.events.slice(this.handledEvents)) {
       const effect = this.scene.effects?.[event.type === "custom" ? event.name : event.type];
       if (!effect) continue;
@@ -547,6 +595,24 @@ class View {
 
   /** `continues`: the host loads next scenes, so a won scene with `next` says so instead of offering a replay. */
   draw(ctx: CanvasRenderingContext2D, world: World, muted: boolean, continues: boolean): void {
+    const { width: viewWidth, height: viewHeight } = ctx.canvas;
+    const viewInfo = this.renderer ? this.drawWorld3D(ctx, world) : this.drawWorld(ctx, world);
+    this.drawInterface(ctx, world, muted, continues, viewInfo);
+  }
+
+  /** A 3D frame from the renderer, copied in so the interface and postfx go on top. */
+  private drawWorld3D(ctx: CanvasRenderingContext2D, world: World): DrawContext["view"] {
+    const renderer = this.renderer!;
+    const { width, height } = ctx.canvas;
+    renderer.debug = this.debug;
+    renderer.render(world);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(renderer.canvas, 0, 0, width, height);
+    return { width, height, cameraX: 0, cameraY: 0, zoom: 1 };
+  }
+
+  /** The 2D world: backdrop color, sprites and draw hooks under the camera, particles, debug. */
+  private drawWorld(ctx: CanvasRenderingContext2D, world: World): DrawContext["view"] {
     const { width: viewWidth, height: viewHeight } = ctx.canvas;
     ctx.imageSmoothingEnabled = false;
     ctx.fillStyle = world.background;
@@ -587,7 +653,12 @@ class View {
     this.particles.draw(ctx);
     if (this.debug) this.drawDebug(ctx, world, zoom);
     ctx.restore();
+    return viewInfo;
+  }
 
+  /** The HUD: the game's own drawUI hooks, or the default one with its end screens. */
+  private drawInterface(ctx: CanvasRenderingContext2D, world: World, muted: boolean, continues: boolean, viewInfo: DrawContext["view"]): void {
+    const { width: viewWidth, height: viewHeight } = ctx.canvas;
     if (world.hasHook("drawUI")) {
       // The game draws its own interface.
       for (const e of [...world.entities]) if (e.script?.module.drawUI) this.drawHook(ctx, world, e, "drawUI", viewInfo);
@@ -873,7 +944,7 @@ function traceShape(ctx: CanvasRenderingContext2D, body: Body, width = body.widt
   if (body.shape === "circle") ctx.ellipse(0, 0, width / 2, height / 2, 0, 0, Math.PI * 2);
   else if (body.shape === "capsule") ctx.roundRect(-width / 2, -height / 2, width, height, Math.min(width, height) / 2);
   else if ((body.shape === "polygon" || body.shape === "polyline") && body.points.length > 1) {
-    body.points.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+    body.points.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x!, y!) : ctx.lineTo(x!, y!)));
     if (body.shape === "polygon") ctx.closePath();
   } else ctx.rect(-width / 2, -height / 2, width, height);
 }

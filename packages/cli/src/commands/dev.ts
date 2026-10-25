@@ -21,7 +21,7 @@ export function dev(dir: string, options: { port?: string }): number {
   return 0;
 }
 
-function page(project: Project, { browserModule, physicsModule, importMap }: { browserModule: string; physicsModule: string; importMap: string }): string {
+function page(project: Project, { browserModule, physicsModule, threeModule, importMap }: { browserModule: string; physicsModule: string; threeModule: string; importMap: string }): string {
   const { width, height } = project.config.window;
   const title = escapeHtml(project.config.name);
   return `<!doctype html>
@@ -43,10 +43,13 @@ function page(project: Project, { browserModule, physicsModule, importMap }: { b
 ${importMap}
 <script type="module">
 import { startGame } from "${browserModule}";
-// Rapier is a few MB of WebAssembly: only scenes with "physics": "rapier" load it.
+// Rapier is a few MB of WebAssembly: only scenes with "physics": "rapier" (or 3D scenes) load it.
 const loadPhysics = async (name) => {
   if (name === "rapier") await (await import("${physicsModule}")).loadRapierPhysics();
+  if (name === "rapier3d") await (await import("${physicsModule}")).loadRapier3DPhysics();
 };
+// Three.js draws 3D scenes; 2D scenes never load it.
+const loadRenderer3D = async () => (await import("${threeModule}")).createRenderer3D;
 
 const data = await (await fetch("/__ludra/scene")).json();
 if (data.ok) {
@@ -56,7 +59,7 @@ if (data.ok) {
     if (!next.ok) throw new Error(next.diagnostics.map((d) => d.code + " at " + d.path + ": " + d.message).join(" "));
     return next.scene;
   };
-  await startGame(document.getElementById("game"), data.scene, { assetBase: "${PROJECT_PREFIX}", scriptBase: "${SCRIPT_PREFIX}", scriptPaths, loadScene, loadPhysics });
+  await startGame(document.getElementById("game"), data.scene, { assetBase: "${PROJECT_PREFIX}", scriptBase: "${SCRIPT_PREFIX}", scriptPaths, loadScene, loadPhysics, loadRenderer3D });
 } else {
   document.getElementById("game").hidden = true;
   const errors = document.getElementById("errors");

@@ -147,6 +147,15 @@ When the game runs on rapier, physics is the material you design with. Treat it 
 - **Keep it fair.** Physics is deterministic here, so a solution that worked once always works: prove every physics puzzle is solvable with a test, and sweep timings like any other level.
 - **Reward with physics.** Things that topple, swing and bounce after a good move are the juice: add shake, sound and particles on the impact events your scripts emit.
 
+### 3D games
+
+- **The camera is the player's eyes.** Keep it behind and above, never turning on its own, so up always means away. Frame the next goal: islands placed along -z read as a path. Avoid tall things between the camera and the player.
+- **Depth is hard to judge.** Shadows tell players where they will land, so keep a sun with shadows on. Fog and a sky gradient give distance; size cues (a 1 m crate, a 1.8 m hero) give scale. Put collectibles where the jump arc goes, so they also teach the jump.
+- **Readable silhouettes.** Hazards in a warning color with emissive glow, treasure that turns and bobs (tweens), goals that change when they open. Flat shading and a small palette make low-poly worlds coherent.
+- **Light for the mood.** A warm sun and a cool sky fill for day, a low orange sun for dusk, point lights on torches and crystals at night. Default lighting and grey materials are the 3D version of the default HUD: review flags them.
+- **Give the hero a face.** Even a capsule reads as a character with eyes, a scarf or a hat from a render hook, and turning toward where it walks.
+- **Generous jumps.** Gaps at about 60% of the reach (about 4 m), landings bigger than takeoffs, and a checkpoint before every hard part.
+
 ## 7. Sound
 
 Sound is half of how a game feels, and nothing limits it. Every player action and every important event gets a sound, and all of them come from the same world.
@@ -179,6 +188,7 @@ Most of these are one short script. Use them to make each game feel different:
 - [ ] Every event in the level has an effect and a sound of the game's own, and the game has music that fits its mood
 - [ ] The palette is consistent and the player is the most visible thing on screen
 - [ ] Physics levels (rapier) stand still with no input, and their solution is proven by a test
+- [ ] 3D: its own lights, sky and materials, a camera that keeps the path readable, and the hero has a face
 - [ ] It has a mood: a painted backdrop or lighting, its own `drawUI` interface and win screen, and a finishing shader; not flat sprites with the default HUD
 - [ ] `ludra.json` has a real name, not the folder name
 - [ ] You can state the hook in one sentence, and the level is about it

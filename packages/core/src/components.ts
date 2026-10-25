@@ -10,7 +10,11 @@ export type FieldSpec =
   /** A list of [x, y] points in px. */
   | { type: "points"; default?: [number, number][]; description: string }
   /** A list of strings (tilemap rows). */
-  | { type: "strings"; default?: string[]; description: string };
+  | { type: "strings"; default?: string[]; description: string }
+  /** Degrees: a number in 2D, { "x", "y", "z" } in 3D. */
+  | { type: "rotation"; default?: number; description: string }
+  /** A direction: degrees in 2D, an { "x", "y", "z" } vector in 3D. */
+  | { type: "axis"; default?: number; description: string };
 
 export interface ComponentSpec {
   description: string;
@@ -25,6 +29,7 @@ export const COMPONENT_NAMES = [
   "sprite",
   "platformer",
   "topdown",
+  "character",
   "collectible",
   "patrol",
   "hazard",
@@ -35,6 +40,9 @@ export const COMPONENT_NAMES = [
   "script",
   "camera",
   "cameraZone",
+  "mesh",
+  "light",
+  "camera3d",
   "tilemap",
   "tween",
 ] as const;
@@ -59,11 +67,18 @@ export const PARTICLE_FIELDS: Record<string, FieldSpec> = {
  */
 export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
   transform: {
-    description: "Position of the entity's center in pixels. +x is right, +y is down.",
+    description:
+      'Position of the entity\'s center. 2D: pixels, +x right, +y down. 3D ("dimensions": 3): metres, +x right, +y up, +z toward the viewer.',
     fields: {
-      x: { type: "number", description: "Center x in pixels." },
-      y: { type: "number", description: "Center y in pixels." },
-      rotation: { type: "number", default: 0, description: "Rotation in degrees, clockwise. Rapier physics only: arcade bodies never rotate." },
+      x: { type: "number", description: "Center x (2D px, 3D m)." },
+      y: { type: "number", description: "Center y (2D px, +y down; 3D m, +y up)." },
+      z: { type: "number", default: 0, description: "3D only: center z in metres, +z toward the viewer." },
+      rotation: {
+        type: "rotation",
+        default: 0,
+        description:
+          '2D: degrees clockwise (rapier only; arcade bodies never rotate). 3D: { "x", "y", "z" } in degrees, applied y (turn), then x (tilt), then z (roll).',
+      },
     },
   },
   body: {
@@ -72,8 +87,9 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
     requires: ["transform"],
     fields: {
       type: { type: "enum", values: ["static", "dynamic", "kinematic"], default: "static", description: "How the body moves." },
-      width: { type: "number", min: 1, description: "Collider width in pixels." },
-      height: { type: "number", min: 1, description: "Collider height in pixels." },
+      width: { type: "number", min: 0.001, description: "Collider width (2D px, 3D m)." },
+      height: { type: "number", min: 0.001, description: "Collider height (2D px, 3D m)." },
+      depth: { type: "number", min: 0, default: 0, description: "3D only: size along z in metres. 0 = the same as width." },
       sensor: { type: "boolean", default: false, description: "Sensors detect overlaps but never block movement (coins, triggers)." },
       gravityScale: { type: "number", default: 1, description: "Multiplier on world gravity for dynamic bodies." },
       bounce: {
@@ -83,18 +99,19 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
         description: "How much speed a dynamic body keeps when it hits a solid: 0 stops it, 1 bounces it back at full speed (balls, pinballs).",
       },
       vx: { type: "number", default: 0, description: "Initial horizontal velocity in px/s." },
-      vy: { type: "number", default: 0, description: "Initial vertical velocity in px/s." },
+      vy: { type: "number", default: 0, description: "Initial vertical velocity in px/s (3D: m/s, +y up)." },
+      vz: { type: "number", default: 0, description: "3D only: initial velocity along z in m/s." },
       shape: {
         type: "enum",
-        values: ["box", "circle", "capsule", "polygon", "polyline"],
+        values: ["box", "circle", "capsule", "polygon", "polyline", "sphere", "cylinder", "convex"],
         default: "box",
         description:
-          "Rapier only. circle: diameter = width. capsule: a rounded box, upright when taller than wide (characters). polygon: the convex shape around `points` (wedges, rocks, ramps). polyline: an open line through `points` (hills, curved ground); static or kinematic only.",
+          "Rapier only. 2D: circle (diameter = width), capsule (a rounded box, upright when taller than wide), polygon (the convex shape around `points`), polyline (an open line through `points`; static or kinematic only). 3D: box, sphere (diameter = width), capsule (upright, height total, radius width/2), cylinder (upright), convex (the hull around [x, y, z] `points`).",
       },
       points: {
         type: "points",
         default: [],
-        description: "Rapier only, for polygon and polyline shapes: [[x, y], ...] offsets from the center in px. width and height stay the bounding box (images, arcade).",
+        description: "Rapier only, for polygon and polyline shapes: [[x, y], ...] offsets from the center in px; for 3D convex shapes [[x, y, z], ...] in metres. width and height stay the bounding box.",
       },
       friction: { type: "number", min: 0, default: 0.5, description: "Rapier only. 0 = ice, 1 = rubber." },
       density: { type: "number", min: 0, default: 1, description: "Rapier only. Mass per area: heavier bodies push lighter ones." },
@@ -155,6 +172,22 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       clampToWorld: { type: "boolean", default: true, description: "Keep the entity inside the world bounds." },
     },
   },
+  character: {
+    description:
+      '3D player control: walks with the arrow keys (left/right along x, up/down along z: up is away from the viewer, -z) and jumps with jump, through Rapier\'s character controller: slopes, steps, pushing bodies, riding moving platforms. Needs a dynamic body (a capsule is the usual shape) in a 3D world.',
+    requires: ["transform", "body"],
+    fields: {
+      speed: { type: "number", min: 0, default: 5, description: "Walk speed in m/s." },
+      jumpSpeed: { type: "number", min: 0, default: 7, description: "Upward launch speed in m/s. Jump height = jumpSpeed² / (2 · gravity): the defaults (7, 9.81) give 2.5 m." },
+      coyoteTime: { type: "number", min: 0, default: 0.1, description: "Seconds after leaving a ledge during which a jump still works." },
+      jumpBuffer: { type: "number", min: 0, default: 0.1, description: "Seconds a jump press is remembered before landing." },
+      variableJump: { type: "boolean", default: true, description: "Releasing jump early cuts the jump short." },
+      maxSlope: { type: "number", min: 0, default: 50, description: "Steepest slope in degrees it can walk up." },
+      stepHeight: { type: "number", min: 0, default: 0.3, description: "Ledges up to this many metres are stepped onto without jumping (stairs). 0 turns it off." },
+      push: { type: "number", min: 0, default: 1, description: "How hard it pushes dynamic bodies, as a multiple of its own mass. 0 = can't push." },
+      faceMovement: { type: "boolean", default: true, description: "Turns to face the way it walks (rotation y), so its mesh looks where it goes." },
+    },
+  },
   collectible: {
     description: "Removed when a player (platformer or topdown) touches it and adds to the score. Its body must be a sensor.",
     requires: ["transform", "body"],
@@ -167,7 +200,7 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       "Moves a kinematic body back and forth between its start position and `distance` pixels along +axis. Use it for moving platforms (players standing on them are carried) and walking enemies.",
     requires: ["transform", "body"],
     fields: {
-      axis: { type: "enum", values: ["x", "y"], default: "x", description: "x = right and back, y = down and back." },
+      axis: { type: "enum", values: ["x", "y", "z"], default: "x", description: "x = right and back, y = down and back (3D: up), z = toward the viewer and back (3D only)." },
       distance: { type: "number", min: 0, description: "Travel in pixels from the start position along +axis." },
       speed: { type: "number", min: 0, default: 80, description: "Speed in px/s." },
     },
@@ -198,7 +231,12 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       'Rapier only. Connects this body to another (`to`) or to a point in the world: a hinge (revolute), a slider (prismatic), a weld (fixed), a rope or a spring. Chains, bridges, pendulums, wheels, doors, cranes. Positions are offsets from each body\'s center in px. Give a list of joints for several connections: "joint": [{ ... }, { ... }].',
     requires: ["transform", "body"],
     fields: {
-      type: { type: "enum", values: ["revolute", "prismatic", "fixed", "rope", "spring"], default: "revolute", description: "revolute = hinge, prismatic = slides along axis, fixed = welded, rope = at most length apart, spring = pulled toward length." },
+      type: {
+        type: "enum",
+        values: ["revolute", "prismatic", "fixed", "rope", "spring", "spherical"],
+        default: "revolute",
+        description: "revolute = hinge, prismatic = slides along axis, fixed = welded, rope = at most length apart, spring = pulled toward length, spherical = a ball joint that turns any way (3D only: ragdolls, chains, wrecking balls).",
+      },
       to: { type: "string", default: "", description: "Id of the other body. Empty: a fixed point in the world." },
       anchor: {
         type: "object",
@@ -213,7 +251,11 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       length: { type: "number", min: 0, default: 0, description: "rope: longest it stretches; spring: length it pulls toward. 0 = the distance at the start." },
       stiffness: { type: "number", min: 0, default: 1000, description: "spring: how hard it pulls." },
       damping: { type: "number", min: 0, default: 20, description: "spring: how quickly it stops bouncing." },
-      axis: { type: "number", default: 0, description: "prismatic: the direction it slides, in degrees clockwise from right." },
+      axis: {
+        type: "axis",
+        default: 0,
+        description: 'prismatic: the direction it slides, in degrees clockwise from right. 3D: a { "x", "y", "z" } vector, the hinge axis of a revolute joint (default { "z": 1 }: it swings in the screen plane) or the slide direction of a prismatic one (default { "x": 1 }).',
+      },
       min: { type: "number", default: 0, description: "Limit: revolute angle in degrees, prismatic position in px. Used when min < max." },
       max: { type: "number", default: 0, description: "Upper limit (see min)." },
       motorSpeed: { type: "number", default: 0, description: "revolute: degrees per second clockwise; prismatic: px per second. Needs motorForce." },
@@ -264,6 +306,68 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       priority: { type: "number", default: 0, description: "When zones overlap, the highest priority wins (then the last one listed)." },
     },
   },
+  mesh: {
+    description:
+      '3D: how the entity looks, drawn by Three.js with physically based materials. With "shape": "auto" it takes the shape and size of its body. Presentation only: it never changes the game.',
+    requires: ["transform"],
+    fields: {
+      shape: {
+        type: "enum",
+        values: ["auto", "box", "sphere", "capsule", "cylinder", "cone", "plane", "torus"],
+        default: "auto",
+        description: "auto = the body's shape and size (a 1 m box without a body). plane lies flat, facing up. torus is a ring (width = outer diameter, height = tube thickness).",
+      },
+      width: { type: "number", min: 0, default: 0, description: "Size in metres. 0 = the body's width." },
+      height: { type: "number", min: 0, default: 0, description: "0 = the body's height." },
+      depth: { type: "number", min: 0, default: 0, description: "0 = the body's depth (or width)." },
+      color: { type: "string", default: "#c8ccd6", description: "Base color, any CSS color." },
+      metalness: { type: "number", min: 0, default: 0, description: "0 = plastic, wood, stone; 1 = metal." },
+      roughness: { type: "number", min: 0, default: 0.6, description: "0 = mirror-smooth, 1 = chalk." },
+      emissive: { type: "string", default: "#000000", description: "Light the surface gives off itself (lamps, lava, magic): a CSS color." },
+      emissiveIntensity: { type: "number", min: 0, default: 1, description: "Strength of emissive." },
+      opacity: { type: "number", min: 0, default: 1, description: "0 = invisible, 1 = solid. Below 1 it is drawn see-through (glass, water, ghosts)." },
+      texture: { type: "string", default: "", description: 'An image on the surface, e.g. "assets/stone.png".' },
+      textureScale: { type: "number", min: 0, default: 0, description: "Metres one copy of the texture covers, so it tiles instead of stretching. 0 = stretch once over each face." },
+      flatShading: { type: "boolean", default: false, description: "Faceted, low-poly look." },
+      wireframe: { type: "boolean", default: false, description: "Only the edges." },
+      castShadow: { type: "boolean", default: true, description: "Throws a shadow from shadow-casting lights." },
+      receiveShadow: { type: "boolean", default: true, description: "Shows shadows falling on it." },
+      visible: { type: "boolean", default: true, description: "false hides it (an invisible wall, a trigger)." },
+    },
+  },
+  light: {
+    description:
+      "3D: a light. directional = sunlight from the entity toward target, with crisp shadows; point = a bulb or torch shining all around; spot = a cone toward target; ambient = flat fill everywhere; hemisphere = sky color from above and groundColor from below (soft outdoor fill). Presentation only.",
+    requires: ["transform"],
+    fields: {
+      type: { type: "enum", values: ["directional", "point", "spot", "ambient", "hemisphere"], default: "directional", description: "What kind of light." },
+      color: { type: "string", default: "#ffffff", description: "Light color." },
+      intensity: { type: "number", min: 0, default: 1, description: "Brightness. Sun 2-4, fill 0.3-1, torches 5-30 (point and spot fall off with distance)." },
+      groundColor: { type: "string", default: "#444444", description: "hemisphere: the color from below." },
+      target: { type: "object", default: { x: 0, y: 0, z: 0 }, description: "directional and spot: the point it shines toward, { x, y, z } in metres." },
+      distance: { type: "number", min: 0, default: 0, description: "point and spot: how far it reaches, in metres. 0 = no limit." },
+      angle: { type: "number", min: 0, default: 30, description: "spot: half the cone's opening, in degrees." },
+      penumbra: { type: "number", min: 0, default: 0.3, description: "spot: how soft the cone's edge is, 0..1." },
+      castShadow: { type: "boolean", default: true, description: "Throws shadows (directional, point and spot). Shadows cost time: a sun and a few key lights." },
+      shadowSize: { type: "number", min: 1, default: 40, description: "directional: the size in metres of the area its shadows cover, centred on the camera's target." },
+    },
+  },
+  camera3d: {
+    description:
+      '3D: the camera. follow = behind and above the target (the player by default), never turning with it; orbit = circling the target; firstPerson = from the target\'s eyes, looking where it faces; fixed = from this entity\'s position toward lookAt. Without one, a follow camera watches the first character. Presentation only.',
+    requires: ["transform"],
+    fields: {
+      mode: { type: "enum", values: ["follow", "orbit", "firstPerson", "fixed"], default: "follow", description: "How it moves." },
+      target: { type: "string", default: "", description: "Id of the entity to watch. Empty = the first character." },
+      fov: { type: "number", min: 1, default: 55, description: "Vertical field of view in degrees. 35 = telephoto, 75 = wide." },
+      distance: { type: "number", min: 0, default: 9, description: "follow and orbit: how far from the target, in metres." },
+      height: { type: "number", default: 4, description: "follow and orbit: how far above the target, in metres." },
+      yaw: { type: "number", default: 0, description: "follow and orbit: the direction it looks from, in degrees around y. 0 = from +z (behind the player walking away); 90 = from +x." },
+      orbitSpeed: { type: "number", default: 20, description: "orbit: degrees per second it circles." },
+      lookAt: { type: "object", default: { x: 0, y: 0, z: 0 }, description: "fixed: the point it looks at, { x, y, z }." },
+      smoothing: { type: "number", min: 0, default: 0.12, description: "Seconds the camera takes to catch up (a gentle lag). 0 = locked to the target." },
+    },
+  },
   tilemap: {
     description:
       'A grid level written as rows of characters, one per cell. Each character is looked up in the legend: a tile ({ "image", "color", "solid", "sensor", "layer", "components", "merge" }) or a prefab name to place in that cell. " " and "." are empty. Neighboring tiles of the same character merge into one body, so a 200-cell wall is one collider. The tilemap\'s transform is its top-left corner. It becomes ordinary entities named <id>-<row>-<col>, so tests, play --watch and scripts can use them.',
@@ -283,7 +387,12 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       'Animates a value over time with easing: a door that slides open, a platform that glides and pauses, a coin that bobs, a sign that fades in. x/y move a kinematic or dynamic body by velocity, so riders are carried like on a patrol. Runs in the simulation (deterministic, testable). Give a list for several: "tween": [{ ... }, { ... }]. Scripts start tweens with self.tween({ ... }).',
     requires: ["transform"],
     fields: {
-      property: { type: "enum", values: ["x", "y", "rotation", "scale", "opacity"], default: "y", description: "What to animate. scale and opacity need a sprite." },
+      property: {
+        type: "enum",
+        values: ["x", "y", "z", "rotation", "rotationX", "rotationY", "scale", "opacity"],
+        default: "y",
+        description: "What to animate. z, rotationX and rotationY are 3D. scale and opacity need a sprite.",
+      },
       to: { type: "number", default: 0, description: "Target value. Ignored when by is set." },
       by: { type: "number", default: 0, description: "Change relative to the start value (e.g. -120 = up 120 px). Used when not 0." },
       duration: { type: "number", min: 0.01, description: "Seconds for one pass." },
@@ -303,8 +412,13 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
 export interface Transform {
   x: number;
   y: number;
-  /** Degrees, clockwise. Only rapier physics rotates bodies. */
+  /** 3D only; 0 in 2D. */
+  z: number;
+  /** 2D: degrees clockwise (only rapier physics rotates bodies). 3D: degrees around z (roll). */
   rotation: number;
+  /** 3D only: degrees around x (tilt) and y (turn). Applied y, then x, then z. */
+  rotationX: number;
+  rotationY: number;
 }
 
 export interface Body {
@@ -316,8 +430,11 @@ export interface Body {
   bounce: number;
   vx: number;
   vy: number;
-  shape: "box" | "circle" | "capsule" | "polygon" | "polyline";
-  points: [number, number][];
+  vz: number;
+  /** 3D: size along z; 0 = the same as width. */
+  depth: number;
+  shape: "box" | "circle" | "capsule" | "polygon" | "polyline" | "sphere" | "cylinder" | "convex";
+  points: number[][];
   friction: number;
   density: number;
   fixedRotation: boolean;
@@ -385,8 +502,65 @@ export interface Collectible {
   score: number;
 }
 
+export interface Mesh {
+  shape: "auto" | "box" | "sphere" | "capsule" | "cylinder" | "cone" | "plane" | "torus";
+  width: number;
+  height: number;
+  depth: number;
+  color: string;
+  metalness: number;
+  roughness: number;
+  emissive: string;
+  emissiveIntensity: number;
+  opacity: number;
+  texture: string;
+  textureScale: number;
+  flatShading: boolean;
+  wireframe: boolean;
+  castShadow: boolean;
+  receiveShadow: boolean;
+  visible: boolean;
+}
+
+export interface Light {
+  type: "directional" | "point" | "spot" | "ambient" | "hemisphere";
+  color: string;
+  intensity: number;
+  groundColor: string;
+  target: { x?: number; y?: number; z?: number };
+  distance: number;
+  angle: number;
+  penumbra: number;
+  castShadow: boolean;
+  shadowSize: number;
+}
+
+export interface Camera3D {
+  mode: "follow" | "orbit" | "firstPerson" | "fixed";
+  target: string;
+  fov: number;
+  distance: number;
+  height: number;
+  yaw: number;
+  orbitSpeed: number;
+  lookAt: { x?: number; y?: number; z?: number };
+  smoothing: number;
+}
+
+export interface Character {
+  speed: number;
+  jumpSpeed: number;
+  coyoteTime: number;
+  jumpBuffer: number;
+  variableJump: boolean;
+  maxSlope: number;
+  stepHeight: number;
+  push: number;
+  faceMovement: boolean;
+}
+
 export interface Patrol {
-  axis: "x" | "y";
+  axis: "x" | "y" | "z";
   distance: number;
   speed: number;
 }
@@ -397,14 +571,16 @@ export interface Hazard {
 }
 
 export interface Joint {
-  type: "revolute" | "prismatic" | "fixed" | "rope" | "spring";
+  type: "revolute" | "prismatic" | "fixed" | "rope" | "spring" | "spherical";
   to: string;
-  anchor: { x: number; y: number };
-  toAnchor: { x: number; y: number };
+  /** 3D anchors also have z. */
+  anchor: { x: number; y: number; z?: number };
+  toAnchor: { x: number; y: number; z?: number };
   length: number;
   stiffness: number;
   damping: number;
-  axis: number;
+  /** 2D: degrees. 3D: a direction vector. */
+  axis: number | { x?: number; y?: number; z?: number };
   min: number;
   max: number;
   motorSpeed: number;

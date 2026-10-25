@@ -2,6 +2,10 @@ import {
   resolveComponent,
   type Body,
   type Camera,
+  type Camera3D,
+  type Character,
+  type Light,
+  type Mesh,
   type Collectible,
   type Emitter,
   type Goal,
@@ -19,6 +23,7 @@ import {
   ScriptError,
   type DrawContext,
   type SoundContext,
+  type RenderContext,
   type Script,
   type ScriptContext,
   type ScriptEntity,
@@ -27,7 +32,8 @@ import {
   type ScriptWorld,
   type SpawnDef,
 } from "./script.ts";
-import { createPhysics } from "./engines.ts";
+import { atan2 } from "./dmath.ts";
+import { createPhysics, physicsEngineName } from "./engines.ts";
 import type { CameraZone } from "./camera.ts";
 import { advanceTween, createTween, startTween, type Tween, type TweenState } from "./tween.ts";
 import { at, feet, type PhysicsEngine, type PhysicsHost } from "./physics.ts";
@@ -51,6 +57,13 @@ export interface PlatformerState extends Platformer {
 export interface PatrolState extends Patrol {
   originX: number;
   originY: number;
+  originZ: number;
+}
+
+export interface CharacterState extends Character {
+  coyoteTimer: number;
+  jumping: boolean;
+  bufferTimer: number;
 }
 
 export interface ScriptState extends ScriptComponent {
@@ -71,9 +84,11 @@ export interface Entity {
   body?: BodyState;
   sprite?: Sprite;
   platformer?: PlatformerState;
+  /** The 3D player. */
+  character?: CharacterState;
   topdown?: Topdown;
   /** Where a player respawns after dying. */
-  spawn?: { x: number; y: number };
+  spawn?: { x: number; y: number; z: number };
   collectible?: Collectible;
   patrol?: PatrolState;
   hazard?: Hazard;
@@ -84,12 +99,17 @@ export interface Entity {
   emitter?: Emitter;
   camera?: Camera;
   cameraZone?: CameraZone;
+  /** 3D presentation, read by the renderer (@ludra/three). */
+  mesh?: Mesh;
+  light?: Light;
+  camera3d?: Camera3D;
   /** Tweens declared on the entity or started by its scripts. */
   tweens?: TweenState[];
 }
 
 /** `x`/`y` is where it happened, e.g. the coin's position for "collect" or the feet for "land". */
-export type GameEvent = { frame: number; time: number; x: number; y: number } & (
+/** `z` is there in 3D worlds only. */
+export type GameEvent = { frame: number; time: number; x: number; y: number; z?: number } & (
   | { type: "jump"; entity: string }
   | { type: "land"; entity: string }
   | { type: "collect"; entity: string; item: string; score: number }
@@ -112,8 +132,14 @@ export interface EntitySnapshot {
   vx: number;
   vy: number;
   grounded: boolean;
-  /** Degrees, clockwise. Present only when the entity is rotated (rapier physics). */
+  /** Degrees, clockwise. Present only when the entity is rotated (rapier physics). 3D: around z. */
   rotation?: number;
+  /** 3D only: depth position and velocity, always present in a 3D world. */
+  z?: number;
+  vz?: number;
+  /** 3D only: degrees around x and y, present when not 0. */
+  rotationX?: number;
+  rotationY?: number;
   /** Present when a script stored data on the entity. */
   state?: Record<string, unknown>;
 }
@@ -150,12 +176,18 @@ export class SceneValidationError extends Error {
 }
 
 const DEFAULT_GRAVITY = 1800;
+/** 3D worlds are in metres: Earth's gravity, in m/s². */
+const DEFAULT_GRAVITY_3D = 9.81;
 /** When jump is released early, upward speed is capped to this fraction of jumpSpeed. */
 const JUMP_CUT = 0.45;
 /** Upward speed after stomping an enemy, as a fraction of jumpSpeed. */
 const STOMP_BOUNCE = 0.6;
 /** How far a player's feet may sink into an enemy and still count as a stomp. */
 const STOMP_TOLERANCE = 8;
+const STOMP_TOLERANCE_3D = 0.15;
+const PATROL_EPSILON = 1e-9;
+/** 3D: players falling below this height die, unless the scene sets world.fallLimit. */
+const DEFAULT_FALL_LIMIT = -50;
 /** A platformer this far below the bottom of the world has fallen out of it. */
 const FALL_MARGIN = 100;
 /** Bodies this close count as touching for `touch` hooks, so solids (doors, walls) can be touched too. */
@@ -168,6 +200,10 @@ const EPSILON = 1e-4;
  * always produce the same result.
  */
 export class World {
+  /** 2, or 3 for a 3D world (metres, +y up, Rapier 3D). */
+  readonly dimensions: 2 | 3;
+  /** 3D: players falling below this height die. */
+  readonly fallLimit: number;
   readonly width: number;
   readonly height: number;
   readonly gravity: number;
@@ -205,9 +241,11 @@ export class World {
   private drawing = false;
 
   constructor(scene: SceneDef, options: WorldOptions = {}) {
+    this.dimensions = scene.world?.dimensions ?? 2;
+    this.fallLimit = scene.world?.fallLimit ?? DEFAULT_FALL_LIMIT;
     this.width = scene.world?.width ?? 960;
     this.height = scene.world?.height ?? 540;
-    this.gravity = scene.world?.gravity ?? DEFAULT_GRAVITY;
+    this.gravity = scene.world?.gravity ?? (this.dimensions === 3 ? DEFAULT_GRAVITY_3D : DEFAULT_GRAVITY);
     this.background = scene.world?.background ?? "#1d2333";
     this.seed = scene.world?.seed ?? 1;
     this.scripts = options.scripts;
@@ -215,7 +253,7 @@ export class World {
     this.score = options.carry?.score ?? 0;
     this.deaths = options.carry?.deaths ?? 0;
     this.lives = options.carry?.lives ?? scene.world?.lives;
-    this.physics = options.physics ?? createPhysics(scene.world?.physics ?? "arcade", { width: this.width, height: this.height, gravity: this.gravity });
+    this.physics = options.physics ?? createPhysics(physicsEngineName(scene), { width: this.width, height: this.height, gravity: this.gravity });
     const world = this;
     this.physicsHost = {
       get entities() {
@@ -258,6 +296,7 @@ export class World {
     if (this.over) return;
 
     this.updatePlatformers(input, pressed);
+    this.updateCharacters(input, pressed);
     this.updateTopdown(input);
     this.updateScripts(input, pressed);
     if (this.over) return;
@@ -284,6 +323,12 @@ export class World {
         grounded: e.body?.grounded ?? false,
       };
       if (e.transform.rotation !== 0) entities[e.id]!.rotation = e.transform.rotation;
+      if (this.dimensions === 3) {
+        entities[e.id]!.z = e.transform.z;
+        entities[e.id]!.vz = e.body?.vz ?? 0;
+        if (e.transform.rotationX !== 0) entities[e.id]!.rotationX = e.transform.rotationX;
+        if (e.transform.rotationY !== 0) entities[e.id]!.rotationY = e.transform.rotationY;
+      }
       // A JSON copy, so later frames can't change an earlier snapshot.
       if (Object.keys(e.state).length > 0) entities[e.id]!.state = JSON.parse(JSON.stringify(e.state));
     }
@@ -393,8 +438,25 @@ export class World {
     }
   }
 
+  /**
+   * Runs an entity's `render` hook (3D). Called by the 3D renderer, never by the simulation.
+   * Like draw hooks, `self` and `world` are read-only for the duration.
+   */
+  callRenderHook(entity: Entity, extras: Omit<RenderContext, "self" | "world" | "params">): void {
+    const script = entity.script;
+    const fn = script?.module.render;
+    if (!script || !fn || entity.removed) return;
+    const ctx: RenderContext = { ...extras, self: this.handle(entity), world: this.api(), params: script.params };
+    this.drawing = true;
+    try {
+      this.run(entity, "render", () => fn.call(script.module, ctx));
+    } finally {
+      this.drawing = false;
+    }
+  }
+
   /** True when any live entity's script has the given hook. */
-  hasHook(hook: "draw" | "drawUI" | "sound"): boolean {
+  hasHook(hook: "draw" | "drawUI" | "sound" | "render"): boolean {
     return this.entities.some((e) => !e.removed && typeof e.script?.module[hook] === "function");
   }
 
@@ -415,7 +477,7 @@ export class World {
   /** Draw hooks only paint, so the browser can't drift from what tests verified. */
   private guard(what: string): void {
     if (this.drawing) {
-      throw this.misuse(`${what} changes the game, which a ${this.current?.hook === "sound" ? "sound" : "draw"} hook can't do. Change the game in update or touch, and keep presentation memory in ctx.local.`);
+      throw this.misuse(`${what} changes the game, which a ${this.current?.hook === "sound" || this.current?.hook === "render" ? this.current.hook : "draw"} hook can't do. Change the game in update or touch, and keep presentation memory in ctx.local.`);
     }
   }
 
@@ -465,6 +527,20 @@ export class World {
         world.guard("Setting vy");
         if (e.body) e.body.vy = value;
       },
+      get z() {
+        return e.transform.z;
+      },
+      set z(value: number) {
+        world.guard("Setting z");
+        e.transform.z = value;
+      },
+      get vz() {
+        return e.body?.vz ?? 0;
+      },
+      set vz(value: number) {
+        world.guard("Setting vz");
+        if (e.body) e.body.vz = value;
+      },
       get grounded() {
         return e.body?.grounded ?? false;
       },
@@ -474,6 +550,29 @@ export class World {
       set rotation(value: number) {
         world.guard("Setting rotation");
         e.transform.rotation = value;
+      },
+      get rotationX() {
+        return e.transform.rotationX;
+      },
+      set rotationX(value: number) {
+        world.guard("Setting rotationX");
+        e.transform.rotationX = value;
+      },
+      get rotationY() {
+        return e.transform.rotationY;
+      },
+      set rotationY(value: number) {
+        world.guard("Setting rotationY");
+        e.transform.rotationY = value;
+      },
+      get spin() {
+        return e.body && world.physics.spin ? world.physics.spin(e) : { x: 0, y: 0, z: e.body ? world.physics.angularVelocity(e) : 0 };
+      },
+      set spin(value: { x: number; y: number; z: number }) {
+        world.guard("Setting spin");
+        if (!e.body) return;
+        if (world.physics.setSpin) world.physics.setSpin(e, { x: value.x ?? 0, y: value.y ?? 0, z: value.z ?? 0 });
+        else world.physics.setAngularVelocity(e, value.z ?? 0);
       },
       get angularVelocity() {
         return e.body ? world.physics.angularVelocity(e) : 0;
@@ -485,9 +584,12 @@ export class World {
       get mass() {
         return e.body ? world.physics.mass(e) : 0;
       },
-      applyImpulse(x: number, y: number, at?: { x: number; y: number }) {
+      applyImpulse(x: number | { x?: number; y?: number; z?: number }, y?: number | { x: number; y: number; z?: number }, at?: { x: number; y: number; z?: number }) {
         world.guard("applyImpulse");
-        if (e.body) world.physics.applyImpulse(e, x, y, at);
+        // 3D style: a vector, then optionally where it strikes.
+        const v = typeof x === "object" ? { x: x.x ?? 0, y: x.y ?? 0, z: x.z ?? 0 } : { x, y: y as number, z: 0 };
+        const point = typeof x === "object" ? (y as { x: number; y: number; z?: number } | undefined) : at;
+        if (e.body) world.physics.applyImpulse(e, v.x, v.y, point, v.z);
       },
       tween(def: Parameters<ScriptEntity["tween"]>[0]) {
         world.guard("tween");
@@ -498,10 +600,12 @@ export class World {
         // A new tween of the same property replaces the old one.
         e.tweens = [...(e.tweens ?? []).filter((t) => t.property !== spec.property), createTween(spec, readTweened(e, spec.property))];
       },
-      applyForce(x: number, y: number, at?: { x: number; y: number }) {
+      applyForce(x: number | { x?: number; y?: number; z?: number }, y?: number | { x: number; y: number; z?: number }, at?: { x: number; y: number; z?: number }) {
         world.guard("applyForce");
+        const v = typeof x === "object" ? { x: x.x ?? 0, y: x.y ?? 0, z: x.z ?? 0 } : { x, y: y as number, z: 0 };
+        const point = typeof x === "object" ? (y as { x: number; y: number; z?: number } | undefined) : at;
         // A force acts over the frame: the impulse it delivers in one step.
-        if (e.body) world.physics.applyImpulse(e, x * FIXED_DT, y * FIXED_DT, at);
+        if (e.body) world.physics.applyImpulse(e, v.x * FIXED_DT, v.y * FIXED_DT, point, v.z * FIXED_DT);
       },
       get width() {
         return e.body?.width ?? e.sprite?.width ?? 0;
@@ -629,7 +733,7 @@ export class World {
           throw world.misuse(`"${name}" is a built-in event and can't be emitted by scripts. Pick another name, e.g. "${name}-custom".`);
         }
         const by = world.current?.entity;
-        world.emit({ type: "custom", name, entity: by?.id ?? "script", data, x: by?.transform.x ?? 0, y: by?.transform.y ?? 0 });
+        world.emit({ type: "custom", name, entity: by?.id ?? "script", data, x: by?.transform.x ?? 0, y: by?.transform.y ?? 0, ...(world.dimensions === 3 ? { z: by?.transform.z ?? 0 } : {}) });
       },
       raycast: (from, to, options = {}) => {
         const ignore = [options.ignore ?? []].flat().map((target) => world.resolve(target)).filter((e): e is Entity => !!e);
@@ -690,6 +794,55 @@ export class World {
 
   // ------------------------------------------------------------ built-ins
 
+  /** Where an entity is, for events. 3D adds z. */
+  private at(e: Entity): { x: number; y: number; z?: number } {
+    return this.dimensions === 3 ? { x: e.transform.x, y: e.transform.y, z: e.transform.z } : at(e);
+  }
+
+  /** Where an entity stands: the bottom of its body (below its center in 3D, where +y is up). */
+  private feet(e: Entity): { x: number; y: number; z?: number } {
+    if (this.dimensions !== 3) return feet(e);
+    return { x: e.transform.x, y: e.transform.y - (e.body?.height ?? 0) / 2, z: e.transform.z };
+  }
+
+  /**
+   * 3D players walk on the ground plane: left/right along x, up/down along z (up is away
+   * from the viewer, -z), and jump straight up (+y).
+   */
+  private updateCharacters(held: ReadonlySet<Action>, pressed: ReadonlySet<Action>): void {
+    for (const e of this.entities) {
+      const c = e.character;
+      const b = e.body;
+      if (!c || !b) continue;
+      const dx = (held.has("right") ? 1 : 0) - (held.has("left") ? 1 : 0);
+      const dz = (held.has("down") ? 1 : 0) - (held.has("up") ? 1 : 0);
+      // Diagonals walk at the same speed as straight lines.
+      const length = Math.hypot(dx, dz) || 1;
+      b.vx = (dx / length) * c.speed;
+      b.vz = (dz / length) * c.speed;
+      // Facing -z is a turn of 0; walking right (+x) is -90 (turning right is clockwise from above).
+      // dmath: the same bits on every machine, so the facing angle is part of the golden hash safely.
+      if (c.faceMovement && (dx !== 0 || dz !== 0)) e.transform.rotationY = (atan2(-dx, -dz) * 180) / Math.PI;
+
+      if (b.grounded) c.coyoteTimer = c.coyoteTime + EPSILON;
+      if (pressed.has("jump")) c.bufferTimer = c.jumpBuffer + EPSILON;
+      if (c.bufferTimer > 0 && c.coyoteTimer > 0) {
+        b.vy = c.jumpSpeed;
+        b.grounded = false;
+        b.standingOn = undefined;
+        c.bufferTimer = 0;
+        c.coyoteTimer = 0;
+        c.jumping = true;
+        this.emit({ type: "jump", entity: e.id, ...this.feet(e) });
+      } else if (c.jumping && c.variableJump && !held.has("jump") && b.vy > c.jumpSpeed * JUMP_CUT) {
+        b.vy = c.jumpSpeed * JUMP_CUT;
+      }
+      if (b.vy <= 0) c.jumping = false;
+      c.coyoteTimer = Math.max(0, c.coyoteTimer - FIXED_DT);
+      c.bufferTimer = Math.max(0, c.bufferTimer - FIXED_DT);
+    }
+  }
+
   /** Entities the player controls: platformers and topdown movers. */
   private players(): Entity[] {
     return this.entities.filter(isPlayer);
@@ -732,7 +885,7 @@ export class World {
         p.bufferTimer = 0;
         p.coyoteTimer = 0;
         p.jumping = true;
-        this.emit({ type: "jump", entity: e.id, ...feet(e) });
+        this.emit({ type: "jump", entity: e.id, ...this.feet(e) });
       } else if (p.jumping && p.variableJump && !held.has("jump") && b.vy < -p.jumpSpeed * JUMP_CUT) {
         // Only the player's own jumps are cut short; launches from pads, stomps or scripts are not.
         b.vy = -p.jumpSpeed * JUMP_CUT;
@@ -760,11 +913,12 @@ export class World {
         const settling = tween.done && tween.settle;
         const value = advanceTween(tween, FIXED_DT);
         const b = e.body;
-        const moved = (tween.property === "x" || tween.property === "y") && b && b.type !== "static";
+        const moved = (tween.property === "x" || tween.property === "y" || tween.property === "z") && b && b.type !== "static";
         if (value === undefined) {
           // A body that just arrived stops there.
           if (settling && moved) {
             if (tween.property === "x") b.vx = 0;
+            else if (tween.property === "z") b.vz = 0;
             else b.vy = 0;
           }
           tween.settle = false;
@@ -773,6 +927,7 @@ export class World {
         tween.settle = tween.done;
         if (moved) {
           if (tween.property === "x") b.vx = (value - e.transform.x) / FIXED_DT;
+          else if (tween.property === "z") b.vz = (value - e.transform.z) / FIXED_DT;
           else b.vy = (value - e.transform.y) / FIXED_DT;
         } else writeTweened(e, tween.property, value);
       }
@@ -785,14 +940,16 @@ export class World {
       const patrol = e.patrol;
       const b = e.body;
       if (!patrol || !b) continue;
-      const alongX = patrol.axis === "x";
-      const offset = alongX ? e.transform.x - patrol.originX : e.transform.y - patrol.originY;
-      const current = alongX ? b.vx : b.vy;
+      const axis = patrol.axis;
+      const offset = axis === "x" ? e.transform.x - patrol.originX : axis === "z" ? e.transform.z - patrol.originZ : e.transform.y - patrol.originY;
+      const current = axis === "x" ? b.vx : axis === "z" ? b.vz : b.vy;
       let direction = current < 0 ? -1 : 1;
-      if (offset >= patrol.distance) direction = -1;
-      else if (offset <= 0) direction = 1;
-      b.vx = alongX ? direction * patrol.speed : 0;
-      b.vy = alongX ? 0 : direction * patrol.speed;
+      // A hair of tolerance: positions like -28.9 + 6.3 land a rounding error short of the end.
+      if (offset >= patrol.distance - PATROL_EPSILON) direction = -1;
+      else if (offset <= PATROL_EPSILON) direction = 1;
+      b.vx = axis === "x" ? direction * patrol.speed : 0;
+      b.vy = axis === "y" ? direction * patrol.speed : 0;
+      b.vz = axis === "z" ? direction * patrol.speed : 0;
     }
   }
 
@@ -803,24 +960,27 @@ export class World {
       if (!collector) continue;
       this.remove(item);
       this.score += item.collectible!.score;
-      this.emit({ type: "collect", entity: collector.id, item: item.id, score: item.collectible!.score, ...at(item) });
+      this.emit({ type: "collect", entity: collector.id, item: item.id, score: item.collectible!.score, ...this.at(item) });
     }
   }
 
   private updateHazards(): void {
     for (const player of this.players()) {
       const b = player.body!;
-      if (player.transform.y - b.height / 2 > this.height + FALL_MARGIN) {
+      const fell = this.dimensions === 3 ? player.transform.y + b.height / 2 < this.fallLimit : player.transform.y - b.height / 2 > this.height + FALL_MARGIN;
+      if (fell) {
         this.kill(player, "fall");
         continue;
       }
       for (const hazard of this.entities.filter((e) => e.hazard && e.body)) {
         if (!this.physics.overlaps(player, hazard)) continue;
-        if (hazard.hazard!.stompable && player.platformer && isStomp(player, hazard)) {
+        const jumper = player.platformer ?? player.character;
+        if (hazard.hazard!.stompable && jumper && isStomp(player, hazard, this.dimensions === 3)) {
           this.remove(hazard);
-          b.vy = -player.platformer!.jumpSpeed * STOMP_BOUNCE;
+          // A bounce off the enemy: up is -y in 2D, +y in 3D.
+          b.vy = (this.dimensions === 3 ? 1 : -1) * jumper.jumpSpeed * STOMP_BOUNCE;
           this.score += hazard.hazard!.score;
-          this.emit({ type: "stomp", entity: player.id, enemy: hazard.id, score: hazard.hazard!.score, ...at(hazard) });
+          this.emit({ type: "stomp", entity: player.id, enemy: hazard.id, score: hazard.hazard!.score, ...this.at(hazard) });
           continue;
         }
         this.kill(player, hazard.id);
@@ -836,7 +996,7 @@ export class World {
       if (!player) continue;
       this.won = true;
       if (goal.goal!.next) this.exit = goal.goal!.next;
-      this.emit({ type: "win", entity: player.id, goal: goal.id, ...at(goal) });
+      this.emit({ type: "win", entity: player.id, goal: goal.id, ...this.at(goal) });
       return;
     }
   }
@@ -848,9 +1008,16 @@ export class World {
         const key = `${player.id}>${checkpoint.id}`;
         if (this.reached.has(key) || !this.physics.overlaps(player, checkpoint)) continue;
         this.reached.add(key);
-        const bottom = checkpoint.transform.y + checkpoint.body!.height / 2;
-        player.spawn = { x: checkpoint.transform.x, y: player.platformer ? bottom - player.body!.height / 2 : checkpoint.transform.y };
-        this.emit({ type: "checkpoint", entity: player.id, checkpoint: checkpoint.id, ...at(checkpoint) });
+        const c = checkpoint.transform;
+        if (this.dimensions === 3) {
+          // Standing on the checkpoint's bottom, +y up.
+          const bottom = c.y - checkpoint.body!.height / 2;
+          player.spawn = { x: c.x, y: player.character ? bottom + player.body!.height / 2 : c.y, z: c.z };
+        } else {
+          const bottom = c.y + checkpoint.body!.height / 2;
+          player.spawn = { x: c.x, y: player.platformer ? bottom - player.body!.height / 2 : c.y, z: 0 };
+        }
+        this.emit({ type: "checkpoint", entity: player.id, checkpoint: checkpoint.id, ...this.at(checkpoint) });
       }
     }
   }
@@ -866,7 +1033,7 @@ export class World {
   private kill(player: Entity, cause: string): void {
     const b = player.body!;
     this.deaths++;
-    this.emit({ type: "die", entity: player.id, cause, ...at(player) });
+    this.emit({ type: "die", entity: player.id, cause, ...this.at(player) });
     if (this.lives !== undefined) {
       this.lives--;
       // Out of lives: the player stays where it fell and the game is over.
@@ -874,12 +1041,14 @@ export class World {
     }
     player.transform.x = player.spawn?.x ?? player.transform.x;
     player.transform.y = player.spawn?.y ?? player.transform.y;
+    player.transform.z = player.spawn?.z ?? player.transform.z;
     b.vx = 0;
     b.vy = 0;
+    b.vz = 0;
     b.grounded = false;
     b.standingOn = undefined;
-    const p = player.platformer;
-    if (p) {
+    for (const p of [player.platformer, player.character]) {
+      if (!p) continue;
       p.coyoteTimer = 0;
       p.bufferTimer = 0;
       p.jumping = false;
@@ -889,7 +1058,7 @@ export class World {
 
 function createEntity(def: EntityDef): Entity {
   const c = def.components;
-  const transform = c.transform ? resolveComponent<Transform>("transform", c.transform) : { x: 0, y: 0, rotation: 0 };
+  const transform = resolveTransform(c.transform);
   const entity: Entity = { id: def.id, state: {}, transform };
   if (c.body) entity.body = { ...resolveComponent<Body>("body", c.body), grounded: false };
   if (c.sprite) entity.sprite = resolveComponent<Sprite>("sprite", c.sprite);
@@ -902,9 +1071,10 @@ function createEntity(def: EntityDef): Entity {
     };
   }
   if (c.topdown) entity.topdown = resolveComponent<Topdown>("topdown", c.topdown);
-  if (entity.platformer || entity.topdown) entity.spawn = { x: transform.x, y: transform.y };
+  if (c.character) entity.character = { ...resolveComponent<Character>("character", c.character), coyoteTimer: 0, bufferTimer: 0, jumping: false };
+  if (entity.platformer || entity.topdown || entity.character) entity.spawn = { x: transform.x, y: transform.y, z: transform.z };
   if (c.collectible) entity.collectible = resolveComponent<Collectible>("collectible", c.collectible);
-  if (c.patrol) entity.patrol = { ...resolveComponent<Patrol>("patrol", c.patrol), originX: transform.x, originY: transform.y };
+  if (c.patrol) entity.patrol = { ...resolveComponent<Patrol>("patrol", c.patrol), originX: transform.x, originY: transform.y, originZ: transform.z };
   if (c.hazard) entity.hazard = resolveComponent<Hazard>("hazard", c.hazard);
   if (c.goal) entity.goal = resolveComponent<Goal>("goal", c.goal);
   if (c.checkpoint) entity.checkpoint = {};
@@ -912,6 +1082,9 @@ function createEntity(def: EntityDef): Entity {
   if (c.emitter) entity.emitter = resolveComponent<Emitter>("emitter", c.emitter);
   if (c.camera) entity.camera = resolveComponent<Camera>("camera", c.camera);
   if (c.cameraZone) entity.cameraZone = resolveComponent<CameraZone>("cameraZone", c.cameraZone);
+  if (c.mesh) entity.mesh = resolveComponent<Mesh>("mesh", c.mesh);
+  if (c.light) entity.light = resolveComponent<Light>("light", c.light);
+  if (c.camera3d) entity.camera3d = resolveComponent<Camera3D>("camera3d", c.camera3d);
   if (c.tween) {
     entity.tweens = (Array.isArray(c.tween) ? c.tween : [c.tween]).map((t) => {
       const spec = resolveComponent<Tween>("tween", t as Record<string, unknown>);
@@ -921,23 +1094,46 @@ function createEntity(def: EntityDef): Entity {
   return entity;
 }
 
+/** A transform from JSON: rotation is degrees in 2D, or { x, y, z } degrees in 3D. */
+function resolveTransform(raw: Record<string, unknown> | undefined): Transform {
+  if (!raw) return { x: 0, y: 0, z: 0, rotation: 0, rotationX: 0, rotationY: 0 };
+  const { rotation, ...rest } = raw;
+  const t = resolveComponent<Omit<Transform, "rotationX" | "rotationY"> & { rotation: number }>("transform", rest);
+  const r = typeof rotation === "object" && rotation !== null ? (rotation as { x?: number; y?: number; z?: number }) : undefined;
+  return {
+    x: t.x,
+    y: t.y,
+    z: t.z,
+    rotation: r ? (r.z ?? 0) : typeof rotation === "number" ? rotation : 0,
+    rotationX: r?.x ?? 0,
+    rotationY: r?.y ?? 0,
+  };
+}
+
 function readTweened(e: Entity, property: Tween["property"]): number {
-  if (property === "x" || property === "y" || property === "rotation") return e.transform[property];
+  if (property !== "scale" && property !== "opacity") return e.transform[property];
   return e.sprite?.[property] ?? 1;
 }
 
 function writeTweened(e: Entity, property: Tween["property"], value: number): void {
-  if (property === "x" || property === "y" || property === "rotation") e.transform[property] = value;
+  if (property !== "scale" && property !== "opacity") e.transform[property] = value;
   else if (e.sprite) e.sprite[property] = Math.max(0, value);
 }
 
 function isPlayer(e: Entity): boolean {
-  return !!(e.platformer || e.topdown) && !!e.body;
+  return !!(e.platformer || e.topdown || e.character) && !!e.body;
 }
 
 /** A stomp is a falling player whose feet were above the enemy's top on the previous frame. */
-function isStomp(player: Entity, enemy: Entity): boolean {
+function isStomp(player: Entity, enemy: Entity, yUp: boolean): boolean {
   const b = player.body!;
+  if (yUp) {
+    // 3D: falling (-y), with its feet at or above the enemy's top a step ago (tolerance in metres).
+    if (b.vy >= 0) return false;
+    const previousBottom = player.transform.y - b.vy * FIXED_DT - b.height / 2;
+    const enemyTop = enemy.transform.y + enemy.body!.height / 2;
+    return previousBottom >= enemyTop - STOMP_TOLERANCE_3D;
+  }
   if (b.vy <= 0) return false;
   const previousBottom = player.transform.y - b.vy * FIXED_DT + b.height / 2;
   const enemyTop = enemy.transform.y - enemy.body!.height / 2;
