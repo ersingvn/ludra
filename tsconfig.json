@@ -8,6 +8,9 @@
       "path": "packages/physics"
     },
     {
+      "path": "packages/three"
+    },
+    {
       "path": "packages/cli"
     }
   ]

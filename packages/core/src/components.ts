@@ -40,6 +40,9 @@ export const COMPONENT_NAMES = [
   "script",
   "camera",
   "cameraZone",
+  "mesh",
+  "light",
+  "camera3d",
   "tilemap",
   "tween",
 ] as const;
@@ -303,6 +306,68 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       priority: { type: "number", default: 0, description: "When zones overlap, the highest priority wins (then the last one listed)." },
     },
   },
+  mesh: {
+    description:
+      '3D: how the entity looks, drawn by Three.js with physically based materials. With "shape": "auto" it takes the shape and size of its body. Presentation only: it never changes the game.',
+    requires: ["transform"],
+    fields: {
+      shape: {
+        type: "enum",
+        values: ["auto", "box", "sphere", "capsule", "cylinder", "cone", "plane", "torus"],
+        default: "auto",
+        description: "auto = the body's shape and size (a 1 m box without a body). plane lies flat, facing up. torus is a ring (width = outer diameter, height = tube thickness).",
+      },
+      width: { type: "number", min: 0, default: 0, description: "Size in metres. 0 = the body's width." },
+      height: { type: "number", min: 0, default: 0, description: "0 = the body's height." },
+      depth: { type: "number", min: 0, default: 0, description: "0 = the body's depth (or width)." },
+      color: { type: "string", default: "#c8ccd6", description: "Base color, any CSS color." },
+      metalness: { type: "number", min: 0, default: 0, description: "0 = plastic, wood, stone; 1 = metal." },
+      roughness: { type: "number", min: 0, default: 0.6, description: "0 = mirror-smooth, 1 = chalk." },
+      emissive: { type: "string", default: "#000000", description: "Light the surface gives off itself (lamps, lava, magic): a CSS color." },
+      emissiveIntensity: { type: "number", min: 0, default: 1, description: "Strength of emissive." },
+      opacity: { type: "number", min: 0, default: 1, description: "0 = invisible, 1 = solid. Below 1 it is drawn see-through (glass, water, ghosts)." },
+      texture: { type: "string", default: "", description: 'An image on the surface, e.g. "assets/stone.png".' },
+      textureScale: { type: "number", min: 0, default: 0, description: "Metres one copy of the texture covers, so it tiles instead of stretching. 0 = stretch once over each face." },
+      flatShading: { type: "boolean", default: false, description: "Faceted, low-poly look." },
+      wireframe: { type: "boolean", default: false, description: "Only the edges." },
+      castShadow: { type: "boolean", default: true, description: "Throws a shadow from shadow-casting lights." },
+      receiveShadow: { type: "boolean", default: true, description: "Shows shadows falling on it." },
+      visible: { type: "boolean", default: true, description: "false hides it (an invisible wall, a trigger)." },
+    },
+  },
+  light: {
+    description:
+      "3D: a light. directional = sunlight from the entity toward target, with crisp shadows; point = a bulb or torch shining all around; spot = a cone toward target; ambient = flat fill everywhere; hemisphere = sky color from above and groundColor from below (soft outdoor fill). Presentation only.",
+    requires: ["transform"],
+    fields: {
+      type: { type: "enum", values: ["directional", "point", "spot", "ambient", "hemisphere"], default: "directional", description: "What kind of light." },
+      color: { type: "string", default: "#ffffff", description: "Light color." },
+      intensity: { type: "number", min: 0, default: 1, description: "Brightness. Sun 2-4, fill 0.3-1, torches 5-30 (point and spot fall off with distance)." },
+      groundColor: { type: "string", default: "#444444", description: "hemisphere: the color from below." },
+      target: { type: "object", default: { x: 0, y: 0, z: 0 }, description: "directional and spot: the point it shines toward, { x, y, z } in metres." },
+      distance: { type: "number", min: 0, default: 0, description: "point and spot: how far it reaches, in metres. 0 = no limit." },
+      angle: { type: "number", min: 0, default: 30, description: "spot: half the cone's opening, in degrees." },
+      penumbra: { type: "number", min: 0, default: 0.3, description: "spot: how soft the cone's edge is, 0..1." },
+      castShadow: { type: "boolean", default: true, description: "Throws shadows (directional, point and spot). Shadows cost time: a sun and a few key lights." },
+      shadowSize: { type: "number", min: 1, default: 40, description: "directional: the size in metres of the area its shadows cover, centred on the camera's target." },
+    },
+  },
+  camera3d: {
+    description:
+      '3D: the camera. follow = behind and above the target (the player by default), never turning with it; orbit = circling the target; firstPerson = from the target\'s eyes, looking where it faces; fixed = from this entity\'s position toward lookAt. Without one, a follow camera watches the first character. Presentation only.',
+    requires: ["transform"],
+    fields: {
+      mode: { type: "enum", values: ["follow", "orbit", "firstPerson", "fixed"], default: "follow", description: "How it moves." },
+      target: { type: "string", default: "", description: "Id of the entity to watch. Empty = the first character." },
+      fov: { type: "number", min: 1, default: 55, description: "Vertical field of view in degrees. 35 = telephoto, 75 = wide." },
+      distance: { type: "number", min: 0, default: 9, description: "follow and orbit: how far from the target, in metres." },
+      height: { type: "number", default: 4, description: "follow and orbit: how far above the target, in metres." },
+      yaw: { type: "number", default: 0, description: "follow and orbit: the direction it looks from, in degrees around y. 0 = from +z (behind the player walking away); 90 = from +x." },
+      orbitSpeed: { type: "number", default: 20, description: "orbit: degrees per second it circles." },
+      lookAt: { type: "object", default: { x: 0, y: 0, z: 0 }, description: "fixed: the point it looks at, { x, y, z }." },
+      smoothing: { type: "number", min: 0, default: 0.12, description: "Seconds the camera takes to catch up (a gentle lag). 0 = locked to the target." },
+    },
+  },
   tilemap: {
     description:
       'A grid level written as rows of characters, one per cell. Each character is looked up in the legend: a tile ({ "image", "color", "solid", "sensor", "layer", "components", "merge" }) or a prefab name to place in that cell. " " and "." are empty. Neighboring tiles of the same character merge into one body, so a 200-cell wall is one collider. The tilemap\'s transform is its top-left corner. It becomes ordinary entities named <id>-<row>-<col>, so tests, play --watch and scripts can use them.',
@@ -430,6 +495,51 @@ export interface Topdown {
 
 export interface Collectible {
   score: number;
+}
+
+export interface Mesh {
+  shape: "auto" | "box" | "sphere" | "capsule" | "cylinder" | "cone" | "plane" | "torus";
+  width: number;
+  height: number;
+  depth: number;
+  color: string;
+  metalness: number;
+  roughness: number;
+  emissive: string;
+  emissiveIntensity: number;
+  opacity: number;
+  texture: string;
+  textureScale: number;
+  flatShading: boolean;
+  wireframe: boolean;
+  castShadow: boolean;
+  receiveShadow: boolean;
+  visible: boolean;
+}
+
+export interface Light {
+  type: "directional" | "point" | "spot" | "ambient" | "hemisphere";
+  color: string;
+  intensity: number;
+  groundColor: string;
+  target: { x?: number; y?: number; z?: number };
+  distance: number;
+  angle: number;
+  penumbra: number;
+  castShadow: boolean;
+  shadowSize: number;
+}
+
+export interface Camera3D {
+  mode: "follow" | "orbit" | "firstPerson" | "fixed";
+  target: string;
+  fov: number;
+  distance: number;
+  height: number;
+  yaw: number;
+  orbitSpeed: number;
+  lookAt: { x?: number; y?: number; z?: number };
+  smoothing: number;
 }
 
 export interface Character {

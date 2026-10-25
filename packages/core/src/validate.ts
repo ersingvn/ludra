@@ -84,6 +84,7 @@ export function validateScene(input: unknown): ValidationResult {
 
   if (raw.sounds !== undefined) validateSounds(raw.sounds, error);
   if (raw.music !== undefined) validateMusic(raw.music, error);
+  if (raw.environment !== undefined) validateEnvironment(raw.environment, isObject(raw.world) && raw.world.dimensions === 3, error, warn);
   if (raw.effects !== undefined) validateEffects(raw.effects, isObject(raw.sounds) ? raw.sounds : undefined, error, warn);
   if (raw.fonts !== undefined) validateFonts(raw.fonts, error);
   if (raw.postfx !== undefined) validatePostFx(raw.postfx, error);
@@ -418,6 +419,9 @@ function validateDimensions(components: Record<string, unknown>, path: string, l
   if (extras.length > 0) {
     warn("W_3D_ONLY", `${path}.components`, `Entity ${label} sets ${extras.join(", ")}, which only a 3D world uses.`, 'Add "dimensions": 3 to "world" for a 3D game, or remove it.');
   }
+  for (const name of ["mesh", "light", "camera3d"]) {
+    if (name in components) warn("W_3D_ONLY", `${path}.components.${name}`, `"${name}" on entity ${label} is for 3D scenes, so a 2D scene ignores it.`, 'Use "sprite" (and draw hooks) in 2D, or add "dimensions": 3 to "world".');
+  }
   if ("character" in components) {
     error("E_3D_ONLY", `${path}.components.character`, `"character" on entity ${label} is the 3D player.`, 'Use "platformer" or "topdown" in 2D, or add "dimensions": 3 to "world".');
   }
@@ -548,6 +552,34 @@ function validateFields(
       error("E_MISSING_FIELD", `${path}.${field}`, `${owner}.${field} is required${where}.`, `Add "${field}": <${spec.type}>. ${spec.description}`);
     }
   }
+}
+
+function validateEnvironment(env: unknown, is3D: boolean, error: Report, warn: Report): void {
+  const example = 'Use "environment": { "sky": ["#7fb2ff", "#e8f1ff"], "fog": { "color": "#cfe0ff", "near": 30, "far": 120 }, "toneMapping": "aces", "exposure": 1 }.';
+  if (!isObject(env)) return void error("E_ENVIRONMENT", "environment", '"environment" must be an object.', example);
+  if (!is3D) warn("W_3D_ONLY", "environment", '"environment" is for 3D scenes, so a 2D scene ignores it.', 'Add "dimensions": 3 to "world", or remove it.');
+  for (const key of Object.keys(env)) {
+    if (!["sky", "fog", "toneMapping", "exposure", "shadows"].includes(key)) error("E_ENVIRONMENT", `environment.${key}`, `environment has no field "${key}". Fields: sky, fog, toneMapping, exposure, shadows.`);
+  }
+  const sky = env.sky;
+  if (sky !== undefined && typeof sky !== "string" && !(Array.isArray(sky) && sky.length === 2 && sky.every((c) => typeof c === "string"))) {
+    error("E_ENVIRONMENT", "environment.sky", `environment.sky must be a color or [top, bottom] colors, got ${describe(sky)}.`, example);
+  }
+  if (env.fog !== undefined) {
+    const fog = env.fog;
+    if (!isObject(fog)) error("E_ENVIRONMENT", "environment.fog", "environment.fog must be { color, near, far }.", example);
+    else {
+      for (const key of ["near", "far"] as const) {
+        if (fog[key] !== undefined && (typeof fog[key] !== "number" || (fog[key] as number) < 0)) error("E_ENVIRONMENT", `environment.fog.${key}`, `environment.fog.${key} must be metres (a number ≥ 0), got ${describe(fog[key])}.`);
+      }
+      if (typeof fog.near === "number" && typeof fog.far === "number" && fog.far <= fog.near) error("E_ENVIRONMENT", "environment.fog.far", "environment.fog.far must be beyond near.");
+    }
+  }
+  if (env.toneMapping !== undefined && !["aces", "neutral", "agx", "none"].includes(env.toneMapping as string)) {
+    error("E_ENVIRONMENT", "environment.toneMapping", `environment.toneMapping must be "aces", "neutral", "agx" or "none", got ${describe(env.toneMapping)}.`);
+  }
+  if (env.exposure !== undefined && (typeof env.exposure !== "number" || env.exposure < 0)) error("E_ENVIRONMENT", "environment.exposure", `environment.exposure must be a number ≥ 0, got ${describe(env.exposure)}.`);
+  if (env.shadows !== undefined && typeof env.shadows !== "boolean") error("E_ENVIRONMENT", "environment.shadows", "environment.shadows must be true or false.");
 }
 
 function validateFonts(fonts: unknown, error: Report): void {

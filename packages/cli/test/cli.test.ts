@@ -236,6 +236,24 @@ describe("rapier physics through the CLI", () => {
     assert.equal(code, 0, out);
   });
 
+  test("screenshots of a 3D scene are drawn by Three.js, with and without --debug", { skip: findBrowser() ? false : "no Chrome, Edge or Chromium installed" }, () => {
+    const dir = join(workDir, "cubes");
+    const scenePath = join(dir, "scenes", "main.scene.json");
+    const scene = JSON.parse(readFileSync(scenePath, "utf8"));
+    scene.environment = { sky: "#87b5ff" };
+    scene.entities.push({ id: "sun", components: { transform: { x: 5, y: 10, z: 5 }, light: { type: "directional", intensity: 2.5 } } });
+    for (const e of scene.entities) if (e.components.body) e.components.mesh = { color: e.id === "floor" ? "#6f9a52" : "#ff7a59" };
+    writeFileSync(scenePath, JSON.stringify(scene));
+    const normal = ludra("play", dir, "--duration", "1s", "--screenshot", "1s", "--out", "shots", "--json");
+    assert.equal(normal.code, 0, normal.out);
+    const debug = ludra("play", dir, "--duration", "1s", "--screenshot", "1s", "--out", "shots-debug", "--debug", "--json");
+    assert.equal(debug.code, 0, debug.out);
+    const [plain, overlay] = [join(dir, "shots", "t-1.00s.png"), join(dir, "shots-debug", "t-1.00s.png")].map((p) => readFileSync(p));
+    assert.equal(plain!.subarray(1, 4).toString(), "PNG");
+    assert.ok(plain!.length > 20000, `a real 3D frame, not a blank one (${plain!.length} bytes)`);
+    assert.notDeepEqual(plain, overlay, "the debug view draws colliders over the frame");
+  });
+
   test("screenshots of a rapier scene load Rapier in the browser, with and without --debug", { skip: findBrowser() ? false : "no Chrome, Edge or Chromium installed" }, () => {
     const dir = join(workDir, "tumble");
     const normal = ludra("play", dir, "--duration", "1s", "--screenshot", "1s", "--out", "shots", "--json");

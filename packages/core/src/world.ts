@@ -2,7 +2,10 @@ import {
   resolveComponent,
   type Body,
   type Camera,
+  type Camera3D,
   type Character,
+  type Light,
+  type Mesh,
   type Collectible,
   type Emitter,
   type Goal,
@@ -95,6 +98,10 @@ export interface Entity {
   emitter?: Emitter;
   camera?: Camera;
   cameraZone?: CameraZone;
+  /** 3D presentation, read by the renderer (@ludra/three). */
+  mesh?: Mesh;
+  light?: Light;
+  camera3d?: Camera3D;
   /** Tweens declared on the entity or started by its scripts. */
   tweens?: TweenState[];
 }
@@ -1025,6 +1032,9 @@ function createEntity(def: EntityDef): Entity {
   if (c.emitter) entity.emitter = resolveComponent<Emitter>("emitter", c.emitter);
   if (c.camera) entity.camera = resolveComponent<Camera>("camera", c.camera);
   if (c.cameraZone) entity.cameraZone = resolveComponent<CameraZone>("cameraZone", c.cameraZone);
+  if (c.mesh) entity.mesh = resolveComponent<Mesh>("mesh", c.mesh);
+  if (c.light) entity.light = resolveComponent<Light>("light", c.light);
+  if (c.camera3d) entity.camera3d = resolveComponent<Camera3D>("camera3d", c.camera3d);
   if (c.tween) {
     entity.tweens = (Array.isArray(c.tween) ? c.tween : [c.tween]).map((t) => {
       const spec = resolveComponent<Tween>("tween", t as Record<string, unknown>);

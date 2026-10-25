@@ -14,6 +14,20 @@ export interface EffectDef {
   shake?: number;
 }
 
+/** A 3D scene's surroundings. */
+export interface EnvironmentDef {
+  /** A CSS color, or two (top and bottom of the sky) for a gradient. */
+  sky?: string | [string, string];
+  /** Haze that hides the distance: everything fades to color between near and far (metres). */
+  fog?: { color?: string; near?: number; far?: number };
+  /** "aces" (default, filmic), "neutral", "agx" or "none". */
+  toneMapping?: "aces" | "neutral" | "agx" | "none";
+  /** Overall brightness after tone mapping. Defaults to 1. */
+  exposure?: number;
+  /** Shadows at all. Defaults to true. */
+  shadows?: boolean;
+}
+
 export interface PostFxDef {
   /** Path to a GLSL ES 1.0 fragment shader, e.g. "shaders/crt.frag". */
   shader: string;
@@ -83,6 +97,8 @@ export interface SceneDef {
   sounds?: Record<string, SoundDef | string>;
   /** Music that loops while the scene plays: an audio file, or tracks of notes. */
   music?: string | MusicDef;
+  /** 3D only: the sky, fog and how light turns into pixels. */
+  environment?: EnvironmentDef;
   /**
    * Entity templates by name. Entities use one with `"prefab": "<name>"` and override
    * components; scripts spawn them with `world.spawn({ prefab: "<name>" })`. The CLI

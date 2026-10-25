@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { evaluateAssertion, parseAssertion, PhysicsUnavailableError, validateScene, World, type PhysicsEngine, type SceneDef } from "../src/index.ts";
+import { collectAssetPaths, evaluateAssertion, parseAssertion, PhysicsUnavailableError, validateScene, World, type PhysicsEngine, type SceneDef } from "../src/index.ts";
 
 const codes = (scene: unknown) =>
   validateScene(scene)
@@ -119,6 +119,45 @@ describe("2D and 3D stay apart", () => {
   test("3D can't be arcade, and dimensions is 2 or 3", () => {
     assert.deepEqual(codes(world3d([], { physics: "arcade" })), ["E_3D_NEEDS_RAPIER world.physics"]);
     assert.deepEqual(codes({ world: { dimensions: 4 }, entities: [] }), ["E_INVALID_WORLD world.dimensions"]);
+  });
+
+  test("3D looks: mesh, light, camera3d and environment validate in 3D, and a 2D scene says it ignores them", () => {
+    const look = [
+      { id: "sun", components: { transform: { x: 5, y: 10, z: 5 }, light: { type: "directional", intensity: 2.5, target: { x: 0, y: 0, z: 0 } } } },
+      { id: "cam", components: { transform: { x: 0, y: 5, z: 10 }, camera3d: { mode: "fixed", lookAt: { x: 0, y: 0, z: 0 }, fov: 45 } } },
+      { id: "rock", components: { transform: { x: 0, y: 1, z: 0 }, mesh: { shape: "sphere", width: 2, color: "#888", roughness: 0.9, texture: "assets/rock.png", textureScale: 1 } } },
+    ];
+    const environment = { sky: ["#6fa8ff", "#dfeaff"], fog: { near: 20, far: 80 }, toneMapping: "agx", exposure: 1.1 };
+    assert.deepEqual(codes({ ...world3d(look), environment }), []);
+    assert.deepEqual(codes({ environment, entities: look }), [
+      "W_3D_ONLY environment",
+      "W_3D_ONLY entities[0].components",
+      "W_3D_ONLY entities[0].components.light",
+      "W_3D_ONLY entities[1].components",
+      "W_3D_ONLY entities[1].components.camera3d",
+      "W_3D_ONLY entities[2].components.mesh",
+    ]);
+    assert.deepEqual(codes({ ...world3d([]), environment: { sky: 3, fog: { near: 50, far: 10 }, toneMapping: "filmic", glow: 1 } }), [
+      "E_ENVIRONMENT environment.glow",
+      "E_ENVIRONMENT environment.sky",
+      "E_ENVIRONMENT environment.fog.far",
+      "E_ENVIRONMENT environment.toneMapping",
+    ]);
+    assert.deepEqual(codes(world3d([{ id: "m", components: { transform: { x: 0, y: 0 }, mesh: { shape: "teapot" } } }])), ["E_INVALID_FIELD entities[0].components.mesh.shape"]);
+  });
+
+  test("a mesh texture is an image asset that check looks for", () => {
+    const { scene } = validateScene(world3d([{ id: "m", components: { transform: { x: 0, y: 0 }, mesh: { texture: "assets/brick.png" } } }]));
+    assert.deepEqual(collectAssetPaths(scene!).map((r) => `${r.kind} ${r.path} ${r.at}`), ["image assets/brick.png entities[0].components.mesh.texture"]);
+  });
+
+  test("the world carries meshes, lights and cameras for the renderer", () => {
+    const { scene } = validateScene(world3d([{ id: "lamp", components: { transform: { x: 0, y: 3 }, mesh: { shape: "sphere", emissive: "#ffb347" }, light: { type: "point", intensity: 12 } } }]));
+    const lamp = new World(scene!, { physics: still }).get("lamp")!;
+    assert.equal(lamp.mesh!.shape, "sphere");
+    assert.equal(lamp.mesh!.roughness, 0.6, "defaults filled in");
+    assert.equal(lamp.light!.type, "point");
+    assert.equal(lamp.light!.intensity, 12);
   });
 
   test("2D worlds keep their snapshots exactly as before: no z", () => {
