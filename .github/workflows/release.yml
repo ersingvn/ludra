@@ -2,7 +2,7 @@ name: Release
 
 # Publishes @ludra/core and @ludra/cli to npm when a version tag is pushed,
 # then creates the GitHub release:
-#   git tag v0.8.0 && git push origin v0.8.0
+#   git tag v0.9.0 && git push origin v0.9.0
 # Needs an NPM_TOKEN repository secret (an npm token allowed to publish
 # both packages). A version already on npm, or a release that already
 # exists, is skipped, so a release that failed halfway can be finished by
