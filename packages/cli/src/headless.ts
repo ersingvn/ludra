@@ -39,6 +39,8 @@ export function findBrowser(): string | undefined {
 }
 
 export interface ScreenshotRequest {
+  /** Draw colliders, sensors, joints and ids over the frames. */
+  debug?: boolean;
   /** Scene to render, relative to the project. Defaults to the entry scene. */
   scene?: string;
   inputs: string;
@@ -62,7 +64,7 @@ export async function captureScreenshots(project: Project, request: ScreenshotRe
     );
   }
 
-  const { server, browserModule } = createGameServer(project, () => "");
+  const { server, browserModule, physicsModule } = createGameServer(project, () => "");
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const port = (server.address() as AddressInfo).port;
   const profile = mkdtempSync(join(tmpdir(), "ludra-browser-"));
@@ -111,6 +113,10 @@ export async function captureScreenshots(project: Project, request: ScreenshotRe
         scriptPaths: await (await fetch("/__ludra/scripts")).json(),
         inputs: ${JSON.stringify(request.inputs)},
         frames: ${JSON.stringify(request.frames)},
+        debug: ${JSON.stringify(!!request.debug)},
+        loadPhysics: async (name) => {
+          if (name === "rapier") await (await import(${JSON.stringify(physicsModule)})).loadRapierPhysics();
+        },
       });
     })()`;
     return await evaluate<CapturedFrame[]>(cdp, sessionId, script);

@@ -41,6 +41,13 @@ export interface GameOptions {
    * game stays on its first scene. Throw with a readable message if the scene is invalid.
    */
   loadScene?: (path: string) => Promise<SceneDef>;
+  /**
+   * Loads a physics engine a scene asks for (`world.physics`) before its world is created,
+   * e.g. `async (name) => (await import("@ludra/physics")).loadRapierPhysics()` for "rapier".
+   */
+  loadPhysics?: (name: string) => Promise<void>;
+  /** Start with the debug view on: colliders, sensors, joints and ids drawn over the game. */
+  debug?: boolean;
 }
 
 /** Imports the game's script modules, keyed by their path in the scene. */
@@ -146,6 +153,12 @@ class Screen {
   }
 }
 
+/** Loads the physics engine a scene names, if it isn't arcade. */
+async function usePhysics(scene: SceneDef, options: GameOptions): Promise<void> {
+  const name = scene.world?.physics;
+  if (name && name !== "arcade") await options.loadPhysics?.(name);
+}
+
 /** What a scene needs before it can be drawn. */
 async function loadScene(scene: SceneDef, options: GameOptions, scripts: Map<string, Script>) {
   const assetBase = options.assetBase ?? "";
@@ -191,12 +204,15 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
   /** Real time when the world asked to move on, while waiting to load the next scene. */
   let exitSince: number | undefined;
   let loading = false;
+  let debug = options.debug ?? false;
 
   const enter = async (next: SceneDef, carry: Carry | undefined) => {
     const { images, shader } = await loadScene(next, options, scripts);
+    await usePhysics(next, options);
     scene = next;
     startCarry = carry;
     view = new View(next, images);
+    view.debug = debug;
     sceneError = screen.use(next.postfx, shader);
     crash = sceneError;
     exitSince = undefined;
@@ -242,6 +258,11 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
   const onKeyDown = (event: KeyboardEvent) => {
     sounds.unlock();
     if (event.code === "KeyR") return restart();
+    if (event.code === "Backquote" && !event.repeat) {
+      debug = !debug;
+      view.debug = debug;
+      return;
+    }
     if (event.code === "KeyM" && !event.repeat) {
       sounds.muted = !sounds.muted;
       return;
@@ -339,9 +360,11 @@ export async function captureFrames(canvas: HTMLCanvasElement, scene: SceneDef, 
   const screen = new Screen(canvas);
   const scripts = new Map<string, Script>();
   const { images, shader } = await loadScene(scene, options, scripts);
+  await usePhysics(scene, options);
   const error = screen.use(scene.postfx, shader);
   if (error) throw new Error(error);
   const view = new View(scene, images);
+  view.debug = options.debug ?? false;
   const world = new World(scene, { scripts });
   const script = InputScript.parse(options.inputs ?? "");
   const wanted = new Set(options.frames);
@@ -417,6 +440,12 @@ class View {
   private readonly frameCache = new Map<string, number[]>();
   /** ctx.local for each entity's draw hooks. */
   private readonly local = new Map<string, Record<string, unknown>>();
+  /** Frames each platformer has been off the ground, so a one-frame bump doesn't flash the fall pose. */
+  private readonly airborne = new Map<string, number>();
+  /** Where joints to a point in the world were first seen, to draw them in the debug view. */
+  private readonly jointOrigins = new Map<string, { x: number; y: number }>();
+  /** Draw colliders, sensors, joints and ids over the game. */
+  debug = false;
   private shake = 0;
   private handledEvents = 0;
   private readonly scene: SceneDef;
@@ -438,6 +467,8 @@ class View {
     this.facing.clear();
     this.emitTimers.clear();
     this.local.clear();
+    this.airborne.clear();
+    this.jointOrigins.clear();
     this.shake = 0;
     this.handledEvents = 0;
   }
@@ -455,6 +486,7 @@ class View {
 
     for (const e of world.entities) {
       if (e.body && Math.abs(e.body.vx) > 1) this.facing.set(e.id, Math.sign(e.body.vx));
+      if (e.platformer && e.body) this.airborne.set(e.id, e.body.grounded ? 0 : (this.airborne.get(e.id) ?? 0) + 1);
       const emitter = e.emitter;
       if (!emitter || world.won) continue;
       // Accumulate fractional particles so low rates still emit steadily.
@@ -497,6 +529,7 @@ class View {
       if (e.script?.module.draw) this.drawHook(ctx, world, e, "draw", viewInfo);
     }
     this.particles.draw(ctx);
+    if (this.debug) this.drawDebug(ctx, world, zoom);
     ctx.restore();
 
     if (world.hasHook("drawUI")) {
@@ -562,19 +595,22 @@ class View {
     const sprite = e.sprite!;
     const width = sprite.width || e.body?.width || 16;
     const height = sprite.height || e.body?.height || 16;
-    const left = e.transform.x - width / 2;
-    const top = e.transform.y - height / 2;
     const image = sprite.image ? this.images.get(sprite.image) : undefined;
+    const rotation = e.transform.rotation;
 
     if (!image) {
       ctx.fillStyle = sprite.color;
-      if (sprite.shape === "circle") {
-        ctx.beginPath();
-        ctx.ellipse(e.transform.x, e.transform.y, width / 2, height / 2, 0, 0, Math.PI * 2);
-        ctx.fill();
-      } else {
-        ctx.fillRect(left, top, width, height);
-      }
+      // A plain shape follows the body's shape, so a round rapier body looks round.
+      const round = sprite.shape === "circle" || e.body?.shape === "circle";
+      ctx.save();
+      ctx.translate(e.transform.x, e.transform.y);
+      if (rotation) ctx.rotate(rotation * DEGREES);
+      ctx.beginPath();
+      if (round) ctx.ellipse(0, 0, width / 2, height / 2, 0, 0, Math.PI * 2);
+      else if (e.body?.shape === "capsule") ctx.roundRect(-width / 2, -height / 2, width, height, Math.min(width, height) / 2);
+      else ctx.rect(-width / 2, -height / 2, width, height);
+      ctx.fill();
+      ctx.restore();
       return;
     }
 
@@ -582,7 +618,10 @@ class View {
       const pattern = ctx.createPattern(image, "repeat");
       if (!pattern) return;
       ctx.save();
-      ctx.translate(left, top);
+      ctx.translate(e.transform.x, e.transform.y);
+      if (rotation) ctx.rotate(rotation * DEGREES);
+      // Tiles start at the sprite's top-left corner, whatever its rotation.
+      ctx.translate(-width / 2, -height / 2);
       ctx.fillStyle = pattern;
       ctx.fillRect(0, 0, width, height);
       ctx.restore();
@@ -591,7 +630,7 @@ class View {
 
     const frameWidth = sprite.frameWidth || image.naturalWidth;
     const frameHeight = sprite.frameHeight || image.naturalHeight;
-    const frames = this.framesFor(sprite, animationState(e));
+    const frames = this.framesFor(sprite, animationState(e, this.airborne.get(e.id) ?? 0));
     const frame = frames.length === 0 ? 0 : frames[Math.floor(time * sprite.fps) % frames.length]!;
     const columns = Math.max(1, Math.floor(image.naturalWidth / frameWidth));
     const sx = (frame % columns) * frameWidth;
@@ -600,8 +639,94 @@ class View {
 
     ctx.save();
     ctx.translate(e.transform.x, e.transform.y);
+    if (rotation) ctx.rotate(rotation * DEGREES);
     if (mirrored) ctx.scale(-1, 1);
     ctx.drawImage(image, sx, sy, frameWidth, frameHeight, -width / 2, -height / 2, width, height);
+    ctx.restore();
+  }
+
+  /**
+   * The debug view: every collider in its true shape and rotation (static blue, dynamic
+   * yellow, kinematic orange, players red; sensors dashed green), velocities, joints,
+   * grounded players and ids, so an agent can check that the art matches the physics.
+   */
+  private drawDebug(ctx: CanvasRenderingContext2D, world: World, zoom: number): void {
+    const line = 1.5 / zoom;
+    ctx.save();
+    ctx.lineWidth = line;
+    ctx.font = `${11 / zoom}px ui-monospace, monospace`;
+    ctx.textAlign = "center";
+    for (const e of world.entities) {
+      const b = e.body;
+      if (!b) continue;
+      const player = !!(e.platformer || e.topdown);
+      const color = b.sensor ? "#2ecc40" : player ? "#ff4136" : b.type === "static" ? "#7fdbff" : b.type === "kinematic" ? "#ff851b" : "#ffdc00";
+      ctx.save();
+      ctx.translate(e.transform.x, e.transform.y);
+      ctx.rotate(e.transform.rotation * DEGREES);
+      ctx.beginPath();
+      if (b.shape === "circle") ctx.arc(0, 0, b.width / 2, 0, Math.PI * 2);
+      else if (b.shape === "capsule") ctx.roundRect(-b.width / 2, -b.height / 2, b.width, b.height, Math.min(b.width, b.height) / 2);
+      else ctx.rect(-b.width / 2, -b.height / 2, b.width, b.height);
+      ctx.setLineDash(b.sensor ? [4 / zoom, 3 / zoom] : []);
+      ctx.strokeStyle = color;
+      ctx.fillStyle = `${color}22`;
+      ctx.fill();
+      ctx.stroke();
+      // Which way is "up" for the body, so rotation is visible even on circles.
+      if (b.type === "dynamic") {
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(0, -Math.min(b.width, b.height) / 2);
+        ctx.stroke();
+      }
+      ctx.restore();
+      ctx.setLineDash([]);
+      if (b.type !== "static" && Math.hypot(b.vx, b.vy) > 1) {
+        // Velocity, a tenth of a second ahead.
+        ctx.strokeStyle = "#ffffff";
+        ctx.beginPath();
+        ctx.moveTo(e.transform.x, e.transform.y);
+        ctx.lineTo(e.transform.x + b.vx * 0.1, e.transform.y + b.vy * 0.1);
+        ctx.stroke();
+      }
+      if (player && b.grounded) {
+        ctx.fillStyle = "#ff4136";
+        ctx.beginPath();
+        ctx.arc(e.transform.x, e.transform.y + b.height / 2, 3 / zoom, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(e.id, e.transform.x, e.transform.y - b.height / 2 - 4 / zoom);
+    }
+    // Joints: a magenta line from each body's center to where the joint holds it.
+    ctx.strokeStyle = "#f012be";
+    ctx.fillStyle = "#f012be";
+    for (const e of world.entities) {
+      const joint = e.joint;
+      if (!joint) continue;
+      const here = rotated(e, joint.anchor);
+      const other = joint.to ? world.get(joint.to) : undefined;
+      const sameSpot = joint.type === "revolute" || joint.type === "prismatic" || joint.type === "fixed";
+      let origin = this.jointOrigins.get(e.id);
+      if (!origin) this.jointOrigins.set(e.id, (origin = { x: e.transform.x, y: e.transform.y }));
+      const there = sameSpot ? here : other ? rotated(other, joint.toAnchor) : { x: origin.x + joint.toAnchor.x, y: origin.y + joint.toAnchor.y };
+      ctx.beginPath();
+      ctx.moveTo(e.transform.x, e.transform.y);
+      ctx.lineTo(here.x, here.y);
+      if (other) {
+        ctx.moveTo(other.transform.x, other.transform.y);
+        ctx.lineTo(there.x, there.y);
+      }
+      ctx.moveTo(here.x, here.y);
+      ctx.lineTo(there.x, there.y);
+      ctx.stroke();
+      for (const p of [here, there]) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 3 / zoom, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
     ctx.restore();
   }
 
@@ -646,11 +771,24 @@ function recentEvents(world: World, name: string | undefined, seconds: number): 
   return result.reverse();
 }
 
-function animationState(e: Entity): AnimationState {
+/** Frames off the ground before a platformer counts as falling (jumps show at once). */
+const FALL_GRACE = 3;
+
+function animationState(e: Entity, airborne: number): AnimationState {
   const b = e.body;
   if (!b) return "idle";
-  if (e.platformer && !b.grounded) return b.vy < 0 ? "jump" : "fall";
+  if (e.platformer && !b.grounded && (b.vy < 0 || airborne >= FALL_GRACE)) return b.vy < 0 ? "jump" : "fall";
   return Math.abs(b.vx) > 1 || (!e.platformer && Math.abs(b.vy) > 1) ? "run" : "idle";
+}
+
+const DEGREES = Math.PI / 180;
+
+/** An offset from an entity's center, turned with the entity, as a world point. */
+function rotated(e: Entity, offset: { x: number; y: number }): { x: number; y: number } {
+  const angle = e.transform.rotation * DEGREES;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  return { x: e.transform.x + offset.x * cos - offset.y * sin, y: e.transform.y + offset.x * sin + offset.y * cos };
 }
 
 function clamp(value: number, min: number, max: number): number {

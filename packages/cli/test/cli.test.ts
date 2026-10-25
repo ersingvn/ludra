@@ -201,4 +201,15 @@ describe("rapier physics through the CLI", () => {
     const { code, out } = ludra("test", dir);
     assert.equal(code, 0, out);
   });
+
+  test("screenshots of a rapier scene load Rapier in the browser, with and without --debug", { skip: findBrowser() ? false : "no Chrome, Edge or Chromium installed" }, () => {
+    const dir = join(workDir, "tumble");
+    const normal = ludra("play", dir, "--duration", "1s", "--screenshot", "1s", "--out", "shots", "--json");
+    assert.equal(normal.code, 0, normal.out);
+    const debug = ludra("play", dir, "--duration", "1s", "--screenshot", "1s", "--out", "shots-debug", "--debug", "--json");
+    assert.equal(debug.code, 0, debug.out);
+    const [plain, overlay] = [join(dir, "shots", "t-1.00s.png"), join(dir, "shots-debug", "t-1.00s.png")].map((p) => readFileSync(p));
+    assert.equal(plain!.subarray(1, 4).toString(), "PNG");
+    assert.notDeepEqual(plain, overlay, "the debug view draws over the frame");
+  });
 });

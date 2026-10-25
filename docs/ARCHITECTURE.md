@@ -95,6 +95,8 @@ Every engine also answers `mass`, `applyImpulse`, `angularVelocity` and `raycast
 
 The `joint` component is created once both its ends exist (a target can be spawned later). The other body, or an invisible fixed body for a point in the world, is Rapier's first body, so the joint measures this body relative to it: limits and motor speeds keep Ludra's clockwise sign after the y-flip. Hinges, sliders and welds join both bodies at the same point (`anchor` on this body); ropes and springs run to `toAnchor`.
 
+In the browser the dev server serves `@ludra/physics` and Rapier's single-file module, and its pages carry an import map for `@ludra/core` and Rapier, so the same unbundled modules load as in Node. `startGame` and `captureFrames` take a `loadPhysics` hook and call it only for scenes that name an engine other than arcade, so arcade games never download Rapier. Sprites draw rotated about their centers; a sprite without an image follows its body's shape (circle, capsule). The debug view (`play --screenshot --debug`, or the backquote key in `ludra dev`) draws every collider in its true shape and rotation, sensors dashed, velocities, joints, grounded players and entity ids over the frame, so an agent can check the art against the physics.
+
 ## Development
 
 ```bash
