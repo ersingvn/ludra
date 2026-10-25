@@ -873,7 +873,7 @@ function traceShape(ctx: CanvasRenderingContext2D, body: Body, width = body.widt
   if (body.shape === "circle") ctx.ellipse(0, 0, width / 2, height / 2, 0, 0, Math.PI * 2);
   else if (body.shape === "capsule") ctx.roundRect(-width / 2, -height / 2, width, height, Math.min(width, height) / 2);
   else if ((body.shape === "polygon" || body.shape === "polyline") && body.points.length > 1) {
-    body.points.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+    body.points.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x!, y!) : ctx.lineTo(x!, y!)));
     if (body.shape === "polygon") ctx.closePath();
   } else ctx.rect(-width / 2, -height / 2, width, height);
 }

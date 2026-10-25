@@ -112,8 +112,14 @@ export interface EntitySnapshot {
   vx: number;
   vy: number;
   grounded: boolean;
-  /** Degrees, clockwise. Present only when the entity is rotated (rapier physics). */
+  /** Degrees, clockwise. Present only when the entity is rotated (rapier physics). 3D: around z. */
   rotation?: number;
+  /** 3D only: depth position and velocity, always present in a 3D world. */
+  z?: number;
+  vz?: number;
+  /** 3D only: degrees around x and y, present when not 0. */
+  rotationX?: number;
+  rotationY?: number;
   /** Present when a script stored data on the entity. */
   state?: Record<string, unknown>;
 }
@@ -150,6 +156,8 @@ export class SceneValidationError extends Error {
 }
 
 const DEFAULT_GRAVITY = 1800;
+/** 3D worlds are in metres: Earth's gravity, in m/s². */
+const DEFAULT_GRAVITY_3D = 9.81;
 /** When jump is released early, upward speed is capped to this fraction of jumpSpeed. */
 const JUMP_CUT = 0.45;
 /** Upward speed after stomping an enemy, as a fraction of jumpSpeed. */
@@ -168,6 +176,8 @@ const EPSILON = 1e-4;
  * always produce the same result.
  */
 export class World {
+  /** 2, or 3 for a 3D world (metres, +y up, Rapier 3D). */
+  readonly dimensions: 2 | 3;
   readonly width: number;
   readonly height: number;
   readonly gravity: number;
@@ -205,9 +215,10 @@ export class World {
   private drawing = false;
 
   constructor(scene: SceneDef, options: WorldOptions = {}) {
+    this.dimensions = scene.world?.dimensions ?? 2;
     this.width = scene.world?.width ?? 960;
     this.height = scene.world?.height ?? 540;
-    this.gravity = scene.world?.gravity ?? DEFAULT_GRAVITY;
+    this.gravity = scene.world?.gravity ?? (this.dimensions === 3 ? DEFAULT_GRAVITY_3D : DEFAULT_GRAVITY);
     this.background = scene.world?.background ?? "#1d2333";
     this.seed = scene.world?.seed ?? 1;
     this.scripts = options.scripts;
@@ -215,7 +226,9 @@ export class World {
     this.score = options.carry?.score ?? 0;
     this.deaths = options.carry?.deaths ?? 0;
     this.lives = options.carry?.lives ?? scene.world?.lives;
-    this.physics = options.physics ?? createPhysics(scene.world?.physics ?? "arcade", { width: this.width, height: this.height, gravity: this.gravity });
+    // 3D always runs on Rapier 3D.
+    const engine = this.dimensions === 3 ? "rapier3d" : (scene.world?.physics ?? "arcade");
+    this.physics = options.physics ?? createPhysics(engine, { width: this.width, height: this.height, gravity: this.gravity });
     const world = this;
     this.physicsHost = {
       get entities() {
@@ -284,6 +297,12 @@ export class World {
         grounded: e.body?.grounded ?? false,
       };
       if (e.transform.rotation !== 0) entities[e.id]!.rotation = e.transform.rotation;
+      if (this.dimensions === 3) {
+        entities[e.id]!.z = e.transform.z;
+        entities[e.id]!.vz = e.body?.vz ?? 0;
+        if (e.transform.rotationX !== 0) entities[e.id]!.rotationX = e.transform.rotationX;
+        if (e.transform.rotationY !== 0) entities[e.id]!.rotationY = e.transform.rotationY;
+      }
       // A JSON copy, so later frames can't change an earlier snapshot.
       if (Object.keys(e.state).length > 0) entities[e.id]!.state = JSON.parse(JSON.stringify(e.state));
     }
@@ -464,6 +483,20 @@ export class World {
       set vy(value: number) {
         world.guard("Setting vy");
         if (e.body) e.body.vy = value;
+      },
+      get z() {
+        return e.transform.z;
+      },
+      set z(value: number) {
+        world.guard("Setting z");
+        e.transform.z = value;
+      },
+      get vz() {
+        return e.body?.vz ?? 0;
+      },
+      set vz(value: number) {
+        world.guard("Setting vz");
+        if (e.body) e.body.vz = value;
       },
       get grounded() {
         return e.body?.grounded ?? false;
@@ -889,7 +922,7 @@ export class World {
 
 function createEntity(def: EntityDef): Entity {
   const c = def.components;
-  const transform = c.transform ? resolveComponent<Transform>("transform", c.transform) : { x: 0, y: 0, rotation: 0 };
+  const transform = resolveTransform(c.transform);
   const entity: Entity = { id: def.id, state: {}, transform };
   if (c.body) entity.body = { ...resolveComponent<Body>("body", c.body), grounded: false };
   if (c.sprite) entity.sprite = resolveComponent<Sprite>("sprite", c.sprite);
@@ -919,6 +952,22 @@ function createEntity(def: EntityDef): Entity {
     });
   }
   return entity;
+}
+
+/** A transform from JSON: rotation is degrees in 2D, or { x, y, z } degrees in 3D. */
+function resolveTransform(raw: Record<string, unknown> | undefined): Transform {
+  if (!raw) return { x: 0, y: 0, z: 0, rotation: 0, rotationX: 0, rotationY: 0 };
+  const { rotation, ...rest } = raw;
+  const t = resolveComponent<Omit<Transform, "rotationX" | "rotationY"> & { rotation: number }>("transform", rest);
+  const r = typeof rotation === "object" && rotation !== null ? (rotation as { x?: number; y?: number; z?: number }) : undefined;
+  return {
+    x: t.x,
+    y: t.y,
+    z: t.z,
+    rotation: r ? (r.z ?? 0) : typeof rotation === "number" ? rotation : 0,
+    rotationX: r?.x ?? 0,
+    rotationY: r?.y ?? 0,
+  };
 }
 
 function readTweened(e: Entity, property: Tween["property"]): number {

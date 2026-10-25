@@ -45,6 +45,11 @@ export interface WorldSettings {
    * "rapier": a real physics engine (rotation, circles and capsules, friction, mass, stacking).
    */
   physics?: "arcade" | "rapier";
+  /**
+   * 2 (default) or 3. A 3D world runs on Rapier 3D, in metres with +y up, and defaults
+   * its gravity to 9.81 m/s².
+   */
+  dimensions?: 2 | 3;
 }
 
 /** A reusable entity template: `prefabs/<name>.prefab.json` or the scene's `prefabs` map. */

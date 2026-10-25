@@ -423,9 +423,9 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how it fits together.
 - ~~**v0.7: genres.** A top-down controller, bounce physics, and templates for top-down adventures and breakout-style games.~~ Done.
 - ~~**v0.8: game structure and quality.** `ludra review`, multiple scenes and level transitions, prefabs, lives and checkpoints.~~ Done.
 - ~~**v0.9: physics, sound and worlds.** Rapier as one physics engine for 2D now and 3D later, a game's own synthesized sounds and music with the full Web Audio API in scripts, tilemaps, camera zones, tweened animation. See [`examples/clockwork-keep`](examples/clockwork-keep).~~ Done.
-- **v0.10: 3D foundations.** 3D transforms and bodies, a Three.js renderer with lights and shadows, cameras, a character controller, and a first 3D template, all through the same check/play/test/review loop and real screenshots.
-- **v0.11: 3D content.** glTF models, free (CC0) model packs as blocks, skeletal animation, procedural geometry and terrain.
-- **v0.12: shipping.** A single-file web build ready for itch.io, touch and gamepad controls, performance budgets in `review`.
+- **v0.91: 3D foundations.** 3D transforms and bodies on Rapier 3D, a Three.js renderer with lights and shadows, cameras, a character controller, scripts with the raw Three.js and Rapier APIs, and a first 3D template, all through the same check/play/test/review loop and real screenshots.
+- **v0.92: 3D content.** glTF models, free (CC0) model packs as blocks, skeletal animation, procedural geometry and terrain.
+- **v0.93: shipping.** A single-file web build ready for itch.io, touch and gamepad controls, performance budgets in `review`.
 - **v1.0.** 2D and 3D templates side by side, a `make-games` skill, complete docs: an engine where an AI makes games people want to play.
 
 ## Contributing

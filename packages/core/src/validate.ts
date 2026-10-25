@@ -60,6 +60,18 @@ export function validateScene(input: unknown): ValidationResult {
       if (physics !== undefined && physics !== "arcade" && physics !== "rapier") {
         error("E_INVALID_WORLD", "world.physics", `world.physics must be "arcade" or "rapier", got ${describe(physics)}.`, '"arcade" (default) for tight box physics, "rapier" for rotation, round shapes and real collisions.');
       }
+      const dimensions = raw.world.dimensions;
+      if (dimensions !== undefined && dimensions !== 2 && dimensions !== 3) {
+        error("E_INVALID_WORLD", "world.dimensions", `world.dimensions must be 2 or 3, got ${describe(dimensions)}.`, "Leave it out for 2D.");
+      }
+      if (dimensions === 3 && physics === "arcade") {
+        error(
+          "E_3D_NEEDS_RAPIER",
+          "world.physics",
+          '3D worlds run on Rapier 3D; "arcade" physics is 2D only.',
+          'Remove "physics" (3D always uses Rapier) or set it to "rapier".',
+        );
+      }
       const lives = raw.world.lives;
       if (lives !== undefined && (typeof lives !== "number" || !Number.isInteger(lives) || lives < 1)) {
         error("E_INVALID_WORLD", "world.lives", `world.lives must be a whole number of at least 1, got ${describe(lives)}.`, "Leave it out for unlimited retries.");
@@ -80,7 +92,8 @@ export function validateScene(input: unknown): ValidationResult {
 
   const ids = new Map<string, number>();
   let hasPlayer = false;
-  const usesRapier = isObject(raw.world) && raw.world.physics === "rapier";
+  const is3D = isObject(raw.world) && raw.world.dimensions === 3;
+  const usesRapier = is3D || (isObject(raw.world) && raw.world.physics === "rapier");
   const jointTargets: { path: string; label: string; to: string }[] = [];
   let hasDynamic = false;
   const worldGravity = isObject(raw.world) && typeof raw.world.gravity === "number" ? raw.world.gravity : 1800;
@@ -272,9 +285,10 @@ export function validateScene(input: unknown): ValidationResult {
         );
       }
     });
+    validateDimensions(components, path, label, is3D, error, warn);
     // Free shapes need their points.
-    if (body && (body.shape === "polygon" || body.shape === "polyline")) {
-      const needed = body.shape === "polygon" ? 3 : 2;
+    if (body && (body.shape === "polygon" || body.shape === "polyline" || body.shape === "convex")) {
+      const needed = body.shape === "polygon" ? 3 : body.shape === "convex" ? 4 : 2;
       const points = Array.isArray(body.points) ? body.points : [];
       if (points.length < needed) {
         error(
@@ -331,6 +345,71 @@ export function validateScene(input: unknown): ValidationResult {
 
 /** Body fields that only rapier physics reads. */
 const RAPIER_BODY_FIELDS = ["shape", "friction", "density", "fixedRotation", "bullet"] as const;
+
+const SHAPES_2D = ["circle", "polygon", "polyline"];
+const SHAPES_3D = ["sphere", "cylinder", "convex"];
+/** The 3D shape to suggest for a 2D one, and back. */
+const SHAPE_COUNTERPART: Record<string, string> = { circle: "sphere", polygon: "convex", polyline: "convex", sphere: "circle", cylinder: "box", convex: "polygon" };
+/** 2D-only components, and what to use in 3D instead. */
+const ONLY_2D: Record<string, string> = {
+  platformer: '3D players use the "character" component.',
+  topdown: '3D players use the "character" component.',
+  sprite: '3D entities are drawn with "mesh".',
+  emitter: "Particles in 3D come with the 3D renderer.",
+  camera: '3D uses "camera3d".',
+  cameraZone: '3D uses "camera3d".',
+};
+
+/** Keeps 2D and 3D apart: fields, shapes and components that only mean something in one of them. */
+function validateDimensions(components: Record<string, unknown>, path: string, label: string, is3D: boolean, error: Report, warn: Report): void {
+  const transform = isObject(components.transform) ? components.transform : undefined;
+  const body = isObject(components.body) ? components.body : undefined;
+  const shape = typeof body?.shape === "string" ? body.shape : "box";
+  const points = Array.isArray(body?.points) ? (body.points as unknown[]) : [];
+  if (is3D) {
+    if (typeof transform?.rotation === "number" && transform.rotation !== 0) {
+      error(
+        "E_3D_ROTATION",
+        `${path}.components.transform.rotation`,
+        `In 3D, rotation on entity ${label} is { "x", "y", "z" } in degrees, not one number.`,
+        `Use "rotation": { "y": ${transform.rotation} } to turn it around the vertical axis.`,
+      );
+    }
+    if (SHAPES_2D.includes(shape)) {
+      error("E_2D_SHAPE", `${path}.components.body.shape`, `"${shape}" on entity ${label} is a 2D shape.`, `Use "${SHAPE_COUNTERPART[shape]}" in 3D.`);
+    }
+    if (points.some((p) => Array.isArray(p) && p.length !== 3)) {
+      error("E_SHAPE_POINTS", `${path}.components.body.points`, `3D points on entity ${label} are [x, y, z] in metres.`, 'Use e.g. [[0, 1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1]].');
+    }
+    for (const [name, instead] of Object.entries(ONLY_2D)) {
+      if (!(name in components)) continue;
+      const controller = name === "platformer" || name === "topdown";
+      (controller ? error : warn)(
+        controller ? "E_2D_ONLY" : "W_2D_ONLY",
+        `${path}.components.${name}`,
+        `"${name}" on entity ${label} is 2D only${controller ? "" : ", so a 3D world ignores it"}.`,
+        instead,
+      );
+    }
+    return;
+  }
+  const extras = [
+    ...(transform && typeof transform.z === "number" && transform.z !== 0 ? ["transform.z"] : []),
+    ...(transform && isObject(transform.rotation) ? ["a { x, y, z } rotation"] : []),
+    ...(body && typeof body.depth === "number" && body.depth !== 0 ? ["body.depth"] : []),
+    ...(body && typeof body.vz === "number" && body.vz !== 0 ? ["body.vz"] : []),
+    ...(isObject(components.patrol) && components.patrol.axis === "z" ? ['patrol axis "z"'] : []),
+  ];
+  if (extras.length > 0) {
+    warn("W_3D_ONLY", `${path}.components`, `Entity ${label} sets ${extras.join(", ")}, which only a 3D world uses.`, 'Add "dimensions": 3 to "world" for a 3D game, or remove it.');
+  }
+  if (SHAPES_3D.includes(shape)) {
+    error("E_3D_SHAPE", `${path}.components.body.shape`, `"${shape}" on entity ${label} is a 3D shape.`, `Use "${SHAPE_COUNTERPART[shape]}" in 2D, or add "dimensions": 3 to "world".`);
+  }
+  if (points.some((p) => Array.isArray(p) && p.length !== 2)) {
+    error("E_SHAPE_POINTS", `${path}.components.body.points`, `2D points on entity ${label} are [x, y] in px.`, 'Use e.g. [[-40, 20], [40, 20], [0, -20]].');
+  }
+}
 const RAPIER_PLATFORMER_FIELDS = ["maxSlope", "stepHeight", "push"] as const;
 
 /** Components that only work on sensor bodies, and what goes wrong otherwise. */
@@ -546,8 +625,13 @@ function checkField(spec: FieldSpec, value: unknown): string | undefined {
       return isObject(value) ? undefined : `must be an object like { "speed": 80 }, got ${describe(value)}.`;
     case "strings":
       return Array.isArray(value) && value.every((s) => typeof s === "string") ? undefined : `must be a list of strings, got ${describe(value)}.`;
+    case "rotation":
+      if (typeof value === "number" && Number.isFinite(value)) return undefined;
+      return isObject(value) && Object.entries(value).every(([k, v]) => ["x", "y", "z"].includes(k) && typeof v === "number" && Number.isFinite(v))
+        ? undefined
+        : `must be degrees: a number in 2D, or { "x": 0, "y": 45, "z": 0 } in 3D, got ${describe(value)}.`;
     case "points":
-      return Array.isArray(value) && value.every((p) => Array.isArray(p) && p.length === 2 && p.every((n) => typeof n === "number" && Number.isFinite(n)))
+      return Array.isArray(value) && value.every((p) => Array.isArray(p) && (p.length === 2 || p.length === 3) && p.every((n) => typeof n === "number" && Number.isFinite(n)))
         ? undefined
         : `must be a list of [x, y] points like [[-40, 20], [40, 20], [40, -20]], got ${describe(value)}.`;
   }

@@ -10,9 +10,12 @@ export interface ScriptEntity {
   readonly id: string;
   x: number;
   y: number;
-  /** Velocity in px/s. Always 0 for entities without a body. */
+  /** Velocity in px/s (3D: m/s). Always 0 for entities without a body. */
   vx: number;
   vy: number;
+  /** 3D only: position and velocity along z (0 in 2D). */
+  z: number;
+  vz: number;
   readonly grounded: boolean;
   /** Degrees, clockwise. Only rapier physics turns bodies by itself; setting it turns one. */
   rotation: number;
@@ -256,7 +259,7 @@ export const SCRIPT_API_REFERENCE = `A script file default-exports hooks. Only "
     sound(ctx) {},           // make sound with the real Web Audio API (browser only, every rendered frame)
   } satisfies Script;
 
-ctx.self      the entity: id, x, y, vx, vy, rotation, angularVelocity (read/write); grounded, mass, width, height, exists (read);
+ctx.self      the entity: id, x, y, vx, vy, rotation, angularVelocity, 3D: z, vz (read/write); grounded, mass, width, height, exists (read);
               applyImpulse(x, y, at?)  strike it (velocity += impulse / mass)    applyForce(x, y, at?)  push every frame;
               tween({ property, to | by, duration, ease?, delay?, repeat? })  ease x, y, rotation, scale or opacity;
               state (object kept between frames, testable as "<id>.state.<key>");

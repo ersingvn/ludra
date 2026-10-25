@@ -10,7 +10,9 @@ export type FieldSpec =
   /** A list of [x, y] points in px. */
   | { type: "points"; default?: [number, number][]; description: string }
   /** A list of strings (tilemap rows). */
-  | { type: "strings"; default?: string[]; description: string };
+  | { type: "strings"; default?: string[]; description: string }
+  /** Degrees: a number in 2D, { "x", "y", "z" } in 3D. */
+  | { type: "rotation"; default?: number; description: string };
 
 export interface ComponentSpec {
   description: string;
@@ -59,11 +61,18 @@ export const PARTICLE_FIELDS: Record<string, FieldSpec> = {
  */
 export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
   transform: {
-    description: "Position of the entity's center in pixels. +x is right, +y is down.",
+    description:
+      'Position of the entity\'s center. 2D: pixels, +x right, +y down. 3D ("dimensions": 3): metres, +x right, +y up, +z toward the viewer.',
     fields: {
-      x: { type: "number", description: "Center x in pixels." },
-      y: { type: "number", description: "Center y in pixels." },
-      rotation: { type: "number", default: 0, description: "Rotation in degrees, clockwise. Rapier physics only: arcade bodies never rotate." },
+      x: { type: "number", description: "Center x (2D px, 3D m)." },
+      y: { type: "number", description: "Center y (2D px, +y down; 3D m, +y up)." },
+      z: { type: "number", default: 0, description: "3D only: center z in metres, +z toward the viewer." },
+      rotation: {
+        type: "rotation",
+        default: 0,
+        description:
+          '2D: degrees clockwise (rapier only; arcade bodies never rotate). 3D: { "x", "y", "z" } in degrees, applied y (turn), then x (tilt), then z (roll).',
+      },
     },
   },
   body: {
@@ -72,8 +81,9 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
     requires: ["transform"],
     fields: {
       type: { type: "enum", values: ["static", "dynamic", "kinematic"], default: "static", description: "How the body moves." },
-      width: { type: "number", min: 1, description: "Collider width in pixels." },
-      height: { type: "number", min: 1, description: "Collider height in pixels." },
+      width: { type: "number", min: 0.001, description: "Collider width (2D px, 3D m)." },
+      height: { type: "number", min: 0.001, description: "Collider height (2D px, 3D m)." },
+      depth: { type: "number", min: 0, default: 0, description: "3D only: size along z in metres. 0 = the same as width." },
       sensor: { type: "boolean", default: false, description: "Sensors detect overlaps but never block movement (coins, triggers)." },
       gravityScale: { type: "number", default: 1, description: "Multiplier on world gravity for dynamic bodies." },
       bounce: {
@@ -83,18 +93,19 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
         description: "How much speed a dynamic body keeps when it hits a solid: 0 stops it, 1 bounces it back at full speed (balls, pinballs).",
       },
       vx: { type: "number", default: 0, description: "Initial horizontal velocity in px/s." },
-      vy: { type: "number", default: 0, description: "Initial vertical velocity in px/s." },
+      vy: { type: "number", default: 0, description: "Initial vertical velocity in px/s (3D: m/s, +y up)." },
+      vz: { type: "number", default: 0, description: "3D only: initial velocity along z in m/s." },
       shape: {
         type: "enum",
-        values: ["box", "circle", "capsule", "polygon", "polyline"],
+        values: ["box", "circle", "capsule", "polygon", "polyline", "sphere", "cylinder", "convex"],
         default: "box",
         description:
-          "Rapier only. circle: diameter = width. capsule: a rounded box, upright when taller than wide (characters). polygon: the convex shape around `points` (wedges, rocks, ramps). polyline: an open line through `points` (hills, curved ground); static or kinematic only.",
+          "Rapier only. 2D: circle (diameter = width), capsule (a rounded box, upright when taller than wide), polygon (the convex shape around `points`), polyline (an open line through `points`; static or kinematic only). 3D: box, sphere (diameter = width), capsule (upright, height total, radius width/2), cylinder (upright), convex (the hull around [x, y, z] `points`).",
       },
       points: {
         type: "points",
         default: [],
-        description: "Rapier only, for polygon and polyline shapes: [[x, y], ...] offsets from the center in px. width and height stay the bounding box (images, arcade).",
+        description: "Rapier only, for polygon and polyline shapes: [[x, y], ...] offsets from the center in px; for 3D convex shapes [[x, y, z], ...] in metres. width and height stay the bounding box.",
       },
       friction: { type: "number", min: 0, default: 0.5, description: "Rapier only. 0 = ice, 1 = rubber." },
       density: { type: "number", min: 0, default: 1, description: "Rapier only. Mass per area: heavier bodies push lighter ones." },
@@ -167,7 +178,7 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       "Moves a kinematic body back and forth between its start position and `distance` pixels along +axis. Use it for moving platforms (players standing on them are carried) and walking enemies.",
     requires: ["transform", "body"],
     fields: {
-      axis: { type: "enum", values: ["x", "y"], default: "x", description: "x = right and back, y = down and back." },
+      axis: { type: "enum", values: ["x", "y", "z"], default: "x", description: "x = right and back, y = down and back (3D: up), z = toward the viewer and back (3D only)." },
       distance: { type: "number", min: 0, description: "Travel in pixels from the start position along +axis." },
       speed: { type: "number", min: 0, default: 80, description: "Speed in px/s." },
     },
@@ -303,8 +314,13 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
 export interface Transform {
   x: number;
   y: number;
-  /** Degrees, clockwise. Only rapier physics rotates bodies. */
+  /** 3D only; 0 in 2D. */
+  z: number;
+  /** 2D: degrees clockwise (only rapier physics rotates bodies). 3D: degrees around z (roll). */
   rotation: number;
+  /** 3D only: degrees around x (tilt) and y (turn). Applied y, then x, then z. */
+  rotationX: number;
+  rotationY: number;
 }
 
 export interface Body {
@@ -316,8 +332,11 @@ export interface Body {
   bounce: number;
   vx: number;
   vy: number;
-  shape: "box" | "circle" | "capsule" | "polygon" | "polyline";
-  points: [number, number][];
+  vz: number;
+  /** 3D: size along z; 0 = the same as width. */
+  depth: number;
+  shape: "box" | "circle" | "capsule" | "polygon" | "polyline" | "sphere" | "cylinder" | "convex";
+  points: number[][];
   friction: number;
   density: number;
   fixedRotation: boolean;

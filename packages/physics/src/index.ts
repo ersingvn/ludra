@@ -556,7 +556,7 @@ function shape(b: Body): ColliderDesc {
   }
   if (b.shape === "polygon" || b.shape === "polyline") {
     // Points are mirrored into Rapier's y-up space.
-    const points = new Float32Array(b.points.flatMap(([x, y]) => [x, -y]));
+    const points = new Float32Array(b.points.flatMap(([x, y]) => [x!, -y!]));
     if (b.shape === "polyline") return RAPIER.ColliderDesc.polyline(points);
     // A degenerate polygon (all points on a line) falls back to the bounding box.
     return RAPIER.ColliderDesc.convexHull(points) ?? RAPIER.ColliderDesc.cuboid(b.width / 2, b.height / 2);
