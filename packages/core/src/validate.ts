@@ -72,6 +72,9 @@ export function validateScene(input: unknown): ValidationResult {
           'Remove "physics" (3D always uses Rapier) or set it to "rapier".',
         );
       }
+      if (raw.world.fallLimit !== undefined && (typeof raw.world.fallLimit !== "number" || !Number.isFinite(raw.world.fallLimit))) {
+        error("E_INVALID_WORLD", "world.fallLimit", `world.fallLimit must be a number (a height in metres), got ${describe(raw.world.fallLimit)}.`);
+      }
       const lives = raw.world.lives;
       if (lives !== undefined && (typeof lives !== "number" || !Number.isInteger(lives) || lives < 1)) {
         error("E_INVALID_WORLD", "world.lives", `world.lives must be a whole number of at least 1, got ${describe(lives)}.`, "Leave it out for unlimited retries.");
@@ -226,6 +229,14 @@ export function validateScene(input: unknown): ValidationResult {
         "Keep one: platformer for side-view games with gravity, topdown for top-down games, paddles and ships.",
       );
     }
+    if ("character" in components && body && bodyType !== "dynamic") {
+      error(
+        "E_CHARACTER_NEEDS_DYNAMIC_BODY",
+        `${path}.components.body.type`,
+        `Entity ${label} has "character" but its body is "${String(bodyType)}", so it can never move.`,
+        'Set "type": "dynamic" on its body.',
+      );
+    }
     if ("platformer" in components && body && bodyType !== "dynamic") {
       error(
         "E_PLATFORMER_NEEDS_DYNAMIC_BODY",
@@ -259,8 +270,12 @@ export function validateScene(input: unknown): ValidationResult {
       const jointPath = Array.isArray(components.joint) ? `${path}.components.joint[${i}]` : `${path}.components.joint`;
       for (const field of ["anchor", "toAnchor"] as const) {
         const value = joint[field];
-        if (value !== undefined && !(isObject(value) && typeof value.x === "number" && typeof value.y === "number")) {
-          error("E_INVALID_FIELD", `${jointPath}.${field}`, `joint.${field} on entity ${label} must be { "x": number, "y": number }, an offset in px.`);
+        if (value !== undefined && !(isObject(value) && typeof value.x === "number" && typeof value.y === "number" && (value.z === undefined || typeof value.z === "number"))) {
+          error(
+            "E_INVALID_FIELD",
+            `${jointPath}.${field}`,
+            `joint.${field} on entity ${label} must be ${is3D ? '{ "x", "y", "z" }, an offset in metres' : '{ "x": number, "y": number }, an offset in px'}.`,
+          );
         }
       }
       if (typeof joint.to === "string" && joint.to !== "") jointTargets.push({ path: `${jointPath}.to`, label, to: joint.to });
@@ -306,7 +321,7 @@ export function validateScene(input: unknown): ValidationResult {
     if (isObject(components.hazard) && components.hazard.stompable === true) availableScore += numberOr(components.hazard.score, 0);
     if (isObject(components.goal)) goals.push({ path: `${path}.components.goal.requireScore`, label, requireScore: numberOr(components.goal.requireScore, 0) });
 
-    if ("platformer" in components || "topdown" in components) hasPlayer = true;
+    if ("platformer" in components || "topdown" in components || "character" in components) hasPlayer = true;
     // Only bodies that gravity actually pulls down need something to stand on.
     const falls = body && bodyType === "dynamic" && !("topdown" in components) && body.gravityScale !== 0;
     if (falls && worldGravity !== 0) hasDynamic = true;
@@ -337,7 +352,7 @@ export function validateScene(input: unknown): ValidationResult {
     }
   }
   if (!hasPlayer) {
-    warn("W_NO_PLAYER", "entities", 'No entity has a "platformer" or "topdown" component, so nothing responds to input (fine if scripts read input).');
+    warn("W_NO_PLAYER", "entities", is3D ? 'No entity has a "character" component, so nothing responds to input (fine if scripts read input).' : 'No entity has a "platformer" or "topdown" component, so nothing responds to input (fine if scripts read input).');
   }
 
   return result();
@@ -403,6 +418,16 @@ function validateDimensions(components: Record<string, unknown>, path: string, l
   if (extras.length > 0) {
     warn("W_3D_ONLY", `${path}.components`, `Entity ${label} sets ${extras.join(", ")}, which only a 3D world uses.`, 'Add "dimensions": 3 to "world" for a 3D game, or remove it.');
   }
+  if ("character" in components) {
+    error("E_3D_ONLY", `${path}.components.character`, `"character" on entity ${label} is the 3D player.`, 'Use "platformer" or "topdown" in 2D, or add "dimensions": 3 to "world".');
+  }
+  const joints = Array.isArray(components.joint) ? components.joint : components.joint !== undefined ? [components.joint] : [];
+  joints.forEach((joint: unknown, i: number) => {
+    if (!isObject(joint)) return;
+    const at = Array.isArray(components.joint) ? `${path}.components.joint[${i}]` : `${path}.components.joint`;
+    if (joint.type === "spherical") error("E_3D_ONLY", `${at}.type`, `A spherical joint on entity ${label} turns any way in 3D, which a 2D world can't.`, 'Use "revolute" in 2D.');
+    if (isObject(joint.axis)) error("E_3D_ONLY", `${at}.axis`, `joint.axis on entity ${label} is a 3D vector.`, "In 2D, axis is the slide direction in degrees clockwise from right.");
+  });
   if (SHAPES_3D.includes(shape)) {
     error("E_3D_SHAPE", `${path}.components.body.shape`, `"${shape}" on entity ${label} is a 3D shape.`, `Use "${SHAPE_COUNTERPART[shape]}" in 2D, or add "dimensions": 3 to "world".`);
   }
@@ -625,6 +650,11 @@ function checkField(spec: FieldSpec, value: unknown): string | undefined {
       return isObject(value) ? undefined : `must be an object like { "speed": 80 }, got ${describe(value)}.`;
     case "strings":
       return Array.isArray(value) && value.every((s) => typeof s === "string") ? undefined : `must be a list of strings, got ${describe(value)}.`;
+    case "axis":
+      if (typeof value === "number" && Number.isFinite(value)) return undefined;
+      return isObject(value) && Object.entries(value).every(([k, v]) => ["x", "y", "z"].includes(k) && typeof v === "number" && Number.isFinite(v)) && Object.values(value).some((v) => v !== 0)
+        ? undefined
+        : `must be degrees in 2D, or a direction like { "y": 1 } in 3D, got ${describe(value)}.`;
     case "rotation":
       if (typeof value === "number" && Number.isFinite(value)) return undefined;
       return isObject(value) && Object.entries(value).every(([k, v]) => ["x", "y", "z"].includes(k) && typeof v === "number" && Number.isFinite(v))

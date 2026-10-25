@@ -52,14 +52,16 @@ function enginePaths() {
   const physicsDir = dirname(physicsEntry);
   // Rapier's ES module sits next to the CommonJS entry require() finds.
   const rapierFile = join(dirname(createRequire(physicsEntry).resolve("@dimforge/rapier2d-deterministic-compat")), "rapier.mjs");
+  const rapier3dFile = join(dirname(createRequire(physicsEntry).resolve("@dimforge/rapier3d-deterministic-compat")), "rapier.mjs");
   const url = (prefix: string, dir: string, file: string) => `${prefix}${relative(dir, file).replaceAll(sep, "/")}`;
   return {
     coreDir,
     physicsDir,
     rapierFile,
+    rapier3dFile,
     browserModule: url("/__ludra/core/", coreDir, coreEntry),
     physicsModule: url("/__ludra/physics/", physicsDir, physicsEntry),
-    imports: { "@ludra/core": url("/__ludra/core/", coreDir, coreIndex), "@dimforge/rapier2d-deterministic-compat": "/__ludra/rapier.mjs" },
+    imports: { "@ludra/core": url("/__ludra/core/", coreDir, coreIndex), "@dimforge/rapier2d-deterministic-compat": "/__ludra/rapier.mjs", "@dimforge/rapier3d-deterministic-compat": "/__ludra/rapier3d.mjs" },
   };
 }
 
@@ -124,6 +126,10 @@ export function createGameServer(project: Project, indexHtml: (page: { browserMo
         serveModule(res, paths.coreDir, url.pathname.slice("/__ludra/core/".length));
       } else if (url.pathname.startsWith("/__ludra/physics/")) {
         serveModule(res, paths.physicsDir, url.pathname.slice("/__ludra/physics/".length));
+      } else if (url.pathname === "/__ludra/rapier3d.mjs") {
+        // Rapier 3D, inlined the same way: only 3D scenes ask for it.
+        res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "max-age=3600" });
+        res.end(readFileSync(paths.rapier3dFile));
       } else if (url.pathname === "/__ludra/rapier.mjs") {
         // Rapier with its WebAssembly inlined: one file, a few MB, loaded only by rapier scenes.
         res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "max-age=3600" });

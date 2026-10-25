@@ -1,5 +1,6 @@
 import { SoundPlayer } from "./audio.ts";
 import { CameraRig } from "./camera.ts";
+import { physicsEngineName } from "./engines.ts";
 import { parseFrames, type Sprite } from "./components.ts";
 import { collectAssetPaths } from "./effects.ts";
 import { InputScript } from "./input.ts";
@@ -157,8 +158,8 @@ class Screen {
 
 /** Loads the physics engine a scene names, if it isn't arcade. */
 async function usePhysics(scene: SceneDef, options: GameOptions): Promise<void> {
-  const name = scene.world?.physics;
-  if (name && name !== "arcade") await options.loadPhysics?.(name);
+  const name = physicsEngineName(scene);
+  if (name !== "arcade") await options.loadPhysics?.(name);
 }
 
 /** What a scene needs before it can be drawn. */

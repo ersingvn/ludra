@@ -135,6 +135,7 @@ export function raycastBoxes(host: PhysicsHost, from: { x: number; y: number }, 
 /** Keeps a patrolling body between its start and `distance` along its axis. */
 export function clampToPatrol(e: Entity, patrol: PatrolState): void {
   if (patrol.axis === "x") e.transform.x = Math.min(patrol.originX + patrol.distance, Math.max(patrol.originX, e.transform.x));
+  else if (patrol.axis === "z") e.transform.z = Math.min(patrol.originZ + patrol.distance, Math.max(patrol.originZ, e.transform.z));
   else e.transform.y = Math.min(patrol.originY + patrol.distance, Math.max(patrol.originY, e.transform.y));
 }
 

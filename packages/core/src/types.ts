@@ -50,6 +50,8 @@ export interface WorldSettings {
    * its gravity to 9.81 m/s².
    */
   dimensions?: 2 | 3;
+  /** 3D only: a player falling below this height (metres) dies. Defaults to -50. */
+  fallLimit?: number;
 }
 
 /** A reusable entity template: `prefabs/<name>.prefab.json` or the scene's `prefabs` map. */

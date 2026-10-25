@@ -116,6 +116,7 @@ export async function captureScreenshots(project: Project, request: ScreenshotRe
         debug: ${JSON.stringify(!!request.debug)},
         loadPhysics: async (name) => {
           if (name === "rapier") await (await import(${JSON.stringify(physicsModule)})).loadRapierPhysics();
+          if (name === "rapier3d") await (await import(${JSON.stringify(physicsModule)})).loadRapier3DPhysics();
         },
       });
     })()`;

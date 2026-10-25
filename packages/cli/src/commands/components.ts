@@ -77,5 +77,6 @@ function typeLabel(spec: FieldSpec): string {
   if (spec.type === "points") return "points [[x, y], ...]";
   if (spec.type === "strings") return '["...", "..."]';
   if (spec.type === "rotation") return "degrees | { x, y, z }";
+  if (spec.type === "axis") return "degrees | { x, y, z }";
   return spec.type;
 }

@@ -12,7 +12,9 @@ export type FieldSpec =
   /** A list of strings (tilemap rows). */
   | { type: "strings"; default?: string[]; description: string }
   /** Degrees: a number in 2D, { "x", "y", "z" } in 3D. */
-  | { type: "rotation"; default?: number; description: string };
+  | { type: "rotation"; default?: number; description: string }
+  /** A direction: degrees in 2D, an { "x", "y", "z" } vector in 3D. */
+  | { type: "axis"; default?: number; description: string };
 
 export interface ComponentSpec {
   description: string;
@@ -27,6 +29,7 @@ export const COMPONENT_NAMES = [
   "sprite",
   "platformer",
   "topdown",
+  "character",
   "collectible",
   "patrol",
   "hazard",
@@ -166,6 +169,22 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       clampToWorld: { type: "boolean", default: true, description: "Keep the entity inside the world bounds." },
     },
   },
+  character: {
+    description:
+      '3D player control: walks with the arrow keys (left/right along x, up/down along z: up is away from the viewer, -z) and jumps with jump, through Rapier\'s character controller: slopes, steps, pushing bodies, riding moving platforms. Needs a dynamic body (a capsule is the usual shape) in a 3D world.',
+    requires: ["transform", "body"],
+    fields: {
+      speed: { type: "number", min: 0, default: 5, description: "Walk speed in m/s." },
+      jumpSpeed: { type: "number", min: 0, default: 7, description: "Upward launch speed in m/s. Jump height = jumpSpeed² / (2 · gravity): the defaults (7, 9.81) give 2.5 m." },
+      coyoteTime: { type: "number", min: 0, default: 0.1, description: "Seconds after leaving a ledge during which a jump still works." },
+      jumpBuffer: { type: "number", min: 0, default: 0.1, description: "Seconds a jump press is remembered before landing." },
+      variableJump: { type: "boolean", default: true, description: "Releasing jump early cuts the jump short." },
+      maxSlope: { type: "number", min: 0, default: 50, description: "Steepest slope in degrees it can walk up." },
+      stepHeight: { type: "number", min: 0, default: 0.3, description: "Ledges up to this many metres are stepped onto without jumping (stairs). 0 turns it off." },
+      push: { type: "number", min: 0, default: 1, description: "How hard it pushes dynamic bodies, as a multiple of its own mass. 0 = can't push." },
+      faceMovement: { type: "boolean", default: true, description: "Turns to face the way it walks (rotation y), so its mesh looks where it goes." },
+    },
+  },
   collectible: {
     description: "Removed when a player (platformer or topdown) touches it and adds to the score. Its body must be a sensor.",
     requires: ["transform", "body"],
@@ -209,7 +228,12 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       'Rapier only. Connects this body to another (`to`) or to a point in the world: a hinge (revolute), a slider (prismatic), a weld (fixed), a rope or a spring. Chains, bridges, pendulums, wheels, doors, cranes. Positions are offsets from each body\'s center in px. Give a list of joints for several connections: "joint": [{ ... }, { ... }].',
     requires: ["transform", "body"],
     fields: {
-      type: { type: "enum", values: ["revolute", "prismatic", "fixed", "rope", "spring"], default: "revolute", description: "revolute = hinge, prismatic = slides along axis, fixed = welded, rope = at most length apart, spring = pulled toward length." },
+      type: {
+        type: "enum",
+        values: ["revolute", "prismatic", "fixed", "rope", "spring", "spherical"],
+        default: "revolute",
+        description: "revolute = hinge, prismatic = slides along axis, fixed = welded, rope = at most length apart, spring = pulled toward length, spherical = a ball joint that turns any way (3D only: ragdolls, chains, wrecking balls).",
+      },
       to: { type: "string", default: "", description: "Id of the other body. Empty: a fixed point in the world." },
       anchor: {
         type: "object",
@@ -224,7 +248,11 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       length: { type: "number", min: 0, default: 0, description: "rope: longest it stretches; spring: length it pulls toward. 0 = the distance at the start." },
       stiffness: { type: "number", min: 0, default: 1000, description: "spring: how hard it pulls." },
       damping: { type: "number", min: 0, default: 20, description: "spring: how quickly it stops bouncing." },
-      axis: { type: "number", default: 0, description: "prismatic: the direction it slides, in degrees clockwise from right." },
+      axis: {
+        type: "axis",
+        default: 0,
+        description: 'prismatic: the direction it slides, in degrees clockwise from right. 3D: a { "x", "y", "z" } vector, the hinge axis of a revolute joint (default { "z": 1 }: it swings in the screen plane) or the slide direction of a prismatic one (default { "x": 1 }).',
+      },
       min: { type: "number", default: 0, description: "Limit: revolute angle in degrees, prismatic position in px. Used when min < max." },
       max: { type: "number", default: 0, description: "Upper limit (see min)." },
       motorSpeed: { type: "number", default: 0, description: "revolute: degrees per second clockwise; prismatic: px per second. Needs motorForce." },
@@ -404,8 +432,20 @@ export interface Collectible {
   score: number;
 }
 
+export interface Character {
+  speed: number;
+  jumpSpeed: number;
+  coyoteTime: number;
+  jumpBuffer: number;
+  variableJump: boolean;
+  maxSlope: number;
+  stepHeight: number;
+  push: number;
+  faceMovement: boolean;
+}
+
 export interface Patrol {
-  axis: "x" | "y";
+  axis: "x" | "y" | "z";
   distance: number;
   speed: number;
 }
@@ -416,14 +456,16 @@ export interface Hazard {
 }
 
 export interface Joint {
-  type: "revolute" | "prismatic" | "fixed" | "rope" | "spring";
+  type: "revolute" | "prismatic" | "fixed" | "rope" | "spring" | "spherical";
   to: string;
-  anchor: { x: number; y: number };
-  toAnchor: { x: number; y: number };
+  /** 3D anchors also have z. */
+  anchor: { x: number; y: number; z?: number };
+  toAnchor: { x: number; y: number; z?: number };
   length: number;
   stiffness: number;
   damping: number;
-  axis: number;
+  /** 2D: degrees. 3D: a direction vector. */
+  axis: number | { x?: number; y?: number; z?: number };
   min: number;
   max: number;
   motorSpeed: number;

@@ -31,6 +31,11 @@ export function registerPhysics(name: string, factory: PhysicsFactory): void {
   factories.set(name, factory);
 }
 
+/** The engine a scene runs on: "rapier3d" for every 3D scene, else its "physics" (arcade by default). */
+export function physicsEngineName(scene: { world?: { physics?: string; dimensions?: number } }): string {
+  return scene.world?.dimensions === 3 ? "rapier3d" : (scene.world?.physics ?? "arcade");
+}
+
 export function isPhysicsLoaded(name: string): boolean {
   return factories.has(name);
 }

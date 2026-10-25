@@ -2,6 +2,7 @@ import {
   resolveComponent,
   type Body,
   type Camera,
+  type Character,
   type Collectible,
   type Emitter,
   type Goal,
@@ -27,7 +28,7 @@ import {
   type ScriptWorld,
   type SpawnDef,
 } from "./script.ts";
-import { createPhysics } from "./engines.ts";
+import { createPhysics, physicsEngineName } from "./engines.ts";
 import type { CameraZone } from "./camera.ts";
 import { advanceTween, createTween, startTween, type Tween, type TweenState } from "./tween.ts";
 import { at, feet, type PhysicsEngine, type PhysicsHost } from "./physics.ts";
@@ -51,6 +52,13 @@ export interface PlatformerState extends Platformer {
 export interface PatrolState extends Patrol {
   originX: number;
   originY: number;
+  originZ: number;
+}
+
+export interface CharacterState extends Character {
+  coyoteTimer: number;
+  jumping: boolean;
+  bufferTimer: number;
 }
 
 export interface ScriptState extends ScriptComponent {
@@ -71,9 +79,11 @@ export interface Entity {
   body?: BodyState;
   sprite?: Sprite;
   platformer?: PlatformerState;
+  /** The 3D player. */
+  character?: CharacterState;
   topdown?: Topdown;
   /** Where a player respawns after dying. */
-  spawn?: { x: number; y: number };
+  spawn?: { x: number; y: number; z: number };
   collectible?: Collectible;
   patrol?: PatrolState;
   hazard?: Hazard;
@@ -89,7 +99,8 @@ export interface Entity {
 }
 
 /** `x`/`y` is where it happened, e.g. the coin's position for "collect" or the feet for "land". */
-export type GameEvent = { frame: number; time: number; x: number; y: number } & (
+/** `z` is there in 3D worlds only. */
+export type GameEvent = { frame: number; time: number; x: number; y: number; z?: number } & (
   | { type: "jump"; entity: string }
   | { type: "land"; entity: string }
   | { type: "collect"; entity: string; item: string; score: number }
@@ -164,6 +175,9 @@ const JUMP_CUT = 0.45;
 const STOMP_BOUNCE = 0.6;
 /** How far a player's feet may sink into an enemy and still count as a stomp. */
 const STOMP_TOLERANCE = 8;
+const STOMP_TOLERANCE_3D = 0.15;
+/** 3D: players falling below this height die, unless the scene sets world.fallLimit. */
+const DEFAULT_FALL_LIMIT = -50;
 /** A platformer this far below the bottom of the world has fallen out of it. */
 const FALL_MARGIN = 100;
 /** Bodies this close count as touching for `touch` hooks, so solids (doors, walls) can be touched too. */
@@ -178,6 +192,8 @@ const EPSILON = 1e-4;
 export class World {
   /** 2, or 3 for a 3D world (metres, +y up, Rapier 3D). */
   readonly dimensions: 2 | 3;
+  /** 3D: players falling below this height die. */
+  readonly fallLimit: number;
   readonly width: number;
   readonly height: number;
   readonly gravity: number;
@@ -216,6 +232,7 @@ export class World {
 
   constructor(scene: SceneDef, options: WorldOptions = {}) {
     this.dimensions = scene.world?.dimensions ?? 2;
+    this.fallLimit = scene.world?.fallLimit ?? DEFAULT_FALL_LIMIT;
     this.width = scene.world?.width ?? 960;
     this.height = scene.world?.height ?? 540;
     this.gravity = scene.world?.gravity ?? (this.dimensions === 3 ? DEFAULT_GRAVITY_3D : DEFAULT_GRAVITY);
@@ -226,9 +243,7 @@ export class World {
     this.score = options.carry?.score ?? 0;
     this.deaths = options.carry?.deaths ?? 0;
     this.lives = options.carry?.lives ?? scene.world?.lives;
-    // 3D always runs on Rapier 3D.
-    const engine = this.dimensions === 3 ? "rapier3d" : (scene.world?.physics ?? "arcade");
-    this.physics = options.physics ?? createPhysics(engine, { width: this.width, height: this.height, gravity: this.gravity });
+    this.physics = options.physics ?? createPhysics(physicsEngineName(scene), { width: this.width, height: this.height, gravity: this.gravity });
     const world = this;
     this.physicsHost = {
       get entities() {
@@ -271,6 +286,7 @@ export class World {
     if (this.over) return;
 
     this.updatePlatformers(input, pressed);
+    this.updateCharacters(input, pressed);
     this.updateTopdown(input);
     this.updateScripts(input, pressed);
     if (this.over) return;
@@ -723,6 +739,54 @@ export class World {
 
   // ------------------------------------------------------------ built-ins
 
+  /** Where an entity is, for events. 3D adds z. */
+  private at(e: Entity): { x: number; y: number; z?: number } {
+    return this.dimensions === 3 ? { x: e.transform.x, y: e.transform.y, z: e.transform.z } : at(e);
+  }
+
+  /** Where an entity stands: the bottom of its body (below its center in 3D, where +y is up). */
+  private feet(e: Entity): { x: number; y: number; z?: number } {
+    if (this.dimensions !== 3) return feet(e);
+    return { x: e.transform.x, y: e.transform.y - (e.body?.height ?? 0) / 2, z: e.transform.z };
+  }
+
+  /**
+   * 3D players walk on the ground plane: left/right along x, up/down along z (up is away
+   * from the viewer, -z), and jump straight up (+y).
+   */
+  private updateCharacters(held: ReadonlySet<Action>, pressed: ReadonlySet<Action>): void {
+    for (const e of this.entities) {
+      const c = e.character;
+      const b = e.body;
+      if (!c || !b) continue;
+      const dx = (held.has("right") ? 1 : 0) - (held.has("left") ? 1 : 0);
+      const dz = (held.has("down") ? 1 : 0) - (held.has("up") ? 1 : 0);
+      // Diagonals walk at the same speed as straight lines.
+      const length = Math.hypot(dx, dz) || 1;
+      b.vx = (dx / length) * c.speed;
+      b.vz = (dz / length) * c.speed;
+      // Facing -z is a turn of 0; walking right (+x) is -90 (turning right is clockwise from above).
+      if (c.faceMovement && (dx !== 0 || dz !== 0)) e.transform.rotationY = (Math.atan2(-dx, -dz) * 180) / Math.PI;
+
+      if (b.grounded) c.coyoteTimer = c.coyoteTime + EPSILON;
+      if (pressed.has("jump")) c.bufferTimer = c.jumpBuffer + EPSILON;
+      if (c.bufferTimer > 0 && c.coyoteTimer > 0) {
+        b.vy = c.jumpSpeed;
+        b.grounded = false;
+        b.standingOn = undefined;
+        c.bufferTimer = 0;
+        c.coyoteTimer = 0;
+        c.jumping = true;
+        this.emit({ type: "jump", entity: e.id, ...this.feet(e) });
+      } else if (c.jumping && c.variableJump && !held.has("jump") && b.vy > c.jumpSpeed * JUMP_CUT) {
+        b.vy = c.jumpSpeed * JUMP_CUT;
+      }
+      if (b.vy <= 0) c.jumping = false;
+      c.coyoteTimer = Math.max(0, c.coyoteTimer - FIXED_DT);
+      c.bufferTimer = Math.max(0, c.bufferTimer - FIXED_DT);
+    }
+  }
+
   /** Entities the player controls: platformers and topdown movers. */
   private players(): Entity[] {
     return this.entities.filter(isPlayer);
@@ -765,7 +829,7 @@ export class World {
         p.bufferTimer = 0;
         p.coyoteTimer = 0;
         p.jumping = true;
-        this.emit({ type: "jump", entity: e.id, ...feet(e) });
+        this.emit({ type: "jump", entity: e.id, ...this.feet(e) });
       } else if (p.jumping && p.variableJump && !held.has("jump") && b.vy < -p.jumpSpeed * JUMP_CUT) {
         // Only the player's own jumps are cut short; launches from pads, stomps or scripts are not.
         b.vy = -p.jumpSpeed * JUMP_CUT;
@@ -818,14 +882,15 @@ export class World {
       const patrol = e.patrol;
       const b = e.body;
       if (!patrol || !b) continue;
-      const alongX = patrol.axis === "x";
-      const offset = alongX ? e.transform.x - patrol.originX : e.transform.y - patrol.originY;
-      const current = alongX ? b.vx : b.vy;
+      const axis = patrol.axis;
+      const offset = axis === "x" ? e.transform.x - patrol.originX : axis === "z" ? e.transform.z - patrol.originZ : e.transform.y - patrol.originY;
+      const current = axis === "x" ? b.vx : axis === "z" ? b.vz : b.vy;
       let direction = current < 0 ? -1 : 1;
       if (offset >= patrol.distance) direction = -1;
       else if (offset <= 0) direction = 1;
-      b.vx = alongX ? direction * patrol.speed : 0;
-      b.vy = alongX ? 0 : direction * patrol.speed;
+      b.vx = axis === "x" ? direction * patrol.speed : 0;
+      b.vy = axis === "y" ? direction * patrol.speed : 0;
+      b.vz = axis === "z" ? direction * patrol.speed : 0;
     }
   }
 
@@ -836,24 +901,27 @@ export class World {
       if (!collector) continue;
       this.remove(item);
       this.score += item.collectible!.score;
-      this.emit({ type: "collect", entity: collector.id, item: item.id, score: item.collectible!.score, ...at(item) });
+      this.emit({ type: "collect", entity: collector.id, item: item.id, score: item.collectible!.score, ...this.at(item) });
     }
   }
 
   private updateHazards(): void {
     for (const player of this.players()) {
       const b = player.body!;
-      if (player.transform.y - b.height / 2 > this.height + FALL_MARGIN) {
+      const fell = this.dimensions === 3 ? player.transform.y + b.height / 2 < this.fallLimit : player.transform.y - b.height / 2 > this.height + FALL_MARGIN;
+      if (fell) {
         this.kill(player, "fall");
         continue;
       }
       for (const hazard of this.entities.filter((e) => e.hazard && e.body)) {
         if (!this.physics.overlaps(player, hazard)) continue;
-        if (hazard.hazard!.stompable && player.platformer && isStomp(player, hazard)) {
+        const jumper = player.platformer ?? player.character;
+        if (hazard.hazard!.stompable && jumper && isStomp(player, hazard, this.dimensions === 3)) {
           this.remove(hazard);
-          b.vy = -player.platformer!.jumpSpeed * STOMP_BOUNCE;
+          // A bounce off the enemy: up is -y in 2D, +y in 3D.
+          b.vy = (this.dimensions === 3 ? 1 : -1) * jumper.jumpSpeed * STOMP_BOUNCE;
           this.score += hazard.hazard!.score;
-          this.emit({ type: "stomp", entity: player.id, enemy: hazard.id, score: hazard.hazard!.score, ...at(hazard) });
+          this.emit({ type: "stomp", entity: player.id, enemy: hazard.id, score: hazard.hazard!.score, ...this.at(hazard) });
           continue;
         }
         this.kill(player, hazard.id);
@@ -869,7 +937,7 @@ export class World {
       if (!player) continue;
       this.won = true;
       if (goal.goal!.next) this.exit = goal.goal!.next;
-      this.emit({ type: "win", entity: player.id, goal: goal.id, ...at(goal) });
+      this.emit({ type: "win", entity: player.id, goal: goal.id, ...this.at(goal) });
       return;
     }
   }
@@ -881,9 +949,16 @@ export class World {
         const key = `${player.id}>${checkpoint.id}`;
         if (this.reached.has(key) || !this.physics.overlaps(player, checkpoint)) continue;
         this.reached.add(key);
-        const bottom = checkpoint.transform.y + checkpoint.body!.height / 2;
-        player.spawn = { x: checkpoint.transform.x, y: player.platformer ? bottom - player.body!.height / 2 : checkpoint.transform.y };
-        this.emit({ type: "checkpoint", entity: player.id, checkpoint: checkpoint.id, ...at(checkpoint) });
+        const c = checkpoint.transform;
+        if (this.dimensions === 3) {
+          // Standing on the checkpoint's bottom, +y up.
+          const bottom = c.y - checkpoint.body!.height / 2;
+          player.spawn = { x: c.x, y: player.character ? bottom + player.body!.height / 2 : c.y, z: c.z };
+        } else {
+          const bottom = c.y + checkpoint.body!.height / 2;
+          player.spawn = { x: c.x, y: player.platformer ? bottom - player.body!.height / 2 : c.y, z: 0 };
+        }
+        this.emit({ type: "checkpoint", entity: player.id, checkpoint: checkpoint.id, ...this.at(checkpoint) });
       }
     }
   }
@@ -899,7 +974,7 @@ export class World {
   private kill(player: Entity, cause: string): void {
     const b = player.body!;
     this.deaths++;
-    this.emit({ type: "die", entity: player.id, cause, ...at(player) });
+    this.emit({ type: "die", entity: player.id, cause, ...this.at(player) });
     if (this.lives !== undefined) {
       this.lives--;
       // Out of lives: the player stays where it fell and the game is over.
@@ -907,12 +982,14 @@ export class World {
     }
     player.transform.x = player.spawn?.x ?? player.transform.x;
     player.transform.y = player.spawn?.y ?? player.transform.y;
+    player.transform.z = player.spawn?.z ?? player.transform.z;
     b.vx = 0;
     b.vy = 0;
+    b.vz = 0;
     b.grounded = false;
     b.standingOn = undefined;
-    const p = player.platformer;
-    if (p) {
+    for (const p of [player.platformer, player.character]) {
+      if (!p) continue;
       p.coyoteTimer = 0;
       p.bufferTimer = 0;
       p.jumping = false;
@@ -935,9 +1012,10 @@ function createEntity(def: EntityDef): Entity {
     };
   }
   if (c.topdown) entity.topdown = resolveComponent<Topdown>("topdown", c.topdown);
-  if (entity.platformer || entity.topdown) entity.spawn = { x: transform.x, y: transform.y };
+  if (c.character) entity.character = { ...resolveComponent<Character>("character", c.character), coyoteTimer: 0, bufferTimer: 0, jumping: false };
+  if (entity.platformer || entity.topdown || entity.character) entity.spawn = { x: transform.x, y: transform.y, z: transform.z };
   if (c.collectible) entity.collectible = resolveComponent<Collectible>("collectible", c.collectible);
-  if (c.patrol) entity.patrol = { ...resolveComponent<Patrol>("patrol", c.patrol), originX: transform.x, originY: transform.y };
+  if (c.patrol) entity.patrol = { ...resolveComponent<Patrol>("patrol", c.patrol), originX: transform.x, originY: transform.y, originZ: transform.z };
   if (c.hazard) entity.hazard = resolveComponent<Hazard>("hazard", c.hazard);
   if (c.goal) entity.goal = resolveComponent<Goal>("goal", c.goal);
   if (c.checkpoint) entity.checkpoint = {};
@@ -981,12 +1059,19 @@ function writeTweened(e: Entity, property: Tween["property"], value: number): vo
 }
 
 function isPlayer(e: Entity): boolean {
-  return !!(e.platformer || e.topdown) && !!e.body;
+  return !!(e.platformer || e.topdown || e.character) && !!e.body;
 }
 
 /** A stomp is a falling player whose feet were above the enemy's top on the previous frame. */
-function isStomp(player: Entity, enemy: Entity): boolean {
+function isStomp(player: Entity, enemy: Entity, yUp: boolean): boolean {
   const b = player.body!;
+  if (yUp) {
+    // 3D: falling (-y), with its feet at or above the enemy's top a step ago (tolerance in metres).
+    if (b.vy >= 0) return false;
+    const previousBottom = player.transform.y - b.vy * FIXED_DT - b.height / 2;
+    const enemyTop = enemy.transform.y + enemy.body!.height / 2;
+    return previousBottom >= enemyTop - STOMP_TOLERANCE_3D;
+  }
   if (b.vy <= 0) return false;
   const previousBottom = player.transform.y - b.vy * FIXED_DT + b.height / 2;
   const enemyTop = enemy.transform.y - enemy.body!.height / 2;

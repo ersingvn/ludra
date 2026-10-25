@@ -97,6 +97,14 @@ export function loadRapierPhysics(): Promise<void> {
   return loading;
 }
 
+/**
+ * Loads Rapier 3D and registers the "rapier3d" engine, which scenes with `"dimensions": 3`
+ * run on. It is a separate module, so 2D games never download its WebAssembly.
+ */
+export async function loadRapier3DPhysics(): Promise<void> {
+  await (await import("./rapier3d.ts")).loadRapier3DPhysics();
+}
+
 // Rapier's memory lives in WebAssembly; free it when a world is garbage collected.
 const cleanup = new FinalizationRegistry<RapierWorld>((world) => world.free());
 
@@ -209,9 +217,11 @@ export class RapierPhysics implements PhysicsEngine {
       const baseAnchor = localPoint(base, there);
       const ownAnchor = toRapier(spec.anchor.x, spec.anchor.y);
       const length = spec.length || Math.hypot(there.x - here.x, there.y - here.y);
+      // In 2D the axis is degrees (validation rejects a 3D vector here).
+      const axis = typeof spec.axis === "number" ? spec.axis : 0;
       const data =
         spec.type === "prismatic"
-          ? RAPIER.JointData.prismatic(baseAnchor, ownAnchor, rotateBack(base, toRapier(Math.cos(spec.axis * DEGREES), Math.sin(spec.axis * DEGREES))))
+          ? RAPIER.JointData.prismatic(baseAnchor, ownAnchor, rotateBack(base, toRapier(Math.cos(axis * DEGREES), Math.sin(axis * DEGREES))))
           : spec.type === "fixed"
             ? RAPIER.JointData.fixed(baseAnchor, 0, ownAnchor, base.rotation() - link.body.rotation())
             : spec.type === "rope"

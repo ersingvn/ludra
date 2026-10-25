@@ -43,9 +43,10 @@ function page(project: Project, { browserModule, physicsModule, importMap }: { b
 ${importMap}
 <script type="module">
 import { startGame } from "${browserModule}";
-// Rapier is a few MB of WebAssembly: only scenes with "physics": "rapier" load it.
+// Rapier is a few MB of WebAssembly: only scenes with "physics": "rapier" (or 3D scenes) load it.
 const loadPhysics = async (name) => {
   if (name === "rapier") await (await import("${physicsModule}")).loadRapierPhysics();
+  if (name === "rapier3d") await (await import("${physicsModule}")).loadRapier3DPhysics();
 };
 
 const data = await (await fetch("/__ludra/scene")).json();

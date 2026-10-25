@@ -203,6 +203,39 @@ describe("rapier physics through the CLI", () => {
     assert.equal(code, 0, out);
   });
 
+  test("a 3D scene loads Rapier 3D on its own for check, play and test", () => {
+    const dir = join(workDir, "cubes");
+    mkdirSync(join(dir, "scenes"), { recursive: true });
+    mkdirSync(join(dir, "tests"), { recursive: true });
+    writeFileSync(join(dir, "ludra.json"), JSON.stringify({ name: "Cubes" }));
+    writeFileSync(
+      join(dir, "scenes", "main.scene.json"),
+      JSON.stringify({
+        world: { dimensions: 3 },
+        entities: [
+          { id: "floor", components: { transform: { x: 0, y: -0.5, z: 0 }, body: { width: 20, height: 1, depth: 20 } } },
+          { id: "hero", components: { transform: { x: 0, y: 0.9, z: 0 }, body: { type: "dynamic", width: 0.6, height: 1.8, shape: "capsule" }, character: {} } },
+          { id: "cube", components: { transform: { x: 3, y: 4, z: -2, rotation: { x: 30, y: 20 } }, body: { type: "dynamic", width: 1, height: 1 } } },
+        ],
+      }),
+    );
+    writeFileSync(
+      join(dir, "tests", "world.test.json"),
+      JSON.stringify({
+        tests: [
+          { name: "the cube lands", duration: "2s", assert: ["cube.y < 0.6", "cube.grounded == true"] },
+          { name: "up walks away from the viewer", inputs: "up:1s", assert: ["hero.z < -4 at 1s", "hero.x > -0.01", "hero.x < 0.01"] },
+        ],
+      }),
+    );
+    assert.equal(ludra("check", dir).code, 0);
+    const played = ludra("play", dir, "--inputs", "up:1s", "--duration", "1s", "--watch", "hero", "--every", "1s");
+    assert.equal(played.code, 0, played.out);
+    assert.match(played.out, / z +vx +vy +vz +grounded/, "play --watch shows z and vz for 3D scenes");
+    const { code, out } = ludra("test", dir);
+    assert.equal(code, 0, out);
+  });
+
   test("screenshots of a rapier scene load Rapier in the browser, with and without --debug", { skip: findBrowser() ? false : "no Chrome, Edge or Chromium installed" }, () => {
     const dir = join(workDir, "tumble");
     const normal = ludra("play", dir, "--duration", "1s", "--screenshot", "1s", "--out", "shots", "--json");
