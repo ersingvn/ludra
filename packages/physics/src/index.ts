@@ -1,4 +1,11 @@
-import RAPIER, { type Collider, type ColliderDesc, type KinematicCharacterController, type RigidBody, type World as RapierWorld } from "@dimforge/rapier2d-deterministic-compat";
+import RAPIER, {
+  type Collider,
+  type ColliderDesc,
+  type ImpulseJoint,
+  type KinematicCharacterController,
+  type RigidBody,
+  type World as RapierWorld,
+} from "@dimforge/rapier2d-deterministic-compat";
 import {
   at,
   clampToPatrol,
@@ -11,6 +18,8 @@ import {
   type PhysicsEngine,
   type PhysicsHost,
   type PhysicsSettings,
+  type RayHit,
+  type RayOptions,
 } from "@ludra/core";
 
 /**
@@ -25,6 +34,14 @@ import {
 function toRapier(x: number, y: number): { x: number; y: number } {
   return { x, y: -y };
 }
+
+/** A point or vector from Rapier's y-up space back to Ludra's. */
+function fromRapier(v: { x: number; y: number }): { x: number; y: number } {
+  return { x: v.x, y: -v.y };
+}
+
+/** How firmly a joint motor drives toward its target speed (it is capped by motorForce). */
+const MOTOR_FACTOR = 1000;
 
 const PIXELS_PER_METER = 50;
 const DEGREES = Math.PI / 180;
@@ -56,6 +73,10 @@ interface Link {
   dy: number;
   /** Gameplay moved the entity itself since the last step (a respawn). */
   teleported: boolean;
+  /** The joint this entity's `joint` component made, once both ends exist. */
+  joint?: ImpulseJoint;
+  /** For a joint to a point in the world: the fixed body holding that point. */
+  anchor?: RigidBody;
 }
 
 let loading: Promise<void> | undefined;
@@ -84,6 +105,8 @@ export class RapierPhysics implements PhysicsEngine {
   private readonly events = new RAPIER.EventQueue(true);
   private readonly links = new Map<Entity, Link>();
   private readonly byCollider = new Map<number, Link>();
+  /** Entities whose joint waits for the body on its other end. */
+  private pendingJoints: Entity[] = [];
 
   constructor(settings: PhysicsSettings) {
     this.world = new RAPIER.World(toRapier(0, settings.gravity));
@@ -128,6 +151,7 @@ export class RapierPhysics implements PhysicsEngine {
     );
     const link: Link = { entity, body, collider, x: t.x, y: t.y, rotation: t.rotation, angle: body.rotation(), dx: 0, dy: 0, teleported: false };
     if (player) link.controller = this.createController(entity);
+    if (entity.joint) this.pendingJoints.push(entity);
     this.links.set(entity, link);
     this.byCollider.set(collider.handle, link);
   }
@@ -138,7 +162,76 @@ export class RapierPhysics implements PhysicsEngine {
     this.byCollider.delete(link.collider.handle);
     this.links.delete(entity);
     if (link.controller) this.world.removeCharacterController(link.controller);
+    // Removing a body removes the joints attached to it.
     this.world.removeRigidBody(link.body);
+    if (link.anchor) this.world.removeRigidBody(link.anchor);
+    this.pendingJoints = this.pendingJoints.filter((e) => e !== entity);
+  }
+
+  /** Creates the joints whose two ends now both exist. */
+  private connectJoints(host: PhysicsHost): void {
+    if (this.pendingJoints.length === 0) return;
+    const waiting: Entity[] = [];
+    for (const entity of this.pendingJoints) {
+      const link = this.links.get(entity);
+      const spec = entity.joint!;
+      const target = spec.to ? host.entities.find((e) => e.id === spec.to) : undefined;
+      const other = target ? this.links.get(target) : undefined;
+      if (!link || (spec.to && !other)) {
+        waiting.push(entity);
+        continue;
+      }
+      // Where this end of the joint is, in the world (the anchor turns with the body).
+      const here = worldPoint(link.body, spec.anchor);
+      // Hinges, sliders and welds join both bodies at that same point; ropes and springs
+      // run from there to their other end (toAnchor).
+      const sameSpot = spec.type === "revolute" || spec.type === "prismatic" || spec.type === "fixed";
+      let base: RigidBody;
+      let there: { x: number; y: number };
+      if (other) {
+        base = other.body;
+        there = sameSpot ? here : worldPoint(other.body, spec.toAnchor);
+      } else {
+        // A fixed point in the world: hang the joint on an invisible fixed body there.
+        there = sameSpot ? here : { x: entity.transform.x + spec.toAnchor.x, y: entity.transform.y + spec.toAnchor.y };
+        base = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(there.x, -there.y));
+        link.anchor = base;
+      }
+      // The other body (or the world) comes first, so Rapier measures this body relative to it.
+      const baseAnchor = localPoint(base, there);
+      const ownAnchor = toRapier(spec.anchor.x, spec.anchor.y);
+      const length = spec.length || Math.hypot(there.x - here.x, there.y - here.y);
+      const data =
+        spec.type === "prismatic"
+          ? RAPIER.JointData.prismatic(baseAnchor, ownAnchor, rotateBack(base, toRapier(Math.cos(spec.axis * DEGREES), Math.sin(spec.axis * DEGREES))))
+          : spec.type === "fixed"
+            ? RAPIER.JointData.fixed(baseAnchor, 0, ownAnchor, base.rotation() - link.body.rotation())
+            : spec.type === "rope"
+              ? RAPIER.JointData.rope(length, baseAnchor, ownAnchor)
+              : spec.type === "spring"
+                ? RAPIER.JointData.spring(length, spec.stiffness, spec.damping, baseAnchor, ownAnchor)
+                : RAPIER.JointData.revolute(baseAnchor, ownAnchor);
+      const joint = this.world.createImpulseJoint(data, base, link.body, true);
+      joint.setContactsEnabled(spec.collide);
+      if (spec.type === "revolute" || spec.type === "prismatic") {
+        const unit = joint as unknown as {
+          setLimits(min: number, max: number): void;
+          setMotorMaxForce(force: number): void;
+          configureMotorVelocity(velocity: number, factor: number): void;
+        };
+        // Rapier is y-up: a clockwise angle is negative there. Positions along the axis keep their sign.
+        if (spec.min < spec.max) {
+          if (spec.type === "revolute") unit.setLimits(-spec.max * DEGREES, -spec.min * DEGREES);
+          else unit.setLimits(spec.min, spec.max);
+        }
+        if (spec.motorForce > 0) {
+          unit.setMotorMaxForce(spec.motorForce);
+          unit.configureMotorVelocity(spec.type === "revolute" ? -spec.motorSpeed * DEGREES : spec.motorSpeed, MOTOR_FACTOR);
+        }
+      }
+      link.joint = joint;
+    }
+    this.pendingJoints = waiting;
   }
 
   /**
@@ -164,6 +257,7 @@ export class RapierPhysics implements PhysicsEngine {
   }
 
   step(host: PhysicsHost): void {
+    this.connectJoints(host);
     // Hand gameplay's changes to Rapier: teleports, velocities, kinematic moves.
     for (const link of this.links.values()) {
       const { entity: e, body } = link;
@@ -322,6 +416,80 @@ export class RapierPhysics implements PhysicsEngine {
     if (b.grounded && !wasGrounded) host.emit({ type: "land", entity: link.entity.id, ...feet(link.entity) });
   }
 
+  mass(e: Entity): number {
+    return this.links.get(e)?.collider.mass() ?? 0;
+  }
+
+  applyImpulse(e: Entity, x: number, y: number, at?: { x: number; y: number }): void {
+    const link = this.links.get(e);
+    const b = e.body;
+    if (!link || !b || b.type === "static") return;
+    if (link.controller) {
+      // Players move by velocity: a kick changes it directly.
+      const mass = link.collider.mass() || 1;
+      b.vx += x / mass;
+      b.vy += y / mass;
+      return;
+    }
+    if (b.type !== "dynamic") return;
+    if (at) link.body.applyImpulseAtPoint(toRapier(x, y), toRapier(at.x, at.y), true);
+    else link.body.applyImpulse(toRapier(x, y), true);
+    // Keep the entity's velocity in step, since it is written back to Rapier each step.
+    const v = fromRapier(link.body.linvel());
+    b.vx = v.x;
+    b.vy = v.y;
+  }
+
+  angularVelocity(e: Entity): number {
+    const body = this.links.get(e)?.body;
+    return body ? -body.angvel() / DEGREES : 0;
+  }
+
+  setAngularVelocity(e: Entity, value: number): void {
+    const link = this.links.get(e);
+    if (link && e.body?.type === "dynamic" && !link.controller) link.body.setAngvel(-value * DEGREES, true);
+  }
+
+  raycast(_host: PhysicsHost, from: { x: number; y: number }, to: { x: number; y: number }, options: RayOptions = {}): RayHit | undefined {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const length = Math.hypot(dx, dy);
+    if (length === 0) return undefined;
+    const origin = toRapier(from.x, from.y);
+    const ignored = new Set((options.ignore ?? []).map((e) => this.links.get(e)?.collider.handle));
+    const hit = this.world.castRayAndGetNormal(
+      new RAPIER.Ray(origin, toRapier(dx, dy)),
+      1,
+      true,
+      options.sensors ? undefined : RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
+      undefined,
+      undefined,
+      undefined,
+      // Like arcade: a ray starting inside a body doesn't hit it, and only Ludra's bodies count.
+      (collider) => this.byCollider.has(collider.handle) && !ignored.has(collider.handle) && !collider.containsPoint(origin),
+    );
+    if (!hit) return undefined;
+    const link = this.byCollider.get(hit.collider.handle)!;
+    const t = hit.timeOfImpact;
+    return { entity: link.entity, x: from.x + dx * t, y: from.y + dy * t, distance: t * length, normal: fromRapier(hit.normal) };
+  }
+
+  raw(resolve: (target: unknown) => Entity | undefined): unknown {
+    const linkOf = (target: unknown) => {
+      const e = resolve(target);
+      return e ? this.links.get(e) : undefined;
+    };
+    return {
+      RAPIER,
+      world: this.world,
+      body: (target: unknown) => linkOf(target)?.body,
+      collider: (target: unknown) => linkOf(target)?.collider,
+      joint: (target: unknown) => linkOf(target)?.joint,
+      toRapier: (p: { x: number; y: number }) => toRapier(p.x, p.y),
+      fromRapier,
+    };
+  }
+
   overlaps(a: Entity, b: Entity, margin = 0): boolean {
     const la = this.links.get(a);
     const lb = this.links.get(b);
@@ -333,6 +501,30 @@ export class RapierPhysics implements PhysicsEngine {
     });
     return hit;
   }
+}
+
+/** A point given as an offset from a body's center (in its own, turning frame), in Ludra's world. */
+function worldPoint(body: RigidBody, offset: { x: number; y: number }): { x: number; y: number } {
+  const p = body.translation();
+  const angle = body.rotation();
+  const local = toRapier(offset.x, offset.y);
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  return fromRapier({ x: p.x + local.x * cos - local.y * sin, y: p.y + local.x * sin + local.y * cos });
+}
+
+/** A Ludra world point in a body's own Rapier frame. */
+function localPoint(body: RigidBody, point: { x: number; y: number }): { x: number; y: number } {
+  const p = body.translation();
+  const r = toRapier(point.x, point.y);
+  return rotateBack(body, { x: r.x - p.x, y: r.y - p.y });
+}
+
+/** A Rapier world vector in a body's own frame. */
+function rotateBack(body: RigidBody, v: { x: number; y: number }): { x: number; y: number } {
+  const cos = Math.cos(-body.rotation());
+  const sin = Math.sin(-body.rotation());
+  return { x: v.x * cos - v.y * sin, y: v.x * sin + v.y * cos };
 }
 
 function isPlayer(e: Entity): boolean {

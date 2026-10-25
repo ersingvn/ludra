@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { before, describe, test } from "node:test";
-import { InputScript, simulate, validateScene, World, type EntityDef, type SceneDef, type Script } from "@ludra/core";
+import { InputScript, simulate, validateScene, World, type EntityDef, type PhysicsHost, type SceneDef, type Script } from "@ludra/core";
 import { loadRapierPhysics } from "../src/index.ts";
 
 const ground: EntityDef = { id: "ground", components: { transform: { x: 480, y: 520 }, body: { type: "static", width: 960, height: 40 } } };
@@ -229,6 +229,157 @@ describe("character controller", () => {
     const scene: SceneDef = { world: { physics: "rapier", gravity: 0 }, entities: [walker, wall] };
     const x = path(scene, "right:2s", 2).xs.at(-1)!;
     assert.ok(x < 300 - 20 - 12 + 1 && x > 260, `stopped at the wall, x ${x.toFixed(1)}`);
+  });
+});
+
+describe("forces, raycasts and raw access", () => {
+  before(() => loadRapierPhysics());
+  const crate = (id: string, x: number, extra: Record<string, unknown> = {}): EntityDef => ({
+    id,
+    components: { transform: { x, y: 480 }, body: { type: "dynamic", width: 40, height: 40, ...extra } },
+  });
+
+  test("an impulse moves a crate; a heavier one moves less; off-center it also spins", () => {
+    const world = new World(rapier(crate("light", 200), crate("heavy", 500, { density: 4 }), crate("spun", 800, { friction: 0 })));
+    world.step(new Set());
+    for (const id of ["light", "heavy"]) world.physics.applyImpulse(world.get(id)!, 1600 * 300, 0);
+    const spun = world.get("spun")!;
+    world.physics.applyImpulse(spun, 0, -1600 * 400, { x: spun.transform.x + 15, y: spun.transform.y });
+    assert.ok(Math.abs(world.get("light")!.body!.vx - 300) < 1, `light: vx ${world.get("light")!.body!.vx}`);
+    assert.ok(Math.abs(world.get("heavy")!.body!.vx - 75) < 1, `heavy: vx ${world.get("heavy")!.body!.vx}`);
+    assert.ok(world.physics.angularVelocity(spun) !== 0, "an off-center hit spins it");
+    simulate(world, InputScript.parse(""), 30);
+    assert.ok(world.get("light")!.transform.x - 200 > 2 * (world.get("heavy")!.transform.x - 500));
+  });
+
+  test("angularVelocity spins a body", () => {
+    const wheel: EntityDef = { id: "wheel", components: { transform: { x: 480, y: 200 }, body: { type: "dynamic", width: 40, height: 40, shape: "circle", gravityScale: 0 } } };
+    const world = new World(rapier(wheel));
+    world.step(new Set());
+    world.physics.setAngularVelocity(world.get("wheel")!, 360);
+    simulate(world, InputScript.parse(""), 60);
+    assert.ok(Math.abs(world.get("wheel")!.transform.rotation - 360) < 5, `one turn clockwise in a second, rotation ${world.get("wheel")!.transform.rotation}`);
+  });
+
+  test("rays hit the true shapes: a tilted plank's slanted surface and a circle", () => {
+    const plank: EntityDef = { id: "plank", components: { transform: { x: 300, y: 300, rotation: -45 }, body: { type: "static", width: 200, height: 10 } } };
+    const ball: EntityDef = { id: "ball", components: { transform: { x: 700, y: 300 }, body: { type: "static", width: 60, height: 60, shape: "circle" } } };
+    const world = new World(rapier(plank, ball));
+    world.step(new Set());
+    const host = (world as unknown as { physicsHost: PhysicsHost }).physicsHost;
+    const down = world.physics.raycast(host, { x: 300, y: 50 }, { x: 300, y: 500 });
+    assert.equal(down?.entity.id, "plank");
+    assert.ok(Math.abs(Math.abs(down!.normal.x) - Math.abs(down!.normal.y)) < 0.01 && down!.normal.y < 0, `a 45° surface facing up, normal ${JSON.stringify(down!.normal)}`);
+    const across = world.physics.raycast(host, { x: 500, y: 300 }, { x: 900, y: 300 });
+    assert.equal(across?.entity.id, "ball");
+    assert.ok(Math.abs(across!.x - 670) < 0.5 && Math.abs(across!.normal.x + 1) < 0.01, `hit the circle's left side at x ${across!.x}`);
+    assert.equal(world.physics.raycast(host, { x: 500, y: 300 }, { x: 900, y: 300 }, { ignore: [world.get("ball")!] }), undefined);
+  });
+
+  test("scripts get the whole Rapier API through world.physics.raw", () => {
+    const scripts = new Map<string, Script>([
+      [
+        "float.ts",
+        {
+          start({ self, world }) {
+            const raw = world.physics.raw as { body(e: unknown): { setGravityScale(s: number, wake: boolean): void }; RAPIER: unknown; world: unknown };
+            raw.body(self).setGravityScale(0, true);
+            self.state.engine = world.physics.name;
+            self.state.hasRapier = !!raw.RAPIER && !!raw.world;
+          },
+        },
+      ],
+    ]);
+    const balloon: EntityDef = { id: "balloon", components: { transform: { x: 480, y: 200 }, body: { type: "dynamic", width: 30, height: 30, shape: "circle" }, script: { src: "float.ts" } } };
+    const world = new World(rapier(balloon), { scripts });
+    simulate(world, InputScript.parse(""), 60);
+    assert.ok(Math.abs(world.get("balloon")!.transform.y - 200) < 0.01, `gravity was turned off through raw Rapier, y ${world.get("balloon")!.transform.y}`);
+    assert.deepEqual(world.get("balloon")!.state, { engine: "rapier", hasRapier: true });
+  });
+});
+
+describe("joints", () => {
+  before(() => loadRapierPhysics());
+  const bob = (joint: Record<string, unknown>, extra: Record<string, unknown> = {}): EntityDef => ({
+    id: "bob",
+    components: { transform: { x: 600, y: 200 }, body: { type: "dynamic", width: 30, height: 30, shape: "circle", ...extra }, joint },
+  });
+  const trace = (scene: SceneDef, seconds: number, id = "bob") => {
+    const xs: number[] = [];
+    const ys: number[] = [];
+    const world = new World(scene);
+    simulate(world, InputScript.parse(""), Math.round(seconds * 60), (w) => {
+      xs.push(w.get(id)!.transform.x);
+      ys.push(w.get(id)!.transform.y);
+    });
+    return { world, xs, ys };
+  };
+
+  test("a pendulum swings on a hinge to a point in the world, keeping its length", () => {
+    // Hinged 200 px to its left: it swings down and past the pivot.
+    const { xs, ys } = trace(rapier(bob({ type: "revolute", anchor: { x: -200, y: 0 } })), 3);
+    const lengths = xs.map((x, i) => Math.hypot(x - 400, ys[i]! - 200));
+    assert.ok(Math.max(...lengths) - Math.min(...lengths) < 1, `length stays 200: ${Math.min(...lengths).toFixed(2)}..${Math.max(...lengths).toFixed(2)}`);
+    assert.ok(Math.min(...xs) < 250, `swung past the pivot to x ${Math.min(...xs).toFixed(0)}`);
+  });
+
+  test("a rope only stops a body from going further than its length", () => {
+    const { ys } = trace(rapier(bob({ type: "rope", toAnchor: { x: 0, y: -100 }, length: 150 })), 2);
+    assert.ok(Math.max(...ys) <= 100 + 150 + 0.5 && Math.max(...ys) > 100 + 150 - 2, `hangs at the rope's end: lowest y ${Math.max(...ys).toFixed(1)}`);
+  });
+
+  test("a spring bounces a body around its rest length and settles there", () => {
+    const { ys } = trace(rapier(bob({ type: "spring", toAnchor: { x: 0, y: -100 }, length: 100, stiffness: 400, damping: 4 })), 6);
+    assert.ok(Math.max(...ys) > 230, `stretched under gravity first, lowest y ${Math.max(...ys).toFixed(1)}`);
+    const last = ys.slice(-30);
+    assert.ok(Math.max(...last) - Math.min(...last) < 2, "then settled");
+  });
+
+  test("a motorized hinge turns a wheel at its speed, and limits stop a door", () => {
+    const wheel = rapier({
+      id: "bob",
+      components: {
+        transform: { x: 480, y: 200 },
+        body: { type: "dynamic", width: 60, height: 60, shape: "circle" },
+        joint: { type: "revolute", motorSpeed: 180, motorForce: 1e9 },
+      },
+    });
+    const turned = trace(wheel, 2).world.get("bob")!.transform.rotation;
+    assert.ok(Math.abs(turned - 360) < 15, `half a turn per second for 2 s, rotation ${turned.toFixed(1)}`);
+    const door = rapier({
+      id: "bob",
+      components: {
+        transform: { x: 480, y: 200 },
+        body: { type: "dynamic", width: 120, height: 10 },
+        joint: { type: "revolute", anchor: { x: -60, y: 0 }, min: 0, max: 30 },
+      },
+    });
+    const angle = trace(door, 2).world.get("bob")!.transform.rotation;
+    assert.ok(angle > 25 && angle < 31, `swung down until its 30° limit, rotation ${angle.toFixed(1)}`);
+  });
+
+  test("a slider moves only along its axis, within its limits", () => {
+    const { xs, ys } = trace(rapier(bob({ type: "prismatic", axis: 90, min: -10, max: 100 }, { shape: "box" })), 2);
+    assert.ok(xs.every((x) => Math.abs(x - 600) < 0.01), "never left its vertical track");
+    // Limits are slightly soft: a brief overshoot, then it rests on the limit.
+    assert.ok(Math.abs(ys.at(-1)! - 300) < 0.5 && Math.max(...ys) < 303, `rests at its 100 px limit: y ${ys.at(-1)!.toFixed(2)}, furthest ${Math.max(...ys).toFixed(2)}`);
+  });
+
+  test("a weld holds two bodies together, including to a body added later", () => {
+    const scripts = new Map<string, Script>([
+      ["spawn.ts", { start: ({ world }) => void world.spawn({ id: "cart", components: { transform: { x: 600, y: 240 }, body: { type: "dynamic", width: 80, height: 20 } } }) }],
+    ]);
+    const scene = rapier(bob({ type: "fixed", to: "cart", toAnchor: { x: 0, y: -40 } }), {
+      id: "spawner",
+      components: { transform: { x: 0, y: 0 }, script: { src: "spawn.ts" } },
+    });
+    // The scene names "cart" before a script spawns it: validation would object, so build the world directly.
+    const world = new World(scene, { scripts });
+    simulate(world, InputScript.parse(""), 120);
+    const b = world.get("bob")!.transform;
+    const cart = world.get("cart")!.transform;
+    assert.ok(cart.y > 450, "the cart fell to the ground, carrying the bob");
+    assert.ok(Math.abs(b.y - (cart.y - 40)) < 1 && Math.abs(b.x - cart.x) < 1, `still welded 40 px above: bob ${b.x.toFixed(1)},${b.y.toFixed(1)} cart ${cart.x.toFixed(1)},${cart.y.toFixed(1)}`);
   });
 });
 

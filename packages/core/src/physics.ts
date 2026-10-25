@@ -18,6 +18,25 @@ export interface PhysicsHost {
   emit(event: PhysicsEvent): void;
 }
 
+/** Where a ray first hits a body. */
+export interface RayHit {
+  entity: Entity;
+  /** The hit point in px. */
+  x: number;
+  y: number;
+  /** From the ray's start to the hit point, in px. */
+  distance: number;
+  /** The surface's outward normal at the hit point (unit length, +y down). */
+  normal: { x: number; y: number };
+}
+
+export interface RayOptions {
+  /** Entities the ray passes through (usually the one casting it). */
+  ignore?: readonly Entity[];
+  /** Also hit sensors (coins, triggers). Off by default. */
+  sensors?: boolean;
+}
+
 /**
  * Moves bodies and answers overlap queries. Gameplay (controllers, patrols,
  * pickups, hazards, goals) stays in the World and only talks to bodies through
@@ -42,6 +61,75 @@ export interface PhysicsEngine {
   step(host: PhysicsHost): void;
   /** True when two bodies overlap. A positive `margin` grows both, so touching counts too. */
   overlaps(a: Entity, b: Entity, margin?: number): boolean;
+  /** A body's mass: density × area. */
+  mass(e: Entity): number;
+  /**
+   * Strikes a dynamic body: its velocity changes by impulse / mass. Applied `at` a point
+   * (px, in the world) it also spins the body, where the engine supports rotation.
+   */
+  applyImpulse(e: Entity, x: number, y: number, at?: { x: number; y: number }): void;
+  /** Spin in degrees per second, clockwise. 0 where the engine doesn't rotate bodies. */
+  angularVelocity(e: Entity): number;
+  setAngularVelocity(e: Entity, value: number): void;
+  /** The first body a ray from `from` to `to` hits, if any. */
+  raycast(host: PhysicsHost, from: { x: number; y: number }, to: { x: number; y: number }, options?: RayOptions): RayHit | undefined;
+  /**
+   * The engine's own objects, for scripts that need more than Ludra's components.
+   * `resolve` turns what a script passes (an entity handle or id) into an entity.
+   */
+  raw?(resolve: (target: unknown) => Entity | undefined): unknown;
+}
+
+/** A body's mass for engines without their own: density × width × height. */
+export function boxMass(e: Entity): number {
+  const b = e.body;
+  return b ? b.density * b.width * b.height : 0;
+}
+
+/**
+ * The first axis-aligned box a ray hits (the slab method). Exact for arcade bodies,
+ * which are boxes that never rotate.
+ */
+export function raycastBoxes(host: PhysicsHost, from: { x: number; y: number }, to: { x: number; y: number }, options: RayOptions = {}): RayHit | undefined {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const length = Math.hypot(dx, dy);
+  if (length === 0) return undefined;
+  let best: RayHit | undefined;
+  for (const e of host.entities) {
+    const b = e.body;
+    if (!b || (b.sensor && !options.sensors) || options.ignore?.includes(e)) continue;
+    const box = { left: e.transform.x - b.width / 2, right: e.transform.x + b.width / 2, top: e.transform.y - b.height / 2, bottom: e.transform.y + b.height / 2 };
+    let enter = 0;
+    let exit = 1;
+    let normal = { x: 0, y: 0 };
+    let inside = true;
+    for (const [start, delta, low, high, axis] of [
+      [from.x, dx, box.left, box.right, "x"],
+      [from.y, dy, box.top, box.bottom, "y"],
+    ] as const) {
+      if (delta === 0) {
+        if (start < low || start > high) inside = false;
+        continue;
+      }
+      let t1 = (low - start) / delta;
+      let t2 = (high - start) / delta;
+      let side = -1;
+      if (t1 > t2) {
+        [t1, t2] = [t2, t1];
+        side = 1;
+      }
+      if (t1 > enter) {
+        enter = t1;
+        normal = axis === "x" ? { x: side, y: 0 } : { x: 0, y: side };
+      }
+      exit = Math.min(exit, t2);
+    }
+    // A ray starting inside a box doesn't hit it.
+    if (!inside || enter > exit || enter <= 0 || enter > 1) continue;
+    if (!best || enter * length < best.distance) best = { entity: e, x: from.x + dx * enter, y: from.y + dy * enter, distance: enter * length, normal };
+  }
+  return best;
 }
 
 /** Keeps a patrolling body between its start and `distance` along its axis. */

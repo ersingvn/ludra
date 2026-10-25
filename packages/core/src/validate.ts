@@ -77,6 +77,7 @@ export function validateScene(input: unknown): ValidationResult {
   const ids = new Map<string, number>();
   let hasPlayer = false;
   const usesRapier = isObject(raw.world) && raw.world.physics === "rapier";
+  const jointTargets: { path: string; label: string; to: string }[] = [];
   let hasDynamic = false;
   const worldGravity = isObject(raw.world) && typeof raw.world.gravity === "number" ? raw.world.gravity : 1800;
   let hasSolid = false;
@@ -172,6 +173,7 @@ export function validateScene(input: unknown): ValidationResult {
       const rapierOnly = [
         ...(transform && transform.rotation !== undefined && transform.rotation !== 0 ? ["transform.rotation"] : []),
         ...RAPIER_BODY_FIELDS.filter((field) => body && body[field] !== undefined && !(field === "shape" && body.shape === "box")).map((field) => `body.${field}`),
+        ...("joint" in components ? ["the joint component"] : []),
         ...RAPIER_PLATFORMER_FIELDS.filter((field) => isObject(components.platformer) && components.platformer[field] !== undefined).map((field) => `platformer.${field}`),
       ];
       if (rapierOnly.length > 0) {
@@ -226,6 +228,16 @@ export function validateScene(input: unknown): ValidationResult {
       );
     }
 
+    if (isObject(components.joint)) {
+      const joint = components.joint;
+      for (const field of ["anchor", "toAnchor"] as const) {
+        const value = joint[field];
+        if (value !== undefined && !(isObject(value) && typeof value.x === "number" && typeof value.y === "number")) {
+          error("E_INVALID_FIELD", `${path}.components.joint.${field}`, `joint.${field} on entity ${label} must be { "x": number, "y": number }, an offset in px.`);
+        }
+      }
+      if (typeof joint.to === "string" && joint.to !== "") jointTargets.push({ path: `${path}.components.joint.to`, label, to: joint.to });
+    }
     if (isObject(components.collectible)) availableScore += numberOr(components.collectible.score, 1);
     if (isObject(components.hazard) && components.hazard.stompable === true) availableScore += numberOr(components.hazard.score, 0);
     if (isObject(components.goal)) goals.push({ path: `${path}.components.goal.requireScore`, label, requireScore: numberOr(components.goal.requireScore, 0) });
@@ -244,6 +256,11 @@ export function validateScene(input: unknown): ValidationResult {
       "There are dynamic bodies but no solid static or kinematic bodies, so everything will fall forever.",
       'Add a ground entity with "body": { "type": "static", "width": 960, "height": 40 }.',
     );
+  }
+  for (const joint of jointTargets) {
+    if (ids.has(joint.to)) continue;
+    const suggestion = closestName(joint.to, [...ids.keys()]);
+    error("E_JOINT_TARGET", joint.path, `The joint on entity ${joint.label} connects to "${joint.to}", which doesn't exist.`, suggestion ? `Did you mean "${suggestion}"?` : 'Use another entity\'s id, or "" for a fixed point in the world.');
   }
   for (const goal of goals) {
     if (goal.requireScore > availableScore) {

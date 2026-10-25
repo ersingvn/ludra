@@ -26,6 +26,7 @@ export const COMPONENT_NAMES = [
   "hazard",
   "goal",
   "checkpoint",
+  "joint",
   "emitter",
   "script",
   "camera",
@@ -177,6 +178,34 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       },
     },
   },
+  joint: {
+    description:
+      'Rapier only. Connects this body to another (`to`) or to a point in the world: a hinge (revolute), a slider (prismatic), a weld (fixed), a rope or a spring. Chains, bridges, pendulums, wheels, doors, cranes. Positions are offsets from each body\'s center in px.',
+    requires: ["transform", "body"],
+    fields: {
+      type: { type: "enum", values: ["revolute", "prismatic", "fixed", "rope", "spring"], default: "revolute", description: "revolute = hinge, prismatic = slides along axis, fixed = welded, rope = at most length apart, spring = pulled toward length." },
+      to: { type: "string", default: "", description: "Id of the other body. Empty: a fixed point in the world." },
+      anchor: {
+        type: "object",
+        default: { x: 0, y: 0 },
+        description: "Where the joint sits on this body: { x, y } offset from its center. A hinge, slider or weld joins the other body (or the world) right at that point: a pendulum hinged 200 px to its left is { \"x\": -200, \"y\": 0 }.",
+      },
+      toAnchor: {
+        type: "object",
+        default: { x: 0, y: 0 },
+        description: "rope and spring: where the other end is, as an offset from the other body's center, or with no `to` from this body's starting center (a rope hanging from 100 px above is { \"x\": 0, \"y\": -100 }).",
+      },
+      length: { type: "number", min: 0, default: 0, description: "rope: longest it stretches; spring: length it pulls toward. 0 = the distance at the start." },
+      stiffness: { type: "number", min: 0, default: 1000, description: "spring: how hard it pulls." },
+      damping: { type: "number", min: 0, default: 20, description: "spring: how quickly it stops bouncing." },
+      axis: { type: "number", default: 0, description: "prismatic: the direction it slides, in degrees clockwise from right." },
+      min: { type: "number", default: 0, description: "Limit: revolute angle in degrees, prismatic position in px. Used when min < max." },
+      max: { type: "number", default: 0, description: "Upper limit (see min)." },
+      motorSpeed: { type: "number", default: 0, description: "revolute: degrees per second clockwise; prismatic: px per second. Needs motorForce." },
+      motorForce: { type: "number", min: 0, default: 0, description: "How strong the motor is. 0 = no motor." },
+      collide: { type: "boolean", default: false, description: "Whether the two connected bodies still collide with each other." },
+    },
+  },
   checkpoint: {
     description:
       "When a player touches it, that player respawns here after dying (standing on the checkpoint's bottom edge). Fires a checkpoint event once. Its body must be a sensor.",
@@ -300,6 +329,22 @@ export interface Patrol {
 export interface Hazard {
   stompable: boolean;
   score: number;
+}
+
+export interface Joint {
+  type: "revolute" | "prismatic" | "fixed" | "rope" | "spring";
+  to: string;
+  anchor: { x: number; y: number };
+  toAnchor: { x: number; y: number };
+  length: number;
+  stiffness: number;
+  damping: number;
+  axis: number;
+  min: number;
+  max: number;
+  motorSpeed: number;
+  motorForce: number;
+  collide: boolean;
 }
 
 export interface Goal {

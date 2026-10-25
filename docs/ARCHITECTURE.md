@@ -91,6 +91,10 @@ Rapier runs with its natural +y up and every value crossing over is mirrored in 
 
 Players (`platformer` or `topdown` with a moving body) are kinematic bodies moved by Rapier's character controller rather than by forces: they walk up slopes up to `platformer.maxSlope` and slide back from steeper ones, step onto ledges up to `stepHeight`, slide along walls instead of sticking, and push dynamic bodies in proportion to `push`. Gravity, jump speed and the fall-speed cap keep their arcade values, so jumps reach the same height. Three details came from testing: gravity isn't applied while a player stands (pressing into the ground makes round-bottomed players lose speed), players are lifted by the controller's gap when created or respawned (one placed exactly in contact can't keep its gap and sinks in), and players standing on a kinematic mover are carried by the mover's last displacement (the controller doesn't carry a standing character on its own).
 
+Every engine also answers `mass`, `applyImpulse`, `angularVelocity` and `raycast`, which scripts reach as `self.applyImpulse/applyForce/mass/angularVelocity` and `world.raycast`. Arcade gives the simple versions (velocity += impulse / mass, no spin, a slab test against boxes); rapier uses the real ones (impulses at a point spin bodies, rays hit rotated and round shapes). `world.physics.raw` hands scripts Rapier itself (`RAPIER`, the world, each entity's body, collider and joint, and y-flip helpers), so nothing Rapier can do is out of reach; like every mutating call it throws inside draw hooks.
+
+The `joint` component is created once both its ends exist (a target can be spawned later). The other body, or an invisible fixed body for a point in the world, is Rapier's first body, so the joint measures this body relative to it: limits and motor speeds keep Ludra's clockwise sign after the y-flip. Hinges, sliders and welds join both bodies at the same point (`anchor` on this body); ropes and springs run to `toAnchor`.
+
 ## Development
 
 ```bash

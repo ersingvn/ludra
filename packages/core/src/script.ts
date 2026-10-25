@@ -13,6 +13,19 @@ export interface ScriptEntity {
   vx: number;
   vy: number;
   readonly grounded: boolean;
+  /** Degrees, clockwise. Only rapier physics turns bodies by itself; setting it turns one. */
+  rotation: number;
+  /** Spin in degrees per second, clockwise. Always 0 under arcade physics. */
+  angularVelocity: number;
+  /** Density × area. Heavier bodies move less when struck and push lighter ones. */
+  readonly mass: number;
+  /**
+   * Strikes the body: its velocity changes by (x, y) / mass. Applied `at` a point in the
+   * world (rapier) it also spins the body. For a jump pad, a kick, an explosion.
+   */
+  applyImpulse(x: number, y: number, at?: { x: number; y: number }): void;
+  /** Pushes the body steadily: call it every frame (thrusters, wind, magnets). */
+  applyForce(x: number, y: number, at?: { x: number; y: number }): void;
   readonly width: number;
   readonly height: number;
   /** False once the entity has been destroyed or collected. */
@@ -25,6 +38,16 @@ export interface ScriptEntity {
   has(component: string): boolean;
   /** True when this entity overlaps or touches the other one. */
   touches(other: ScriptEntity | string): boolean;
+}
+
+/** Where a ray first hits a body. */
+export interface ScriptRayHit {
+  entity: ScriptEntity;
+  x: number;
+  y: number;
+  distance: number;
+  /** The surface's outward normal (unit length, +y down). */
+  normal: { x: number; y: number };
 }
 
 export interface SpawnDef {
@@ -74,6 +97,21 @@ export interface ScriptWorld {
   emit(name: string, data?: unknown): void;
   /** A number in [0, 1). Seeded by `world.seed`, so runs stay deterministic. Never use Math.random. */
   random(): number;
+  /**
+   * The first body on the line from `from` to `to`: line of sight, lasers, "is there
+   * ground ahead?". Sensors are skipped unless `sensors` is true.
+   */
+  raycast(
+    from: { x: number; y: number },
+    to: { x: number; y: number },
+    options?: { ignore?: ScriptEntity | string | (ScriptEntity | string)[]; sensors?: boolean },
+  ): ScriptRayHit | undefined;
+  /**
+   * The physics engine. Under rapier, `raw` is { RAPIER, world, body(entity), collider(entity),
+   * toRapier(point), fromRapier(point) }: the whole Rapier API, for anything Ludra's components
+   * don't cover. Rapier runs y-up, so convert points with toRapier/fromRapier.
+   */
+  readonly physics: { readonly name: string; readonly raw: unknown };
 }
 
 export interface ScriptInput {
@@ -181,7 +219,8 @@ export const SCRIPT_API_REFERENCE = `A script file default-exports hooks. Only "
     drawUI(ctx) {},          // paint screen-space UI; replaces the default HUD and win screen
   } satisfies Script;
 
-ctx.self      the entity: id, x, y, vx, vy (read/write); grounded, width, height, exists (read);
+ctx.self      the entity: id, x, y, vx, vy, rotation, angularVelocity (read/write); grounded, mass, width, height, exists (read);
+              applyImpulse(x, y, at?)  strike it (velocity += impulse / mass)    applyForce(x, y, at?)  push every frame;
               state (object kept between frames, testable as "<id>.state.<key>");
               has("component"), touches(otherOrId)
 ctx.world     time, frame, width, height, deaths, won, lost, exit (read); score, lives (read/write)
@@ -192,6 +231,10 @@ ctx.world     time, frame, width, height, deaths, won, lost, exit (read); score,
               goto(scenePath)   moves on to another scene (title -> level 1, a door to the next room)
               emit(name, data?) custom event: counted by "events.<name>" in tests, usable as an effects key
               random()          deterministic, seeded by world.seed. Never use Math.random or Date
+              raycast(from, to, { ignore?, sensors? }) -> { entity, x, y, distance, normal } | undefined
+              physics.name      "arcade" or "rapier"
+              physics.raw       rapier only: { RAPIER, world, body(e), collider(e), toRapier(p), fromRapier(p) }:
+                                the whole Rapier API (Rapier is y-up: convert points). Not in draw hooks.
 ctx.input     held(action), pressed(action)   actions: left right up down jump action
 ctx.params    the "params" object from the script component
 ctx.dt        seconds per frame (1/60)

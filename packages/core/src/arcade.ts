@@ -1,4 +1,4 @@
-import { at, clampToPatrol, clampToWorld, feet, type PhysicsEngine, type PhysicsHost } from "./physics.ts";
+import { at, boxMass, clampToPatrol, clampToWorld, feet, raycastBoxes, type PhysicsEngine, type PhysicsHost, type RayHit, type RayOptions } from "./physics.ts";
 import { FIXED_DT } from "./time.ts";
 import type { Entity } from "./world.ts";
 
@@ -87,6 +87,29 @@ export class ArcadePhysics implements PhysicsEngine {
 
   overlaps(a: Entity, b: Entity, margin = 0): boolean {
     return overlaps(a, b, margin);
+  }
+
+  mass(e: Entity): number {
+    return boxMass(e);
+  }
+
+  applyImpulse(e: Entity, x: number, y: number): void {
+    const b = e.body;
+    if (!b || b.type !== "dynamic") return;
+    const mass = boxMass(e) || 1;
+    b.vx += x / mass;
+    b.vy += y / mass;
+  }
+
+  /** Arcade bodies never rotate. */
+  angularVelocity(): number {
+    return 0;
+  }
+
+  setAngularVelocity(): void {}
+
+  raycast(host: PhysicsHost, from: { x: number; y: number }, to: { x: number; y: number }, options?: RayOptions): RayHit | undefined {
+    return raycastBoxes(host, from, to, options);
   }
 }
 

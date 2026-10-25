@@ -6,6 +6,7 @@ import {
   type Emitter,
   type Goal,
   type Hazard,
+  type Joint,
   type Patrol,
   type Platformer,
   type ScriptComponent,
@@ -75,6 +76,7 @@ export interface Entity {
   hazard?: Hazard;
   goal?: Goal;
   checkpoint?: Record<string, never>;
+  joint?: Joint;
   emitter?: Emitter;
   camera?: Camera;
 }
@@ -439,6 +441,32 @@ export class World {
       get grounded() {
         return e.body?.grounded ?? false;
       },
+      get rotation() {
+        return e.transform.rotation;
+      },
+      set rotation(value: number) {
+        world.guard("Setting rotation");
+        e.transform.rotation = value;
+      },
+      get angularVelocity() {
+        return e.body ? world.physics.angularVelocity(e) : 0;
+      },
+      set angularVelocity(value: number) {
+        world.guard("Setting angularVelocity");
+        if (e.body) world.physics.setAngularVelocity(e, value);
+      },
+      get mass() {
+        return e.body ? world.physics.mass(e) : 0;
+      },
+      applyImpulse(x: number, y: number, at?: { x: number; y: number }) {
+        world.guard("applyImpulse");
+        if (e.body) world.physics.applyImpulse(e, x, y, at);
+      },
+      applyForce(x: number, y: number, at?: { x: number; y: number }) {
+        world.guard("applyForce");
+        // A force acts over the frame: the impulse it delivers in one step.
+        if (e.body) world.physics.applyImpulse(e, x * FIXED_DT, y * FIXED_DT, at);
+      },
       get width() {
         return e.body?.width ?? e.sprite?.width ?? 0;
       },
@@ -566,6 +594,20 @@ export class World {
         }
         const by = world.current?.entity;
         world.emit({ type: "custom", name, entity: by?.id ?? "script", data, x: by?.transform.x ?? 0, y: by?.transform.y ?? 0 });
+      },
+      raycast: (from, to, options = {}) => {
+        const ignore = [options.ignore ?? []].flat().map((target) => world.resolve(target)).filter((e): e is Entity => !!e);
+        const hit = world.physics.raycast(world.physicsHost, from, to, { ignore, sensors: options.sensors });
+        return hit ? { ...hit, entity: world.handle(hit.entity) } : undefined;
+      },
+      physics: {
+        get name() {
+          return world.physics.name;
+        },
+        get raw() {
+          world.guard("world.physics.raw");
+          return world.physics.raw?.((target) => (target && (typeof target === "string" || typeof target === "object") ? world.resolve(target as ScriptEntity | string) : undefined));
+        },
       },
       random: () => {
         world.guard("world.random (it advances the game's seed; use ctx.random in draw hooks)");
@@ -795,6 +837,7 @@ function createEntity(def: EntityDef): Entity {
   if (c.hazard) entity.hazard = resolveComponent<Hazard>("hazard", c.hazard);
   if (c.goal) entity.goal = resolveComponent<Goal>("goal", c.goal);
   if (c.checkpoint) entity.checkpoint = {};
+  if (c.joint) entity.joint = resolveComponent<Joint>("joint", c.joint);
   if (c.emitter) entity.emitter = resolveComponent<Emitter>("emitter", c.emitter);
   if (c.camera) entity.camera = resolveComponent<Camera>("camera", c.camera);
   return entity;
