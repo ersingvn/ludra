@@ -67,7 +67,7 @@ jobs:
           cd "$RUNNER_TEMP/app"
           npm init -y > /dev/null
           npm install "$RUNNER_TEMP"/pack/*.tgz
-          for template in platformer topdown breakout physics; do
+          for template in platformer topdown breakout physics 3d; do
             npx ludra new "$template" --template "$template"
             npx ludra check "$template"
             npx ludra test "$template"

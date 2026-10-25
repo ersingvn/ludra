@@ -185,6 +185,7 @@ const STOMP_BOUNCE = 0.6;
 /** How far a player's feet may sink into an enemy and still count as a stomp. */
 const STOMP_TOLERANCE = 8;
 const STOMP_TOLERANCE_3D = 0.15;
+const PATROL_EPSILON = 1e-9;
 /** 3D: players falling below this height die, unless the scene sets world.fallLimit. */
 const DEFAULT_FALL_LIMIT = -50;
 /** A platformer this far below the bottom of the world has fallen out of it. */
@@ -943,8 +944,9 @@ export class World {
       const offset = axis === "x" ? e.transform.x - patrol.originX : axis === "z" ? e.transform.z - patrol.originZ : e.transform.y - patrol.originY;
       const current = axis === "x" ? b.vx : axis === "z" ? b.vz : b.vy;
       let direction = current < 0 ? -1 : 1;
-      if (offset >= patrol.distance) direction = -1;
-      else if (offset <= 0) direction = 1;
+      // A hair of tolerance: positions like -28.9 + 6.3 land a rounding error short of the end.
+      if (offset >= patrol.distance - PATROL_EPSILON) direction = -1;
+      else if (offset <= PATROL_EPSILON) direction = 1;
       b.vx = axis === "x" ? direction * patrol.speed : 0;
       b.vy = axis === "y" ? direction * patrol.speed : 0;
       b.vz = axis === "z" ? direction * patrol.speed : 0;

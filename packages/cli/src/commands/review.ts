@@ -152,6 +152,23 @@ function reviewScene(project: Project, info: SceneInfo, hasTests: boolean, add: 
   } else if (!scene.fonts || Object.keys(scene.fonts).length === 0) {
     add("idea", "looks", "R_SYSTEM_FONT", label, "The interface uses the system font.", 'Load a display font that fits the mood: "fonts": { "<Family>": "google" }.');
   }
+  if (scene.world?.dimensions === 3) {
+    review3DLooks(scene, uses("render"), hooksOf, label, add);
+  } else {
+    review2DLooks(scene, hooksOf, label, add);
+  }
+  if (!scene.postfx && !uses("render")) {
+    add("idea", "looks", "R_NO_POSTFX", label, "No post-processing.", 'A finishing shader ("postfx") ties a look together: bloom for anything that glows, a grade for mood, scanlines for arcade. In 3D, a render hook can run three.js post-processing (ctx.addon, ctx.setRender).');
+  }
+  if (!scene.name) {
+    add("idea", "identity", "R_UNNAMED_SCENE", label, "The scene has no name.", 'Add "name" (e.g. "Crystal Grove") to the scene.');
+  }
+}
+
+type Add = (severity: "issue" | "idea", area: "proof" | "feel" | "looks" | "identity", code: string, where: string, message: string, fix: string) => void;
+
+/** 2D: a painted backdrop, and art instead of flat colored shapes. */
+function review2DLooks(scene: SceneDef, hooksOf: (src: string) => (keyof Script)[], label: string, add: Add): void {
   const hasBackdrop =
     scene.entities.some((e) => (e.components.sprite && Number(e.components.sprite.layer ?? 0) < 0) || (!e.components.body && e.components.script && hooksOf(String(e.components.script.src)).includes("draw")));
   if (!hasBackdrop) {
@@ -163,11 +180,26 @@ function reviewScene(project: Project, info: SceneInfo, hasTests: boolean, add: 
   if (plain.length > 0) {
     add("issue", "looks", "R_PLAIN_SHAPES", label, `${plain.length} entit${plain.length === 1 ? "y is" : "ies are"} drawn as flat colored shapes: ${list(plain)}.`, "Give them SVG art (sprite.image) or a draw hook.");
   }
-  if (!scene.postfx) {
-    add("idea", "looks", "R_NO_POSTFX", label, "No post-processing.", 'A finishing shader ("postfx") ties a look together: bloom for anything that glows, a grade for mood, scanlines for arcade.');
+}
+
+/** 3D: its own light and sky, things you can see, and materials chosen for them. */
+function review3DLooks(scene: SceneDef, rendersItself: boolean, hooksOf: (src: string) => (keyof Script)[], label: string, add: Add): void {
+  if (!scene.entities.some((e) => e.components.light)) {
+    add("issue", "looks", "R_DEFAULT_LIGHTING", label, "The scene has no lights of its own, so it gets the engine's default sky and sun.", 'Light it for its mood: a "directional" sun (warm at dusk, cold at night), a "hemisphere" fill in the sky\'s colors, "point" lights on torches and crystals.');
   }
-  if (!scene.name) {
-    add("idea", "identity", "R_UNNAMED_SCENE", label, "The scene has no name.", 'Add "name" (e.g. "Crystal Grove") to the scene.');
+  if (!scene.environment?.sky && !rendersItself) {
+    add("issue", "looks", "R_DEFAULT_SKY", label, "Behind the world is the engine's default sky.", 'Give it a sky that fits: "environment": { "sky": ["<top>", "<horizon>"], "fog": { ... } }, or paint one in a render hook.');
+  }
+  const visible = (e: SceneDef["entities"][number]) => e.components.mesh || (e.components.script && hooksOf(String(e.components.script.src)).includes("render"));
+  const invisible = scene.entities.filter((e) => e.components.body && !e.components.body.sensor && !visible(e)).map((e) => e.id);
+  if (invisible.length > 0) {
+    add("idea", "looks", "R_INVISIBLE_BODIES", label, `${invisible.length} solid bod${invisible.length === 1 ? "y has" : "ies have"} no mesh, so players can't see them: ${list(invisible)}.`, 'Give each a "mesh" (or draw it in a render hook), unless it is meant to be an invisible wall.');
+  }
+  const DEFAULT_COLOR = "#c8ccd6";
+  const meshes = scene.entities.filter((e) => e.components.mesh);
+  const plain = meshes.filter((e) => (e.components.mesh!.color ?? DEFAULT_COLOR) === DEFAULT_COLOR && !e.components.mesh!.texture).map((e) => e.id);
+  if (plain.length > 0) {
+    add("issue", "looks", "R_DEFAULT_MATERIALS", label, `${plain.length} mesh${plain.length === 1 ? " uses" : "es use"} the default grey material: ${list(plain)}.`, "Choose a material for each: color, roughness and metalness (stone, grass, metal, crystal), emissive for what glows, or a texture.");
   }
 }
 

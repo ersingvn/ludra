@@ -36,6 +36,11 @@ const MAX_FALL_SPEED = 50;
 const CONTROLLER_OFFSET = 0.01;
 /** Players stay on the ground walking down slopes and off bumps up to this far, in metres. */
 const SNAP_TO_GROUND = 0.2;
+/**
+ * Where a standing player is kept above the ground: a little over the controller's own gap, which
+ * it may otherwise measure a hair short on kinematic platforms and refuse to move.
+ */
+const GROUND_GAP = 1.2 * CONTROLLER_OFFSET;
 /** How far inside the feet the look-down for the ground starts, in metres. */
 const FEET_PROBE = 0.05;
 /** A standing player that loses contact still counts as grounded for this many steps. */
@@ -346,28 +351,27 @@ export class Rapier3DPhysics implements PhysicsEngine {
       const { entity: e, body } = link;
       const b = e.body!;
       const t = e.transform;
-      if (b.type !== "static") {
+      // Only dynamic bodies are moved and turned by physics. Kinematic bodies and characters are
+      // exactly where gameplay put them; reading them back would round them to Rapier's 32-bit floats.
+      if (b.type === "dynamic" && !link.controller) {
         const p = body.translation();
         t.x = p.x;
         t.y = p.y;
         t.z = p.z;
         const q = body.rotation();
         // Only a body that really turned goes through quaternion → degrees, so set rotations stay exact.
-        // Only dynamic bodies are turned by physics; kinematic ones turn as gameplay says, exactly.
-        if (b.type === "dynamic" && !sameQuat(q, link.q) && !link.controller) {
+        if (!sameQuat(q, link.q)) {
           const r = degreesFromQuaternion(q);
           t.rotationX = r.x;
           t.rotationY = r.y;
           t.rotation = r.z;
           link.q = { x: q.x, y: q.y, z: q.z, w: q.w };
         }
-        if (b.type === "dynamic" && !link.controller) {
-          const v = body.linvel();
-          link.v = { x: v.x, y: v.y, z: v.z };
-          b.vx = v.x;
-          b.vy = v.y;
-          b.vz = v.z;
-        }
+        const v = body.linvel();
+        link.v = { x: v.x, y: v.y, z: v.z };
+        b.vx = v.x;
+        b.vy = v.y;
+        b.vz = v.z;
       }
       link.x = t.x;
       link.y = t.y;
@@ -466,6 +470,13 @@ export class Rapier3DPhysics implements PhysicsEngine {
       );
       const ground = below ? this.byCollider.get(below.collider.handle)?.entity : undefined;
       b.standingOn = ground ?? b.standingOn ?? previous;
+      // Keep the controller's gap above the ground. Landing can sink a hair into it, and from there
+      // every step on a kinematic platform counts as blocked.
+      const gap = below ? below.timeOfImpact - FEET_PROBE : Infinity;
+      if (gap < GROUND_GAP) {
+        t.y += GROUND_GAP - gap;
+        body.setNextKinematicTranslation(t);
+      }
     }
     if (touching && b.vy < 0) b.vy = 0;
     // Bumped its head: stop rising (a wall it slides up doesn't count).

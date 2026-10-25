@@ -204,6 +204,22 @@ describe("rapier 3D character controller", () => {
     assert.ok(Math.max(...offsets) - Math.min(...offsets) < 0.01, `kept its place on the platform (varied ${(Math.max(...offsets) - Math.min(...offsets)).toFixed(3)} m)`);
   });
 
+  test("walks at full speed on kinematic platforms, still or moving", () => {
+    const raft = (speed: number): EntityDef => ({
+      id: "raft",
+      components: { transform: { x: 0, y: 0.75, z: 0 }, body: { type: "kinematic", width: 3, height: 0.5, depth: 8 }, ...(speed ? { patrol: { axis: "z", distance: 20, speed } } : {}) },
+    });
+    // On the raft, without the floor: hero over the raft only.
+    const walked = (speed: number) => {
+      const frames = trace(scene([hero(0, 1.9, 2), raft(speed)]), 1.5, "wait:0.5s, up:0.6s");
+      const h = frames.at("hero");
+      const r = frames.at("raft");
+      return h[66]!.z - r[66]!.z - (h[30]!.z - r[30]!.z);
+    };
+    assert.ok(Math.abs(walked(0) - -3) < 0.05, `3 m in 0.6 s on a still kinematic raft: ${walked(0)}`);
+    assert.ok(Math.abs(walked(2) - -3) < 0.05, `and 3 m relative to a raft moving the other way: ${walked(2)}`);
+  });
+
   test("bumping a ceiling stops the jump", () => {
     const ceiling: EntityDef = { id: "ceiling", components: { transform: { x: 0, y: 3, z: 0 }, body: { width: 4, height: 0.2, depth: 4 } } };
     const top = Math.max(...trace(scene([hero(0, 0.9, 0), ceiling]), 1.5, "wait:0.3s, jump:0.8s").at("hero").map((p) => p.y));
@@ -293,7 +309,7 @@ describe("rapier 3D determinism", () => {
 
   // Checked on every CI machine (Linux, Windows, macOS × Node 22 and 24): Rapier's deterministic
   // build and Ludra's own math must give these exact frames everywhere.
-  const GOLDEN = "d01e232851a70f04";
+  const GOLDEN = "2669bae52773323c";
   test("golden hash: every machine and Node version simulates exactly the same frames", () => {
     assert.equal(golden(), GOLDEN);
   });
