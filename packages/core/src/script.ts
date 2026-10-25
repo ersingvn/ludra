@@ -108,7 +108,7 @@ export interface ScriptWorld {
   ): ScriptRayHit | undefined;
   /**
    * The physics engine. Under rapier, `raw` is { RAPIER, world, body(entity), collider(entity),
-   * toRapier(point), fromRapier(point) }: the whole Rapier API, for anything Ludra's components
+   * joint(entity, index?), toRapier(point), fromRapier(point) }: the whole Rapier API, for anything Ludra's components
    * don't cover. Rapier runs y-up, so convert points with toRapier/fromRapier.
    */
   readonly physics: { readonly name: string; readonly raw: unknown };

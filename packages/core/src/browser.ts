@@ -6,6 +6,7 @@ import { ParticleSystem } from "./particles.ts";
 import { PostFx } from "./postfx.ts";
 import type { DrawContext, DrawEvent, Script } from "./script.ts";
 import { FIXED_DT } from "./time.ts";
+import type { Body } from "./components.ts";
 import type { Action, PostFxDef, SceneDef } from "./types.ts";
 import { World, type Entity, type GameEvent } from "./world.ts";
 
@@ -601,15 +602,21 @@ class View {
     if (!image) {
       ctx.fillStyle = sprite.color;
       // A plain shape follows the body's shape, so a round rapier body looks round.
-      const round = sprite.shape === "circle" || e.body?.shape === "circle";
       ctx.save();
       ctx.translate(e.transform.x, e.transform.y);
       if (rotation) ctx.rotate(rotation * DEGREES);
       ctx.beginPath();
-      if (round) ctx.ellipse(0, 0, width / 2, height / 2, 0, 0, Math.PI * 2);
-      else if (e.body?.shape === "capsule") ctx.roundRect(-width / 2, -height / 2, width, height, Math.min(width, height) / 2);
+      if (sprite.shape === "circle" && e.body?.shape !== "circle") ctx.ellipse(0, 0, width / 2, height / 2, 0, 0, Math.PI * 2);
+      else if (e.body) traceShape(ctx, e.body, width, height);
       else ctx.rect(-width / 2, -height / 2, width, height);
-      ctx.fill();
+      if (e.body?.shape === "polyline") {
+        // A line has no inside: draw it as a thick stroke.
+        ctx.strokeStyle = sprite.color;
+        ctx.lineWidth = 6;
+        ctx.lineJoin = "round";
+        ctx.lineCap = "round";
+        ctx.stroke();
+      } else ctx.fill();
       ctx.restore();
       return;
     }
@@ -665,13 +672,11 @@ class View {
       ctx.translate(e.transform.x, e.transform.y);
       ctx.rotate(e.transform.rotation * DEGREES);
       ctx.beginPath();
-      if (b.shape === "circle") ctx.arc(0, 0, b.width / 2, 0, Math.PI * 2);
-      else if (b.shape === "capsule") ctx.roundRect(-b.width / 2, -b.height / 2, b.width, b.height, Math.min(b.width, b.height) / 2);
-      else ctx.rect(-b.width / 2, -b.height / 2, b.width, b.height);
+      traceShape(ctx, b);
       ctx.setLineDash(b.sensor ? [4 / zoom, 3 / zoom] : []);
       ctx.strokeStyle = color;
       ctx.fillStyle = `${color}22`;
-      ctx.fill();
+      if (b.shape !== "polyline") ctx.fill();
       ctx.stroke();
       // Which way is "up" for the body, so rotation is visible even on circles.
       if (b.type === "dynamic") {
@@ -703,8 +708,7 @@ class View {
     ctx.strokeStyle = "#f012be";
     ctx.fillStyle = "#f012be";
     for (const e of world.entities) {
-      const joint = e.joint;
-      if (!joint) continue;
+      for (const joint of e.joints ?? []) {
       const here = rotated(e, joint.anchor);
       const other = joint.to ? world.get(joint.to) : undefined;
       const sameSpot = joint.type === "revolute" || joint.type === "prismatic" || joint.type === "fixed";
@@ -725,6 +729,7 @@ class View {
         ctx.beginPath();
         ctx.arc(p.x, p.y, 3 / zoom, 0, Math.PI * 2);
         ctx.fill();
+      }
       }
     }
     ctx.restore();
@@ -789,6 +794,16 @@ function rotated(e: Entity, offset: { x: number; y: number }): { x: number; y: n
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
   return { x: e.transform.x + offset.x * cos - offset.y * sin, y: e.transform.y + offset.x * sin + offset.y * cos };
+}
+
+/** Traces a body's collider shape, centered on the origin, into the current path. */
+function traceShape(ctx: CanvasRenderingContext2D, body: Body, width = body.width, height = body.height): void {
+  if (body.shape === "circle") ctx.ellipse(0, 0, width / 2, height / 2, 0, 0, Math.PI * 2);
+  else if (body.shape === "capsule") ctx.roundRect(-width / 2, -height / 2, width, height, Math.min(width, height) / 2);
+  else if ((body.shape === "polygon" || body.shape === "polyline") && body.points.length > 1) {
+    body.points.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+    if (body.shape === "polygon") ctx.closePath();
+  } else ctx.rect(-width / 2, -height / 2, width, height);
 }
 
 function clamp(value: number, min: number, max: number): number {

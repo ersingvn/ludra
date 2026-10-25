@@ -6,7 +6,9 @@ export type FieldSpec =
   /** Spritesheet frame indices: "0", "1-4" or "0,2,4-6". Empty = not used. */
   | { type: "frames"; default?: string; description: string }
   /** Any JSON object. */
-  | { type: "object"; default?: Record<string, unknown>; description: string };
+  | { type: "object"; default?: Record<string, unknown>; description: string }
+  /** A list of [x, y] points in px. */
+  | { type: "points"; default?: [number, number][]; description: string };
 
 export interface ComponentSpec {
   description: string;
@@ -79,9 +81,15 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       vy: { type: "number", default: 0, description: "Initial vertical velocity in px/s." },
       shape: {
         type: "enum",
-        values: ["box", "circle", "capsule"],
+        values: ["box", "circle", "capsule", "polygon", "polyline"],
         default: "box",
-        description: "Rapier only. circle: diameter = width. capsule: a rounded box, upright when taller than wide (characters).",
+        description:
+          "Rapier only. circle: diameter = width. capsule: a rounded box, upright when taller than wide (characters). polygon: the convex shape around `points` (wedges, rocks, ramps). polyline: an open line through `points` (hills, curved ground); static or kinematic only.",
+      },
+      points: {
+        type: "points",
+        default: [],
+        description: "Rapier only, for polygon and polyline shapes: [[x, y], ...] offsets from the center in px. width and height stay the bounding box (images, arcade).",
       },
       friction: { type: "number", min: 0, default: 0.5, description: "Rapier only. 0 = ice, 1 = rubber." },
       density: { type: "number", min: 0, default: 1, description: "Rapier only. Mass per area: heavier bodies push lighter ones." },
@@ -180,7 +188,7 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
   },
   joint: {
     description:
-      'Rapier only. Connects this body to another (`to`) or to a point in the world: a hinge (revolute), a slider (prismatic), a weld (fixed), a rope or a spring. Chains, bridges, pendulums, wheels, doors, cranes. Positions are offsets from each body\'s center in px.',
+      'Rapier only. Connects this body to another (`to`) or to a point in the world: a hinge (revolute), a slider (prismatic), a weld (fixed), a rope or a spring. Chains, bridges, pendulums, wheels, doors, cranes. Positions are offsets from each body\'s center in px. Give a list of joints for several connections: "joint": [{ ... }, { ... }].',
     requires: ["transform", "body"],
     fields: {
       type: { type: "enum", values: ["revolute", "prismatic", "fixed", "rope", "spring"], default: "revolute", description: "revolute = hinge, prismatic = slides along axis, fixed = welded, rope = at most length apart, spring = pulled toward length." },
@@ -254,7 +262,8 @@ export interface Body {
   bounce: number;
   vx: number;
   vy: number;
-  shape: "box" | "circle" | "capsule";
+  shape: "box" | "circle" | "capsule" | "polygon" | "polyline";
+  points: [number, number][];
   friction: number;
   density: number;
   fixedRotation: boolean;

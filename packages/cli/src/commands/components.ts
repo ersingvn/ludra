@@ -68,5 +68,6 @@ function typeLabel(spec: FieldSpec): string {
   if (spec.type === "enum") return spec.values.map((v) => `"${v}"`).join(" | ");
   if (spec.type === "number" && spec.min !== undefined) return `number ≥ ${spec.min}`;
   if (spec.type === "frames") return 'frames ("0", "1-4", "0,2")';
+  if (spec.type === "points") return "points [[x, y], ...]";
   return spec.type;
 }

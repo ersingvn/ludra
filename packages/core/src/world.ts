@@ -76,7 +76,8 @@ export interface Entity {
   hazard?: Hazard;
   goal?: Goal;
   checkpoint?: Record<string, never>;
-  joint?: Joint;
+  /** Every joint this entity's `joint` component declares (one object or a list). */
+  joints?: Joint[];
   emitter?: Emitter;
   camera?: Camera;
 }
@@ -837,7 +838,7 @@ function createEntity(def: EntityDef): Entity {
   if (c.hazard) entity.hazard = resolveComponent<Hazard>("hazard", c.hazard);
   if (c.goal) entity.goal = resolveComponent<Goal>("goal", c.goal);
   if (c.checkpoint) entity.checkpoint = {};
-  if (c.joint) entity.joint = resolveComponent<Joint>("joint", c.joint);
+  if (c.joint) entity.joints = (Array.isArray(c.joint) ? c.joint : [c.joint]).map((j) => resolveComponent<Joint>("joint", j as Record<string, unknown>));
   if (c.emitter) entity.emitter = resolveComponent<Emitter>("emitter", c.emitter);
   if (c.camera) entity.camera = resolveComponent<Camera>("camera", c.camera);
   return entity;

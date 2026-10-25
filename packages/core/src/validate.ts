@@ -123,6 +123,14 @@ export function validateScene(input: unknown): ValidationResult {
         );
         continue;
       }
+      if (name === "joint" && Array.isArray(value)) {
+        // Several joints on one body: a bridge's last plank, a car's wheels.
+        value.forEach((item: unknown, i: number) => {
+          if (isObject(item)) validateFields(COMPONENTS.joint.fields, item, `${componentPath}[${i}]`, "joint", ` on entity ${label}`, error, warn);
+          else error("E_COMPONENT_NOT_OBJECT", `${componentPath}[${i}]`, `Each joint on entity ${label} must be an object.`, 'Use "joint": [{ "type": "revolute" }, ...].');
+        });
+        continue;
+      }
       if (!isObject(value)) {
         error("E_COMPONENT_NOT_OBJECT", componentPath, `Component "${name}" on entity ${label} must be an object.`, `Use "${name}": {}.`);
         continue;
@@ -228,15 +236,33 @@ export function validateScene(input: unknown): ValidationResult {
       );
     }
 
-    if (isObject(components.joint)) {
-      const joint = components.joint;
+    const joints = Array.isArray(components.joint) ? components.joint : components.joint !== undefined ? [components.joint] : [];
+    joints.forEach((joint: unknown, i: number) => {
+      if (!isObject(joint)) return;
+      const jointPath = Array.isArray(components.joint) ? `${path}.components.joint[${i}]` : `${path}.components.joint`;
       for (const field of ["anchor", "toAnchor"] as const) {
         const value = joint[field];
         if (value !== undefined && !(isObject(value) && typeof value.x === "number" && typeof value.y === "number")) {
-          error("E_INVALID_FIELD", `${path}.components.joint.${field}`, `joint.${field} on entity ${label} must be { "x": number, "y": number }, an offset in px.`);
+          error("E_INVALID_FIELD", `${jointPath}.${field}`, `joint.${field} on entity ${label} must be { "x": number, "y": number }, an offset in px.`);
         }
       }
-      if (typeof joint.to === "string" && joint.to !== "") jointTargets.push({ path: `${path}.components.joint.to`, label, to: joint.to });
+      if (typeof joint.to === "string" && joint.to !== "") jointTargets.push({ path: `${jointPath}.to`, label, to: joint.to });
+    });
+    // Free shapes need their points.
+    if (body && (body.shape === "polygon" || body.shape === "polyline")) {
+      const needed = body.shape === "polygon" ? 3 : 2;
+      const points = Array.isArray(body.points) ? body.points : [];
+      if (points.length < needed) {
+        error(
+          "E_SHAPE_POINTS",
+          `${path}.components.body.points`,
+          `A ${body.shape} on entity ${label} needs at least ${needed} points, got ${points.length}.`,
+          body.shape === "polygon" ? 'A wedge: "points": [[-40, 20], [40, 20], [40, -20]].' : 'A hill: "points": [[-200, 0], [-60, -40], [60, -40], [200, 0]].',
+        );
+      }
+      if (body.shape === "polyline" && bodyType === "dynamic") {
+        error("E_POLYLINE_DYNAMIC", `${path}.components.body.shape`, `A polyline on entity ${label} is a line with no area, so it can't be a dynamic body.`, 'Use "polygon" for a moving shape, or make the body "static" (ground) or "kinematic".');
+      }
     }
     if (isObject(components.collectible)) availableScore += numberOr(components.collectible.score, 1);
     if (isObject(components.hazard) && components.hazard.stompable === true) availableScore += numberOr(components.hazard.score, 0);
@@ -493,6 +519,10 @@ function checkField(spec: FieldSpec, value: unknown): string | undefined {
       return typeof value === "string" && isFrameList(value) ? undefined : `must be a frame list like "0", "1-4" or "0,2-3", got ${describe(value)}.`;
     case "object":
       return isObject(value) ? undefined : `must be an object like { "speed": 80 }, got ${describe(value)}.`;
+    case "points":
+      return Array.isArray(value) && value.every((p) => Array.isArray(p) && p.length === 2 && p.every((n) => typeof n === "number" && Number.isFinite(n)))
+        ? undefined
+        : `must be a list of [x, y] points like [[-40, 20], [40, 20], [40, -20]], got ${describe(value)}.`;
   }
 }
 

@@ -383,6 +383,90 @@ describe("joints", () => {
   });
 });
 
+describe("several joints and free shapes", () => {
+  before(() => loadRapierPhysics());
+
+  test("a bridge hangs from both cliffs: its last plank has two joints", () => {
+    const planks: EntityDef[] = [];
+    const left = 300;
+    const width = 50;
+    const count = 8;
+    for (let i = 0; i < count; i++) {
+      const toPrevious = { type: "revolute", to: `plank-${i - 1}`, anchor: { x: -width / 2, y: 0 } };
+      const toLeftCliff = { type: "revolute", anchor: { x: -width / 2, y: 0 } };
+      const toRightCliff = { type: "revolute", anchor: { x: width / 2, y: 0 } };
+      const joint = i === 0 ? toLeftCliff : i === count - 1 ? [toPrevious, toRightCliff] : toPrevious;
+      planks.push({ id: `plank-${i}`, components: { transform: { x: left + width / 2 + i * width, y: 300 }, body: { type: "dynamic", width: width - 2, height: 8 }, joint } });
+    }
+    const world = new World(rapier(...planks));
+    simulate(world, InputScript.parse(""), 180);
+    const first = world.get("plank-0")!.transform;
+    const last = world.get(`plank-${count - 1}`)!.transform;
+    const end = (t: { x: number; y: number; rotation: number }, side: number) => ({
+      x: t.x + side * (width / 2) * Math.cos((t.rotation * Math.PI) / 180),
+      y: t.y + side * (width / 2) * Math.sin((t.rotation * Math.PI) / 180),
+    });
+    const a = end(first, -1);
+    const b = end(last, 1);
+    assert.ok(Math.hypot(a.x - left, a.y - 300) < 1.5, `left end stays on the left cliff: ${a.x.toFixed(1)},${a.y.toFixed(1)}`);
+    assert.ok(Math.hypot(b.x - (left + count * width), b.y - 300) < 1.5, `right end stays on the right cliff: ${b.x.toFixed(1)},${b.y.toFixed(1)}`);
+    assert.ok(world.get("plank-4")!.transform.y > 300, "and the middle sags");
+  });
+
+  test("a polygon wedge is a ramp a ball rolls down", () => {
+    const wedge: EntityDef = {
+      id: "wedge",
+      // A right triangle: tall on the left, sloping down to the right.
+      components: { transform: { x: 400, y: 440 }, body: { type: "static", width: 200, height: 120, shape: "polygon", points: [[-100, 60], [100, 60], [-100, -60]] } },
+    };
+    const ball: EntityDef = { id: "ball", components: { transform: { x: 320, y: 340 }, body: { type: "dynamic", width: 24, height: 24, shape: "circle" } } };
+    const world = new World(rapier(wedge, ball));
+    simulate(world, InputScript.parse(""), 120);
+    assert.ok(world.get("ball")!.transform.x > 500, `rolled off the wedge to x ${world.get("ball")!.transform.x.toFixed(0)}`);
+  });
+
+  test("a dynamic polygon lands on the ground with its lowest corner on it", () => {
+    const rock: EntityDef = {
+      id: "rock",
+      components: { transform: { x: 480, y: 200 }, body: { type: "dynamic", width: 60, height: 40, shape: "polygon", points: [[-30, 20], [30, 20], [10, -20], [-20, -15]] } },
+    };
+    const world = new World(rapier(rock));
+    simulate(world, InputScript.parse(""), 120);
+    const r = world.get("rock")!;
+    assert.equal(r.body!.grounded, true);
+    assert.ok(Math.abs(r.transform.y + 20 - 500) < 1, `rests flat on its 60 px base: y ${r.transform.y.toFixed(1)}`);
+  });
+
+  test("a polyline is ground with hills: balls roll off it, rays land on it", () => {
+    const hills: EntityDef = {
+      id: "hills",
+      components: {
+        transform: { x: 480, y: 400 },
+        body: { type: "static", width: 600, height: 120, shape: "polyline", points: [[-300, 60], [-100, -40], [0, -60], [100, -40], [300, 60]] },
+      },
+    };
+    const ball: EntityDef = { id: "ball", components: { transform: { x: 500, y: 300 }, body: { type: "dynamic", width: 20, height: 20, shape: "circle" } } };
+    const world = new World(rapier(hills, ball));
+    simulate(world, InputScript.parse(""), 120);
+    assert.ok(world.get("ball")!.transform.x > 600, `rolled down the right side of the hill to x ${world.get("ball")!.transform.x.toFixed(0)}`);
+    const host = (world as unknown as { physicsHost: PhysicsHost }).physicsHost;
+    const hit = world.physics.raycast(host, { x: 480, y: 100 }, { x: 480, y: 600 });
+    assert.equal(hit?.entity.id, "hills");
+    assert.ok(Math.abs(hit!.y - 340) < 0.5, `the hilltop is at y 340, the ray hit ${hit!.y.toFixed(2)}`);
+  });
+
+  test("free shapes and joint lists are validated", () => {
+    const codes = (entity: EntityDef) => validateScene(rapier(entity)).diagnostics.map((d) => d.code);
+    const body = (extra: Record<string, unknown>) => ({ type: "static", width: 10, height: 10, ...extra });
+    assert.ok(codes({ id: "a", components: { transform: { x: 0, y: 0 }, body: body({ shape: "polygon", points: [[0, 0], [1, 1]] }) } }).includes("E_SHAPE_POINTS"));
+    assert.ok(codes({ id: "a", components: { transform: { x: 0, y: 0 }, body: body({ type: "dynamic", shape: "polyline", points: [[0, 0], [9, 0]] }) } }).includes("E_POLYLINE_DYNAMIC"));
+    assert.ok(codes({ id: "a", components: { transform: { x: 0, y: 0 }, body: body({ shape: "polygon", points: [[0, 0], [1], [2, 2]] }) } }).includes("E_INVALID_FIELD"));
+    const listed = validateScene(rapier({ id: "a", components: { transform: { x: 0, y: 0 }, body: body({}), joint: [{ type: "revolute" }, { type: "hinge" }, { to: "nobody" }] } })).diagnostics;
+    assert.ok(listed.some((d) => d.path.endsWith("joint[1].type")), "each joint in a list is checked");
+    assert.ok(listed.some((d) => d.code === "E_JOINT_TARGET" && d.path.endsWith("joint[2].to")));
+  });
+});
+
 describe("determinism", () => {
   before(() => loadRapierPhysics());
 

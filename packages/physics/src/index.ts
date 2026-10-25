@@ -73,10 +73,10 @@ interface Link {
   dy: number;
   /** Gameplay moved the entity itself since the last step (a respawn). */
   teleported: boolean;
-  /** The joint this entity's `joint` component made, once both ends exist. */
-  joint?: ImpulseJoint;
-  /** For a joint to a point in the world: the fixed body holding that point. */
-  anchor?: RigidBody;
+  /** The joints this entity's `joint` component made, in order, once both ends exist. */
+  joints: (ImpulseJoint | undefined)[];
+  /** For joints to a point in the world: the fixed bodies holding those points. */
+  anchors: RigidBody[];
 }
 
 let loading: Promise<void> | undefined;
@@ -105,8 +105,8 @@ export class RapierPhysics implements PhysicsEngine {
   private readonly events = new RAPIER.EventQueue(true);
   private readonly links = new Map<Entity, Link>();
   private readonly byCollider = new Map<number, Link>();
-  /** Entities whose joint waits for the body on its other end. */
-  private pendingJoints: Entity[] = [];
+  /** Joints (entity and index in its list) waiting for the body on their other end. */
+  private pendingJoints: { entity: Entity; index: number }[] = [];
 
   constructor(settings: PhysicsSettings) {
     this.world = new RAPIER.World(toRapier(0, settings.gravity));
@@ -149,9 +149,9 @@ export class RapierPhysics implements PhysicsEngine {
         .setActiveCollisionTypes(RAPIER.ActiveCollisionTypes.ALL),
       body,
     );
-    const link: Link = { entity, body, collider, x: t.x, y: t.y, rotation: t.rotation, angle: body.rotation(), dx: 0, dy: 0, teleported: false };
+    const link: Link = { entity, body, collider, x: t.x, y: t.y, rotation: t.rotation, angle: body.rotation(), dx: 0, dy: 0, teleported: false, joints: [], anchors: [] };
     if (player) link.controller = this.createController(entity);
-    if (entity.joint) this.pendingJoints.push(entity);
+    entity.joints?.forEach((_, index) => this.pendingJoints.push({ entity, index }));
     this.links.set(entity, link);
     this.byCollider.set(collider.handle, link);
   }
@@ -164,21 +164,22 @@ export class RapierPhysics implements PhysicsEngine {
     if (link.controller) this.world.removeCharacterController(link.controller);
     // Removing a body removes the joints attached to it.
     this.world.removeRigidBody(link.body);
-    if (link.anchor) this.world.removeRigidBody(link.anchor);
-    this.pendingJoints = this.pendingJoints.filter((e) => e !== entity);
+    for (const anchor of link.anchors) this.world.removeRigidBody(anchor);
+    this.pendingJoints = this.pendingJoints.filter((pending) => pending.entity !== entity);
   }
 
   /** Creates the joints whose two ends now both exist. */
   private connectJoints(host: PhysicsHost): void {
     if (this.pendingJoints.length === 0) return;
-    const waiting: Entity[] = [];
-    for (const entity of this.pendingJoints) {
+    const waiting: { entity: Entity; index: number }[] = [];
+    for (const pending of this.pendingJoints) {
+      const { entity, index } = pending;
       const link = this.links.get(entity);
-      const spec = entity.joint!;
+      const spec = entity.joints![index]!;
       const target = spec.to ? host.entities.find((e) => e.id === spec.to) : undefined;
       const other = target ? this.links.get(target) : undefined;
       if (!link || (spec.to && !other)) {
-        waiting.push(entity);
+        waiting.push(pending);
         continue;
       }
       // Where this end of the joint is, in the world (the anchor turns with the body).
@@ -195,7 +196,7 @@ export class RapierPhysics implements PhysicsEngine {
         // A fixed point in the world: hang the joint on an invisible fixed body there.
         there = sameSpot ? here : { x: entity.transform.x + spec.toAnchor.x, y: entity.transform.y + spec.toAnchor.y };
         base = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(there.x, -there.y));
-        link.anchor = base;
+        link.anchors.push(base);
       }
       // The other body (or the world) comes first, so Rapier measures this body relative to it.
       const baseAnchor = localPoint(base, there);
@@ -229,7 +230,7 @@ export class RapierPhysics implements PhysicsEngine {
           unit.configureMotorVelocity(spec.type === "revolute" ? -spec.motorSpeed * DEGREES : spec.motorSpeed, MOTOR_FACTOR);
         }
       }
-      link.joint = joint;
+      link.joints[index] = joint;
     }
     this.pendingJoints = waiting;
   }
@@ -484,7 +485,7 @@ export class RapierPhysics implements PhysicsEngine {
       world: this.world,
       body: (target: unknown) => linkOf(target)?.body,
       collider: (target: unknown) => linkOf(target)?.collider,
-      joint: (target: unknown) => linkOf(target)?.joint,
+      joint: (target: unknown, index = 0) => linkOf(target)?.joints[index],
       toRapier: (p: { x: number; y: number }) => toRapier(p.x, p.y),
       fromRapier,
     };
@@ -537,6 +538,13 @@ function shape(b: Body): ColliderDesc {
     // Rapier's capsules stand upright; lay it down when the body is wider than tall.
     if (b.height >= b.width) return RAPIER.ColliderDesc.capsule((b.height - b.width) / 2, b.width / 2);
     return RAPIER.ColliderDesc.capsule((b.width - b.height) / 2, b.height / 2).setRotation(Math.PI / 2);
+  }
+  if (b.shape === "polygon" || b.shape === "polyline") {
+    // Points are mirrored into Rapier's y-up space.
+    const points = new Float32Array(b.points.flatMap(([x, y]) => [x, -y]));
+    if (b.shape === "polyline") return RAPIER.ColliderDesc.polyline(points);
+    // A degenerate polygon (all points on a line) falls back to the bounding box.
+    return RAPIER.ColliderDesc.convexHull(points) ?? RAPIER.ColliderDesc.cuboid(b.width / 2, b.height / 2);
   }
   return RAPIER.ColliderDesc.cuboid(b.width / 2, b.height / 2);
 }
