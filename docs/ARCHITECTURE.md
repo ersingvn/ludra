@@ -109,6 +109,20 @@ The `joint` component is created once both its ends exist (a target can be spawn
 
 In the browser the dev server serves `@ludra/physics` and Rapier's single-file module, and its pages carry an import map for `@ludra/core` and Rapier, so the same unbundled modules load as in Node. `startGame` and `captureFrames` take a `loadPhysics` hook and call it only for scenes that name an engine other than arcade, so arcade games never download Rapier. Sprites draw rotated about their centers; a sprite without an image follows its body's shape (circle, capsule). The debug view (`play --screenshot --debug`, or the backquote key in `ludra dev`) draws every collider in its true shape and rotation, sensors dashed, velocities, joints, grounded players and entity ids over the frame, so an agent can check the art against the physics.
 
+## 3D
+
+A scene with `"world": { "dimensions": 3 }` uses the same `World`, components, events and tests as 2D, in metres with +y up. `resolveTransform` turns a `{ x, y, z }` rotation into `rotationX`, `rotationY` and `rotation` (around z), applied y, x, z; snapshots carry `z`, `vz` and non-zero rotations only in 3D, so 2D frames hash exactly as before. Validation keeps the two apart (2D shapes and controllers in 3D, 3D fields in 2D).
+
+### Rapier 3D (`packages/physics/src/rapier3d.ts`)
+
+`physicsEngineName` sends every 3D scene to "rapier3d", which `loadRapier3DPhysics()` registers after a dynamic import, so 2D never loads its WebAssembly. Rapier's frame is Ludra's (no mirroring). Rotations cross as quaternions, built and read with core's `dmath` (sin, cos, atan2 and asin from IEEE-exact operations: V8's `Math.atan2` differs in the last bit on macOS ARM). Only dynamic bodies are read back from Rapier; kinematic bodies and characters stay exactly where gameplay put them (Rapier stores 32-bit floats). An entity's velocity is written to Rapier only when gameplay changed it, so velocities set through `world.physics.raw` survive.
+
+Players with `character` move through Rapier's character controller. Gravity applies only while not touching the ground; a standing player keeps grounded for 3 steps after losing contact; what it stands on comes from a short ray down from its feet (snapping reports no contact); and it is kept a little above the controller's gap (`GROUND_GAP`), since a hair inside it blocks every step on kinematic platforms. A moving platform's displacement is added to its rider directly, not through the controller.
+
+### Rendering (`packages/three`)
+
+`startGame` and `captureFrames` ask `options.loadRenderer3D` for a `Renderer3D` when a scene is 3D. `ThreeRenderer` keeps a Three.js object per entity with a `mesh` or `light`, syncs transforms each frame, and moves a camera rig (follow, orbit, first person, fixed) once per simulation step. The sun's shadow area follows the rig's focus. Its WebGL canvas is copied into the game's 2D canvas (`preserveDrawingBuffer`), where the View draws the HUD and `drawUI` hooks and the postfx shader runs, so screenshots need nothing new. Render hooks run right before each frame through `World.callRenderHook`, with the same read-only guard as draw hooks. `ctx.addon` imports from `three/addons/` (mapped by the dev server's import map), and `settle()` lets screenshots wait for those imports.
+
 ## Development
 
 ```bash

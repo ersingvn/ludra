@@ -1,6 +1,6 @@
 ---
 name: make-2d-platformer-games
-description: Make beautiful 2D games of any genre: platformers, top-down adventures and arena games, breakout and other bouncing-ball games, physics games (stacking, ropes, hinges, vehicles, physics puzzles), with levels, coins, enemies, hazards, moving platforms, real rigid-body physics, custom game logic in scripts (chasing enemies, keys and doors, timers, shooting, bosses), sprites, animations, particles, sound, code-drawn art and lighting, custom HUDs, fonts and post-processing shaders. Use whenever the user asks to make, build, change, fix, test or polish a game, or works in a project with a ludra.json. Builds with the Ludra engine proves the game works by play-testing it headlessly, and reviews it for anything that makes it feel unfinished.
+description: Make beautiful 2D and 3D games of any genre: 3D platformers and adventures (islands, characters, lights, shadows, cameras, three.js looks), 2D platformers, top-down adventures and arena games, breakout and other bouncing-ball games, physics games (stacking, ropes, hinges, vehicles, physics puzzles), with levels, coins, enemies, hazards, moving platforms, real rigid-body physics, custom game logic in scripts (chasing enemies, keys and doors, timers, shooting, bosses), sprites, animations, particles, sound, code-drawn art and lighting, custom HUDs, fonts and post-processing shaders. Use whenever the user asks to make, build, change, fix, test or polish a game, or works in a project with a ludra.json. Builds with the Ludra engine proves the game works by play-testing it headlessly, and reviews it for anything that makes it feel unfinished.
 ---
 
 # Building games with Ludra
@@ -165,6 +165,43 @@ Lessons that save time:
   - Use them for lifts that pause, doors and gates, bobbing pickups, swinging signs, pop-in scale on spawn, fades.
 
 See `examples/clockwork-keep` for all three together, with a test for each moving part.
+
+## 3D games
+
+`npx @ludra/cli new my-game --template 3d` starts from Sky Islands, a complete 3D platformer with tests. Everything above still applies (components, events, effects, sounds, tests, review); this is what changes.
+
+- **The world.** `"world": { "dimensions": 3 }`: metres, +x right, **+y up**, +z toward the camera, gravity 9.81 m/s². It always runs on Rapier 3D (deterministic on every machine). Players falling below `world.fallLimit` (default -50) die.
+- **Transforms.** `{ "x", "y", "z", "rotation": { "x", "y", "z" } }`, degrees applied y (turn), then x (tilt), then z (roll). A single-number rotation is 2D and an error in 3D.
+- **Bodies.** `width`, `height` and `depth` (0 = width). Shapes: `box`, `sphere` (diameter = width), `capsule` and `cylinder` (upright), `convex` (`points`: `[[x, y, z], ...]`). Joints work in 3D too: `revolute` turns around `axis` (`{ "y": 1 }` for a door; default `{ "z": 1 }`), plus `spherical` ball joints; anchors take `z`.
+- **The player.** `"character": {}` on a dynamic capsule (`width` 0.6, `height` 1.8).
+  - Left/right walk along x; up/down along z, and **up walks away from the camera (-z)**.
+  - It turns to face where it walks (`faceMovement`).
+  - Defaults: speed 5 m/s, jumpSpeed 7 m/s (a 2.5 m jump).
+  - It climbs slopes up to `maxSlope` and steps up to `stepHeight`, pushes bodies and rides kinematic platforms.
+  - With no key held it stops moving sideways, even in the air: **hold the direction through a jump** in input scripts.
+- **Looks.** Nothing is drawn without these:
+  - `"mesh"`: `shape` `"auto"` takes the body's shape, or box, sphere, capsule, cylinder, cone, plane, torus. Then `color`, `roughness`, `metalness`, `emissive` for what glows, `opacity`, a `texture` that tiles every `textureScale` metres, `flatShading`. A mesh without a body is scenery.
+  - `"light"`: a `directional` sun with shadows (`shadowSize` metres around the camera's focus), `hemisphere` sky fill, `point` and `spot` lights, `ambient`.
+  - `"camera3d"`: `follow` (behind and above the player, never turning with it, smoothed), `orbit`, `firstPerson` or `fixed` with `lookAt`.
+  - Scene `"environment"`: `sky` (a color or `[top, horizon]`), `fog`, `toneMapping`, `exposure`, `shadows`.
+  - Sprites, emitters, `camera` and `cameraZone` are 2D only (check warns), and effects' particles aren't drawn in 3D: sounds still play, and a render hook can make 3D particles.
+- **No limits on looks.** A script's `render(ctx)` hook gets the real three.js every frame:
+  - `ctx.THREE` (every class: `InstancedMesh`, `ShaderMaterial`, `Points`...), `ctx.scene`, `ctx.camera`, `ctx.renderer`.
+  - `ctx.object`, a group that moves and turns with the entity: add children in its local space.
+  - Build once and keep it in `ctx.local`.
+  - `await ctx.addon("postprocessing/UnrealBloomPass.js")` loads any three.js addon. `ctx.setRender(() => composer.render())` draws the frame yourself (bloom, depth of field, outlines).
+  - Like draw hooks it is read-only, and `ludra check` runs it against stand-ins (`E_RENDER_HOOK`).
+  - The template's `hero.ts` (a face and scarf on the capsule), `clouds.ts` (an instanced cloud sea), `beacon.ts` and `portal.ts` show how.
+- **Game logic in 3D.**
+  - `self.z`, `self.vz`, `self.rotationX`/`rotationY`, and `self.spin` (degrees per second around each axis).
+  - `self.applyImpulse({ x, y, z }, at?)` and `self.applyForce({ x, y, z }, at?)`.
+  - `world.raycast({ x, y, z }, { x, y, z })`, and `world.physics.raw` (Rapier 3D).
+  - **Masses are kilograms** (density 1 × volume: the player is about 0.45 kg), so an impulse is mass × the speed change: `other.applyImpulse({ y: 12 * other.mass })` launches at 12 m/s.
+  - Tweens also take `z`, `rotationX` and `rotationY`.
+- **Testing.** `play --watch` adds z and vz columns; assertions can use `.z`, `.vz`, `.rotationX`, `.rotationY`. Positions are floats: assert ranges (`"player.z < -7.5"`), not exact values. Find timings by sweeping, as in 2D.
+- **Level numbers.** A running jump crosses about 7 m on the level and about 6 m landing 1 m higher: design gaps at about 60% of that. Make a moving platform's path overlap each shore a little, so players step on and off at the ends.
+- **Review in 3D** asks for its own lights (`R_DEFAULT_LIGHTING`), a sky (`R_DEFAULT_SKY`) and chosen materials (`R_DEFAULT_MATERIALS`), and points out solid bodies with no mesh.
+- **Not yet:** 3D model files. glTF/GLB models and skeletal animation come in v0.92. Until then, build characters and props from meshes and render hooks.
 
 ## Gameplay building blocks
 

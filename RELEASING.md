@@ -28,8 +28,8 @@ All four always share one version number.
 4. Tag the merge commit and push the tag:
 
    ```bash
-   git tag v0.9.0
-   git push origin v0.9.0
+   git tag v0.91.0
+   git push origin v0.91.0
    ```
 
 The [Release workflow](.github/workflows/release.yml) then checks that the tag matches every package version, builds, runs the tests, and publishes `@ludra/core`, `@ludra/physics` and then `@ludra/cli` with [npm provenance](https://docs.npmjs.com/generating-provenance-statements), then creates the GitHub release from the notes file. Without a notes file, GitHub generates the notes from the merged pull requests, with links to the npm packages on top. A version that is already on npm, or a release that already exists, is skipped, so if a release fails halfway, fix the cause and re-run the workflow from the Actions tab.

@@ -25,7 +25,7 @@ claude > ludra new slime-valley
          Done. Run `ludra dev` to play it.
 ```
 
-> **Status:** early (v0.9). 2D games in several genres (platformers, top-down adventures, breakout, physics games) on arcade or real Rapier physics, with tilemaps, camera zones, tweens, multiple levels, lives, checkpoints and prefabs, `ludra review` to catch unfinished work, art drawn in code with lighting, custom interfaces and GLSL post-processing, a library of ready-made gameplay blocks, custom TypeScript scripts, enemies, hazards, moving platforms, goals, animated SVG sprites, particles, each game's own synthesized sounds and music, plus the full agent toolchain including real rendered screenshots, work today. 3D is on the [roadmap](#roadmap).
+> **Status:** early (v0.91). 3D games with Three.js and Rapier 3D, and 2D games in several genres (platformers, top-down adventures, breakout, physics games) on arcade or real Rapier physics, with tilemaps, camera zones, tweens, multiple levels, lives, checkpoints and prefabs, `ludra review` to catch unfinished work, art drawn in code with lighting, custom interfaces and GLSL post-processing, a library of ready-made gameplay blocks, custom TypeScript scripts, enemies, hazards, moving platforms, goals, animated SVG sprites, particles, each game's own synthesized sounds and music, plus the full agent toolchain including real rendered screenshots, work today. 3D models (glTF) and more 3D content are next on the [roadmap](#roadmap).
 
 ## The idea
 
@@ -297,6 +297,27 @@ export default {
 
 Draw hooks can read the game but not change it (that throws), so the browser never drifts from what the tests verified. `ludra check` runs them against a mock canvas to catch errors early, and `ludra play --screenshot` renders the real thing, shader included, for the agent to look at.
 
+### 3D, through the same loop
+
+`"world": { "dimensions": 3 }` makes a scene 3D: metres with +y up, Rapier 3D physics (deterministic on every machine, like 2D), and Three.js drawing it. Everything else stays: JSON scenes, `check`, `play`, `test`, `review` and real screenshots.
+
+<p align="center">
+  <img src="docs/media/sky-islands.png" alt="Sky Islands, Ludra's 3D template: a capsule hero with eyes and a yellow scarf stands on a floating grassy island above a sea of pastel clouds, next to a lit beacon; a wooden raft, a storm puff, two crystals and a glowing portal ring wait on the islands ahead" width="960">
+</p>
+
+- **Bodies and players.**
+  - Boxes, spheres, capsules, cylinders and convex hulls; hinges around any axis, ball joints, ropes and springs.
+  - A `character` that walks and jumps, climbs slopes and steps, pushes crates and rides platforms.
+- **Looks.**
+  - `mesh` with physically based materials and tiling textures.
+  - `light` (a sun with soft shadows, sky fill, point and spot lights), `camera3d` (follow, orbit, first person, fixed), and a sky, fog and tone mapping.
+- **No ceiling.** A script's `render` hook gets the real three.js:
+  - custom geometry and shaders, instancing, particles;
+  - any three.js addon, and its own post-processing chain (bloom in a few lines).
+- **Scripts.** 3D impulses, forces, spin and raycasts, and the raw Rapier 3D API.
+
+`npx @ludra/cli new my-game --template 3d` starts from **Sky Islands**: hop between floating islands, collect five crystals, ride the raft, dodge the storm puff and step through the portal. It has its own sounds and music, ten tests, and a clean `review --strict`. Three.js and Rapier 3D are loaded only by 3D scenes, so 2D games stay small.
+
 ### Genres
 
 Start from the template closest to your idea and reshape it:
@@ -306,9 +327,10 @@ npx @ludra/cli new my-game                       # platformer: run, jump, stomp
 npx @ludra/cli new my-game --template topdown    # seen from above: gems, hedges, slimes
 npx @ludra/cli new my-game --template breakout   # paddle, bouncing ball, bricks
 npx @ludra/cli new my-game --template physics    # real physics: a crate to push, a rope bridge, a pendulum
+npx @ludra/cli new my-game --template 3d         # 3D: floating islands, crystals, a raft, a portal
 ```
 
-Each template ships with tests that prove it can be won without dying, and its own look: the platformer in SVG sprites, the breakout drawn entirely in code, the grove lit by code over SVG sprites, Crate & Chasm on Rapier with joints you can see in `--debug`. The breakout route is 28 seconds long, so the skill teaches agents to write a small autopilot that plays the level and prints the input, instead of guessing.
+Each template ships with tests that prove it can be won without dying, and its own look: the platformer in SVG sprites, the breakout drawn entirely in code, the grove lit by code over SVG sprites, Crate & Chasm on Rapier with joints you can see in `--debug`, Sky Islands in 3D with render hooks for its clouds, hero and portal. The breakout route is 28 seconds long, so the skill teaches agents to write a small autopilot that plays the level and prints the input, instead of guessing.
 
 ### Scripts: any game logic, still testable
 
@@ -373,15 +395,16 @@ No audio files are needed, and sound has no ceiling. A scene designs its own `"s
 
 For everything else, a script's `sound` hook gets the real Web Audio API, the way draw hooks get the real canvas: Crate & Chasm's wind grows as you climb, the spiked ball hisses as fast as it swings and the bridge creaks under your feet. Every template ships with its own sounds and music, and `ludra review` flags stock beeps and silent games. Presentation never touches the simulation, so polishing a game can't break its tests, and `ludra check` reports any missing image or audio file along with the files that do exist.
 
-## Components (v0.9)
+## Components (v0.91)
 
 | Component | What it does |
 | --- | --- |
-| `transform` | Position (entity center, +y is down) |
+| `transform` | Position (entity center; 2D: px, +y down; 3D: metres, +y up, with z and a rotation per axis) |
 | `body` | Collider: `static`, `dynamic` (gravity and collisions) or `kinematic`; `sensor` for triggers; `bounce` for balls that rebound. Under rapier: `shape` (box, circle, capsule, polygon, polyline), `friction`, `density`, `fixedRotation`, `bullet` |
 | `sprite` | A colored shape, or an image: animated spritesheets (idle/run/jump/fall), tiles and mirroring |
 | `platformer` | Run and jump controls with coyote time, jump buffering and variable jump height |
 | `topdown` | Movement seen from above: 8 directions, 4 directions, or a single axis for paddles |
+| `character` | 3D: walking and jumping through Rapier's character controller: slopes, steps, pushing, riding platforms |
 | `collectible` | Picked up by the player and adds to the score |
 | `patrol` | Moves a kinematic body back and forth: moving platforms (they carry the player) and walking enemies |
 | `hazard` | Kills the player on touch, who respawns at the start. `stompable` enemies die when landed on |
@@ -394,6 +417,9 @@ For everything else, a script's `sound` hook gets the real Web Audio API, the wa
 | `cameraZone` | An area that takes over the camera: a room the view stays inside, a fixed shot, a zoom; changes ease smoothly |
 | `tilemap` | A level drawn as rows of characters: tiles merge into big colliders, letters place prefabs |
 | `tween` | Eases x, y, rotation, scale or opacity: lifts that pause at each floor, gates that open on an event, bobbing coins |
+| `mesh` | 3D: how it looks, from a shape or its body's, with physically based materials and textures |
+| `light` | 3D: a sun with shadows, sky fill, point, spot and ambient lights |
+| `camera3d` | 3D: follow, orbit, first-person or fixed camera |
 
 Falling out of the bottom of the world also counts as a death. Scene-level `effects` add particles, sound and shake to game events. Run `ludra components effects` for every option.
 
@@ -404,6 +430,8 @@ Run `ludra components` for every field, its type and its default.
 ```
 packages/core     Engine: scene format, validation, deterministic world, input scripts,
                   assertions, ASCII renderer, browser runtime (zero dependencies)
+packages/physics  Rapier physics for 2D and 3D, loaded only by scenes that use it
+packages/three    The 3D renderer (Three.js), loaded only by 3D scenes
 packages/cli      The `ludra` command, project templates and the block library (blocks/)
 plugins/ludra     Claude Code plugin: the skill that teaches agents the workflow
 .claude-plugin    Marketplace manifest, so the repo installs with /plugin
@@ -423,7 +451,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how it fits together.
 - ~~**v0.7: genres.** A top-down controller, bounce physics, and templates for top-down adventures and breakout-style games.~~ Done.
 - ~~**v0.8: game structure and quality.** `ludra review`, multiple scenes and level transitions, prefabs, lives and checkpoints.~~ Done.
 - ~~**v0.9: physics, sound and worlds.** Rapier as one physics engine for 2D now and 3D later, a game's own synthesized sounds and music with the full Web Audio API in scripts, tilemaps, camera zones, tweened animation. See [`examples/clockwork-keep`](examples/clockwork-keep).~~ Done.
-- **v0.91: 3D foundations.** 3D transforms and bodies on Rapier 3D, a Three.js renderer with lights and shadows, cameras, a character controller, scripts with the raw Three.js and Rapier APIs, and a first 3D template, all through the same check/play/test/review loop and real screenshots.
+- ~~**v0.91: 3D foundations.** 3D transforms and bodies on Rapier 3D, a Three.js renderer with lights and shadows, cameras, a character controller, scripts with the raw Three.js and Rapier APIs, and a first 3D template, all through the same check/play/test/review loop and real screenshots.~~ Done.
 - **v0.92: 3D content.** glTF models, free (CC0) model packs as blocks, skeletal animation, procedural geometry and terrain.
 - **v0.93: shipping.** A single-file web build ready for itch.io, touch and gamepad controls, performance budgets in `review`.
 - **v1.0.** 2D and 3D templates side by side, a `make-games` skill, complete docs: an engine where an AI makes games people want to play.
