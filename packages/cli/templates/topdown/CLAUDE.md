@@ -30,6 +30,7 @@ Never call a change done until `ludra check`, `ludra test` and `ludra review` ar
 - Enemies are kinematic sensor bodies with a `patrol` (`axis` "x" or "y") and a `hazard`. In top-down games they can't be stomped.
 - A floor is an entity with only a tiled `sprite` (no body) on `layer` -1, sized to the world.
 - The level is done when a test proves `won == true` with `deaths == 0`, and every enemy crossing works across a wide timing window (sweep `wait:` values with `play`).
+- For a game that is about physics (stacking, ropes, hinges, rolling, vehicles), set `"physics": "rapier"` in `"world"`: rotation, round and free shapes, friction, mass and joints. See the skill's physics section and `npx @ludra/cli components body` / `joint`.
 - Art and effects never change gameplay. Make it playable first, then dress it. Write new art as SVG in `assets/`.
 
 ## Looks

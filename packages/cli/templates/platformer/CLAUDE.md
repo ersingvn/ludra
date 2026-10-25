@@ -33,5 +33,6 @@ Never call a change done until `ludra check`, `ludra test` and `ludra review` ar
 - The game has 3 lives (`world.lives`); the lantern is a `checkpoint`, placed where the player already stands before a hard part.
 - A level is done when a test proves `won == true` with `deaths == 0`. Add a level: copy a scene, point the last flag's `next` at it, and give it its own tests.
 - For more than sprites (lighting, glow, your own HUD, fonts, shaders), scripts can have `draw` and `drawUI` hooks with the real Canvas 2D context, and the scene can set `"fonts"` and `"postfx"`. See `npx @ludra/cli components script`.
+- For a game that is about physics (stacking, ropes, hinges, rolling, vehicles), set `"physics": "rapier"` in `"world"`: rotation, round and free shapes, friction, mass and joints. See the skill's physics section and `npx @ludra/cli components body` / `joint`.
 - Art and effects never change gameplay. Make it playable first, then dress it. Write new art as SVG in `assets/`.
 - For behavior no component provides (chasing, keys, timers, shooting), write a script and attach it with a `script` component. Use `world.random()`, never `Math.random()`, and test what it does through `self.state` and `world.emit`.

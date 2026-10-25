@@ -217,6 +217,28 @@ The skill treats issues like failing tests, and every template reviews clean (`-
 
 `slime` comes from `prefabs/slime.prefab.json`, shared by every scene: the entity lists only what differs. Losing every life ends the game (`lost`, `gameover`); a checkpoint moves the respawn point; a goal's `next` (or `world.goto` from a script, e.g. a title screen) moves on to another scene, carrying score and lives. Every scene is checked, and each test can pick its scene. The platformer template is two levels built this way.
 
+### Real physics, when the game is physics
+
+Arcade physics (boxes that never rotate) stays the default: it is what precise platformers want. A scene that is *about* physics switches to [Rapier](https://rapier.rs) with one line, `"world": { "physics": "rapier" }`, and gets rotation, circles, capsules, polygons and curved ground, friction and mass, hinges, sliders, welds, ropes, springs and motors:
+
+<p align="center">
+  <img src="docs/media/physics.png" alt="A Ludra physics scene: a wrecking ball on a hinge has smashed into a crate pyramid, crates tumble rotated onto a seesaw, and a capsule player climbs a ramp while balls roll down it" width="960">
+</p>
+
+```json
+{ "id": "wrecking-ball",
+  "components": {
+    "body": { "type": "dynamic", "width": 64, "height": 64, "shape": "circle", "density": 12 },
+    "joint": { "type": "revolute", "anchor": { "x": 260, "y": -320 } } } }
+```
+
+- **Deterministic everywhere.** Ludra uses Rapier's deterministic build: the same scene simulates bit-for-bit the same frames on Linux, macOS, Windows, every Node version and in the browser. A golden-hash test checks this on every CI machine, so tests still prove what players get.
+- **Players feel right.** A character controller walks up slopes and slides off steep ones, steps onto ledges, pushes crates and rides platforms, and jumps exactly as high as under arcade.
+- **Scripts get the rest.** `applyImpulse`, `applyForce`, `world.raycast`, and `world.physics.raw`: Rapier itself, for anything the components don't cover.
+- **Agents can see it.** `ludra play --screenshot 1s --debug` draws every collider in its true shape, every joint and every id over the frame.
+
+Rapier is its own package, `@ludra/physics`, loaded only by scenes that ask for it.
+
 ### Blocks: tested pieces, combined with taste
 
 Like a video agent assembling scenes from a library of transitions and titles, a Ludra agent starts from **blocks**: ready-made, tested pieces of gameplay, each with its scripts, SVG art and effects.
@@ -334,12 +356,12 @@ Agents can't use a paint program, so Ludra's art pipeline is text too. Sprites a
 
 No audio files are needed: `jump`, `coin`, `hit`, `explosion`, `powerup`, `blip` and `thud` are synthesized in the browser. Presentation never touches the simulation, so polishing a game can't break its tests, and `ludra check` reports any missing image along with the files that do exist.
 
-## Components (v0.8)
+## Components (v0.9)
 
 | Component | What it does |
 | --- | --- |
 | `transform` | Position (entity center, +y is down) |
-| `body` | Box collider: `static`, `dynamic` (gravity and collisions) or `kinematic`; `sensor` for triggers; `bounce` for balls that rebound |
+| `body` | Collider: `static`, `dynamic` (gravity and collisions) or `kinematic`; `sensor` for triggers; `bounce` for balls that rebound. Under rapier: `shape` (box, circle, capsule, polygon, polyline), `friction`, `density`, `fixedRotation`, `bullet` |
 | `sprite` | A colored shape, or an image: animated spritesheets (idle/run/jump/fall), tiles and mirroring |
 | `platformer` | Run and jump controls with coyote time, jump buffering and variable jump height |
 | `topdown` | Movement seen from above: 8 directions, 4 directions, or a single axis for paddles |
@@ -348,6 +370,7 @@ No audio files are needed: `jump`, `coin`, `hit`, `explosion`, `powerup`, `blip`
 | `hazard` | Kills the player on touch, who respawns at the start. `stompable` enemies die when landed on |
 | `goal` | Completes the level, optionally only after reaching `requireScore`; `next` moves on to another scene |
 | `checkpoint` | Touching it moves the player's respawn point there |
+| `joint` | Rapier: hinges, sliders, welds, ropes and springs, with limits and motors; one or a list |
 | `emitter` | Streams particles continuously: sparkles, fire, smoke |
 | `script` | Custom behavior in TypeScript: `start`, `update` and `touch` hooks with `params` |
 | `camera` | The browser camera follows this entity through worlds wider than the window |

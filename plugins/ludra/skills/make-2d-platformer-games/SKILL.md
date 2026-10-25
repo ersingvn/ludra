@@ -1,6 +1,6 @@
 ---
 name: make-2d-platformer-games
-description: Make beautiful 2D games of any genre: platformers, top-down adventures and arena games, breakout and other bouncing-ball games, with levels, coins, enemies, hazards, moving platforms, bounce physics, custom game logic in scripts (chasing enemies, keys and doors, timers, shooting, bosses), sprites, animations, particles, sound, code-drawn art and lighting, custom HUDs, fonts and post-processing shaders. Use whenever the user asks to make, build, change, fix, test or polish a game, or works in a project with a ludra.json. Builds with the Ludra engine proves the game works by play-testing it headlessly, and reviews it for anything that makes it feel unfinished.
+description: Make beautiful 2D games of any genre: platformers, top-down adventures and arena games, breakout and other bouncing-ball games, physics games (stacking, ropes, hinges, vehicles, physics puzzles), with levels, coins, enemies, hazards, moving platforms, real rigid-body physics, custom game logic in scripts (chasing enemies, keys and doors, timers, shooting, bosses), sprites, animations, particles, sound, code-drawn art and lighting, custom HUDs, fonts and post-processing shaders. Use whenever the user asks to make, build, change, fix, test or polish a game, or works in a project with a ludra.json. Builds with the Ludra engine proves the game works by play-testing it headlessly, and reviews it for anything that makes it feel unfinished.
 ---
 
 # Building games with Ludra
@@ -101,6 +101,43 @@ The player has a `platformer` component and a `dynamic` body; gravity pulls ever
 - A paddle is `kinematic` with `topdown` `"directions": "x"`: player-steered kinematic bodies stop at walls, and the ball rebounds off them. Aim the ball in the paddle's `touch` script by where it hit.
 - Bricks are `static` bodies with a script that scores and destroys itself on `touch`. Leave the bottom of the world open and treat a lost ball as a death (`world.kill(paddle)`).
 - With gravity on and `bounce` below 1 you get bouncy balls, rubber enemies and grenades.
+
+## Physics: arcade or rapier
+
+Every scene picks its physics engine with `"world": { "physics": ... }`:
+
+- **`"arcade"`** (the default): boxes that never rotate, resolved one axis at a time. Tight and exactly predictable, which is what precise platformers, top-down games and breakout want.
+- **`"rapier"`**: a real physics engine. Choose it when physics *is* the game: stacking and toppling, rolling, swinging, ropes and chains, seesaws, vehicles, catapults, destruction, physics puzzles. It is deterministic too: every machine and the browser simulate the same frames, so tests stay valid.
+
+Under rapier:
+
+- **Shapes:** `body.shape` is `box`, `circle` (diameter = width), `capsule` (good for characters), `polygon` (the convex shape around `points`: wedges, rocks, ramps) or `polyline` (an open line through `points`: hills and curved ground; static or kinematic only). `points` are `[[x, y], ...]` offsets from the center; `width`/`height` stay the bounding box.
+- **Material:** `transform.rotation` (degrees, clockwise), `friction` (0 ice … 1 rubber), `density` (heavier pushes lighter), `fixedRotation` (slides but never tips), `bullet` (fast things don't pass through thin walls).
+- **Players** use a character controller: they walk up slopes up to `platformer.maxSlope` and slide back from steeper ones, step onto ledges up to `stepHeight`, push dynamic bodies (`push`, 0 = can't), ride moving platforms, and jump exactly as high as under arcade.
+- **Joints** (`"joint": { ... }` or a list `"joint": [{ ... }, { ... }]` for several):
+  - `revolute`: a hinge. Doors, wheels, pendulums, seesaws. `min`/`max` limit the angle; `motorSpeed` with `motorForce` drives it (degrees per second, clockwise).
+  - `prismatic`: a slider along `axis` (degrees). Pistons, elevators. `min`/`max` limit it in px.
+  - `fixed`: a weld. Compound objects.
+  - `rope`: at most `length` apart. Hanging signs, grappling.
+  - `spring`: pulled toward `length` with `stiffness` and `damping`. Bumpers, soft suspension.
+  - `to` is another entity's id, or empty for a fixed point in the world.
+  - **`anchor` is where the joint sits on this body** (offset from its center). A hinge, slider or weld joins the other body right there: a pendulum hinged 200 px to its left is `"anchor": { "x": -200, "y": 0 }`.
+  - Ropes and springs run from `anchor` to `toAnchor` (an offset on the other body, or from this body's start for a world point).
+  - A joint to an entity that is spawned later connects once it exists.
+- **Scripts:**
+  - `self.applyImpulse(x, y, at?)` strikes a body (velocity += impulse / mass; at a point off-center it spins). Scale by mass for a fixed kick: `self.applyImpulse(self.mass * 400, 0)`.
+  - `self.applyForce(x, y)` pushes every frame (thrusters, wind).
+  - `self.angularVelocity`, `self.rotation`, `self.mass`.
+  - `world.raycast(from, to, { ignore })` returns the first hit `{ entity, x, y, distance, normal }`: line of sight, lasers, "is there ground ahead?".
+- **No limits:** `world.physics.raw` is Rapier itself (`RAPIER`, `world`, `body(e)`, `collider(e)`, `joint(e, i)`, `toRapier`/`fromRapier`) for anything the components don't cover. Rapier runs y-up, so convert points with the helpers. Use it in `start`/`update`/`touch`, never in draw hooks.
+
+Lessons that save time:
+
+- **A ramp or slope must start inside the ground.** A plank whose low end sits even 10 px above the floor is a wall to a walking player. Sink its end below the floor's top.
+- **Rapier positions are fractional.** Assert ranges (`"ball.x > 400"`, `"crate-3.rotation != 0"`), not exact values. Players stand exactly on the ground, so `"player.grounded == true"` is reliable.
+- **Prove a physics level is stable:** a test with no input where everything still stands after 2 s (`"crate-top.y < 400"`). Tall thin stacks topple on their own.
+- **Watch it move:** `play --watch ball,crate --every 0.1s` adds a `rot°` column; `play --screenshot 1s --debug` draws every collider, joint and id over the frame. Check that art matches collider shapes, and that hinges sit where you meant.
+- **Draw rotation in draw hooks yourself:** `g.translate(self.x, self.y); g.rotate(self.rotation * Math.PI / 180)`. Sprites rotate on their own.
 
 ## Game structure: lives, checkpoints, prefabs, scenes
 

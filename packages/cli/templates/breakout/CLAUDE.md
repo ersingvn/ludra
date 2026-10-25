@@ -34,6 +34,7 @@ Never call a change done until `ludra check`, `ludra test` and `ludra review` ar
 - Bricks are `static` bodies with `brick.ts`. Give each brick an id starting with `brick-` so `rules.ts` counts it.
 - The bottom of the world is open on purpose: that is where the ball is lost.
 - A level is done when a test proves `won == true` with `deaths == 0`. Long routes are easiest to find by writing a small autopilot that steers the paddle under the ball, then pasting its input (frame counts like `"left:24f"`) into the test.
+- For a game that is about physics (stacking, ropes, hinges, rolling, vehicles), set `"physics": "rapier"` in `"world"`: rotation, round and free shapes, friction, mass and joints. See the skill's physics section and `npx @ludra/cli components body` / `joint`.
 - Art and effects never change gameplay. Make it playable first, then dress it.
 
 ## Looks
