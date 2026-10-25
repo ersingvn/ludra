@@ -73,9 +73,13 @@ The CLI is a thin layer over core: project loading (`ludra.json`), output format
 - No `Math.random` and no `Date.now` in the simulation.
 - Input is a set of held actions per step. "Pressed" is derived from the previous step's set, so scripts and keyboards behave identically.
 
-## Physics (v0.1)
+## Physics
 
-Axis-aligned boxes. Dynamic bodies integrate gravity, then move and resolve along x, then along y, against static and kinematic solids. Top-down movers skip gravity, and a kinematic top-down body (a paddle) is pushed out of static walls; other kinematic movers pass through. `body.bounce` reflects the velocity on the axis that hit (`-v · bounce`) and emits a `bounce` event; rebounds slower than 40 px/s stop instead, so bouncing things come to rest. This is simple on purpose. It is predictable, easy to explain to an agent, and easy to replace with a full physics engine (for example Rapier) behind the same component interface later.
+Bodies are moved by a `PhysicsEngine` (`physics.ts`): it is told about every created and removed entity, advances all bodies one fixed step, and answers overlap queries. Gameplay in `World` (platformer and top-down controls, patrols, pickups, hazards, goals, checkpoints) only talks to bodies through their velocities, `grounded`/`standingOn` and `overlaps`, so engines can be swapped without changing a game's rules. The entity's transform is the source of truth between steps, so gameplay can teleport an entity (a respawn) and the engine follows. `new World(scene, { physics })` takes any engine.
+
+### Arcade (default, `arcade.ts`)
+
+Axis-aligned boxes. Dynamic bodies integrate gravity, then move and resolve along x, then along y, against static and kinematic solids. Top-down movers skip gravity, and a kinematic top-down body (a paddle) is pushed out of static walls; other kinematic movers pass through. `body.bounce` reflects the velocity on the axis that hit (`-v · bounce`) and emits a `bounce` event; rebounds slower than 40 px/s stop instead, so bouncing things come to rest. This is simple on purpose: predictable, easy to explain to an agent, and tight enough for classic platformers. Rapier (rotation, shapes, joints) is being added as a second engine behind the same interface.
 
 ## Development
 
