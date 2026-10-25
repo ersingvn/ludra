@@ -6,7 +6,7 @@ import RAPIER, {
   type RigidBody,
   type World as RapierWorld,
 } from "@dimforge/rapier3d-deterministic-compat";
-import { FIXED_DT, registerPhysics, type Body, type Entity, type PhysicsEngine, type PhysicsHost, type PhysicsSettings, type RayHit, type RayOptions } from "@ludra/core";
+import { dmath, FIXED_DT, registerPhysics, type Body, type Entity, type PhysicsEngine, type PhysicsHost, type PhysicsSettings, type RayHit, type RayOptions } from "@ludra/core";
 
 /**
  * Ludra's 3D worlds use Rapier's own conventions: metres, +y up, right-handed (+z toward
@@ -80,9 +80,10 @@ const cleanup = new FinalizationRegistry<RapierWorld>((world) => world.free());
 /** Degrees (applied y, then x, then z) to a quaternion. */
 export function quaternionFromDegrees(x: number, y: number, z: number): Quat {
   const half = (a: number) => (a * DEGREES) / 2;
-  const qy = { x: 0, y: Math.sin(half(y)), z: 0, w: Math.cos(half(y)) };
-  const qx = { x: Math.sin(half(x)), y: 0, z: 0, w: Math.cos(half(x)) };
-  const qz = { x: 0, y: 0, z: Math.sin(half(z)), w: Math.cos(half(z)) };
+  // dmath, not Math: platform trig can differ in the last bit (see dmath.ts).
+  const qy = { x: 0, y: dmath.sin(half(y)), z: 0, w: dmath.cos(half(y)) };
+  const qx = { x: dmath.sin(half(x)), y: 0, z: 0, w: dmath.cos(half(x)) };
+  const qz = { x: 0, y: 0, z: dmath.sin(half(z)), w: dmath.cos(half(z)) };
   return multiply(multiply(qy, qx), qz);
 }
 
@@ -96,13 +97,13 @@ export function degreesFromQuaternion(q: Quat): Vec3 {
   const m31 = 2 * (x * z - y * w);
   const m33 = 1 - 2 * (x * x + y * y);
   const m11 = 1 - 2 * (y * y + z * z);
-  const tilt = Math.asin(Math.max(-1, Math.min(1, -m23)));
+  const tilt = dmath.asin(Math.max(-1, Math.min(1, -m23)));
   // Looking straight up or down, turn and roll are the same thing: put it all in turn.
   const gimbal = Math.abs(m23) > 0.9999999;
   return {
     x: tilt / DEGREES,
-    y: (gimbal ? Math.atan2(-m31, m11) : Math.atan2(m13, m33)) / DEGREES,
-    z: gimbal ? 0 : Math.atan2(m21, m22) / DEGREES,
+    y: (gimbal ? dmath.atan2(-m31, m11) : dmath.atan2(m13, m33)) / DEGREES,
+    z: gimbal ? 0 : dmath.atan2(m21, m22) / DEGREES,
   };
 }
 
@@ -244,7 +245,7 @@ export class Rapier3DPhysics implements PhysicsEngine {
       const axis = jointAxis(spec.axis, spec.type);
       const baseQ = base.rotation();
       const ownQ = link.body.rotation();
-      const length = spec.length || Math.hypot(there.x - here.x, there.y - here.y, there.z - here.z);
+      const length = spec.length || length3(there.x - here.x, there.y - here.y, there.z - here.z);
       const data =
         spec.type === "prismatic"
           ? RAPIER.JointData.prismatic(baseAnchor, ownAnchor, rotate(conjugate(baseQ), axis))
@@ -379,7 +380,7 @@ export class Rapier3DPhysics implements PhysicsEngine {
         [c, a],
       ] as const) {
         const b = self.entity.body!;
-        if (b.type !== "dynamic" || b.bounce <= 0 || Math.hypot(b.vx, b.vy, b.vz) < MIN_BOUNCE_SPEED) continue;
+        if (b.type !== "dynamic" || b.bounce <= 0 || length3(b.vx, b.vy, b.vz) < MIN_BOUNCE_SPEED) continue;
         host.emit({ type: "bounce", entity: self.entity.id, other: other.entity.id, ...at(self.entity) });
       }
     });
@@ -523,7 +524,7 @@ export class Rapier3DPhysics implements PhysicsEngine {
   raycast(_host: PhysicsHost, from: { x: number; y: number; z?: number }, to: { x: number; y: number; z?: number }, options: RayOptions = {}): RayHit | undefined {
     const origin = { x: from.x, y: from.y, z: from.z ?? 0 };
     const dir = { x: to.x - from.x, y: to.y - from.y, z: (to.z ?? 0) - origin.z };
-    const length = Math.hypot(dir.x, dir.y, dir.z);
+    const length = length3(dir.x, dir.y, dir.z);
     if (length === 0) return undefined;
     const ignored = new Set((options.ignore ?? []).map((e) => this.links.get(e)?.collider.handle));
     const hit = this.world.castRayAndGetNormal(
@@ -576,6 +577,11 @@ export class Rapier3DPhysics implements PhysicsEngine {
   }
 }
 
+/** A vector's length from + * and sqrt only (Math.hypot is implementation-defined). */
+function length3(x: number, y: number, z: number): number {
+  return Math.sqrt(x * x + y * y + z * z);
+}
+
 function vec(v: { x: number; y: number; z?: number }): Vec3 {
   return { x: v.x, y: v.y, z: v.z ?? 0 };
 }
@@ -583,7 +589,7 @@ function vec(v: { x: number; y: number; z?: number }): Vec3 {
 /** The joint's direction in the world: a vector in 3D, or the default for its type. */
 function jointAxis(axis: number | { x?: number; y?: number; z?: number }, type: string): Vec3 {
   const v = typeof axis === "object" ? { x: axis.x ?? 0, y: axis.y ?? 0, z: axis.z ?? 0 } : type === "prismatic" ? { x: 1, y: 0, z: 0 } : { x: 0, y: 0, z: 1 };
-  const length = Math.hypot(v.x, v.y, v.z) || 1;
+  const length = Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z) || 1;
   return { x: v.x / length, y: v.y / length, z: v.z / length };
 }
 

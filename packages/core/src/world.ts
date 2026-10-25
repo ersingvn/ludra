@@ -28,6 +28,7 @@ import {
   type ScriptWorld,
   type SpawnDef,
 } from "./script.ts";
+import { atan2 } from "./dmath.ts";
 import { createPhysics, physicsEngineName } from "./engines.ts";
 import type { CameraZone } from "./camera.ts";
 import { advanceTween, createTween, startTween, type Tween, type TweenState } from "./tween.ts";
@@ -766,7 +767,8 @@ export class World {
       b.vx = (dx / length) * c.speed;
       b.vz = (dz / length) * c.speed;
       // Facing -z is a turn of 0; walking right (+x) is -90 (turning right is clockwise from above).
-      if (c.faceMovement && (dx !== 0 || dz !== 0)) e.transform.rotationY = (Math.atan2(-dx, -dz) * 180) / Math.PI;
+      // dmath: the same bits on every machine, so the facing angle is part of the golden hash safely.
+      if (c.faceMovement && (dx !== 0 || dz !== 0)) e.transform.rotationY = (atan2(-dx, -dz) * 180) / Math.PI;
 
       if (b.grounded) c.coyoteTimer = c.coyoteTime + EPSILON;
       if (pressed.has("jump")) c.bufferTimer = c.jumpBuffer + EPSILON;

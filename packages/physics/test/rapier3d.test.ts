@@ -293,7 +293,7 @@ describe("rapier 3D determinism", () => {
 
   // Checked on every CI machine (Linux, Windows, macOS × Node 22 and 24): Rapier's deterministic
   // build and Ludra's own math must give these exact frames everywhere.
-  const GOLDEN = "3135f9a54cece1b4";
+  const GOLDEN = "d01e232851a70f04";
   test("golden hash: every machine and Node version simulates exactly the same frames", () => {
     assert.equal(golden(), GOLDEN);
   });
