@@ -1,0 +1,13 @@
+{
+  "name": "{{name}}",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "ludra dev",
+    "check": "ludra check",
+    "test": "ludra test"
+  },
+  "devDependencies": {
+    "@ludra/cli": "^0.9.0"
+  }
+}

@@ -1,4 +1,5 @@
 import type { Action, Diagnostic } from "./types.ts";
+import type { Ease } from "./tween.ts";
 import { closestName } from "./validate.ts";
 
 /**
@@ -13,6 +14,25 @@ export interface ScriptEntity {
   vx: number;
   vy: number;
   readonly grounded: boolean;
+  /** Degrees, clockwise. Only rapier physics turns bodies by itself; setting it turns one. */
+  rotation: number;
+  /** Spin in degrees per second, clockwise. Always 0 under arcade physics. */
+  angularVelocity: number;
+  /** Density × area. Heavier bodies move less when struck and push lighter ones. */
+  readonly mass: number;
+  /**
+   * Strikes the body: its velocity changes by (x, y) / mass. Applied `at` a point in the
+   * world (rapier) it also spins the body. For a jump pad, a kick, an explosion.
+   */
+  applyImpulse(x: number, y: number, at?: { x: number; y: number }): void;
+  /**
+   * Eases a value over time: { property: "x" | "y" | "rotation" | "scale" | "opacity", to or by,
+   * duration, ease?, delay?, repeat? }. Same fields as the tween component; starts now and
+   * replaces a running tween of the same property. A door: self.tween({ property: "y", by: -120, duration: 0.6, ease: "quadOut" }).
+   */
+  tween(def: { property: "x" | "y" | "rotation" | "scale" | "opacity"; to?: number; by?: number; duration: number; delay?: number; ease?: Ease; repeat?: "once" | "loop" | "pingpong" }): void;
+  /** Pushes the body steadily: call it every frame (thrusters, wind, magnets). */
+  applyForce(x: number, y: number, at?: { x: number; y: number }): void;
   readonly width: number;
   readonly height: number;
   /** False once the entity has been destroyed or collected. */
@@ -25,6 +45,16 @@ export interface ScriptEntity {
   has(component: string): boolean;
   /** True when this entity overlaps or touches the other one. */
   touches(other: ScriptEntity | string): boolean;
+}
+
+/** Where a ray first hits a body. */
+export interface ScriptRayHit {
+  entity: ScriptEntity;
+  x: number;
+  y: number;
+  distance: number;
+  /** The surface's outward normal (unit length, +y down). */
+  normal: { x: number; y: number };
 }
 
 export interface SpawnDef {
@@ -74,6 +104,21 @@ export interface ScriptWorld {
   emit(name: string, data?: unknown): void;
   /** A number in [0, 1). Seeded by `world.seed`, so runs stay deterministic. Never use Math.random. */
   random(): number;
+  /**
+   * The first body on the line from `from` to `to`: line of sight, lasers, "is there
+   * ground ahead?". Sensors are skipped unless `sensors` is true.
+   */
+  raycast(
+    from: { x: number; y: number },
+    to: { x: number; y: number },
+    options?: { ignore?: ScriptEntity | string | (ScriptEntity | string)[]; sensors?: boolean },
+  ): ScriptRayHit | undefined;
+  /**
+   * The physics engine. Under rapier, `raw` is { RAPIER, world, body(entity), collider(entity),
+   * joint(entity, index?), toRapier(point), fromRapier(point) }: the whole Rapier API, for anything Ludra's components
+   * don't cover. Rapier runs y-up, so convert points with toRapier/fromRapier.
+   */
+  readonly physics: { readonly name: string; readonly raw: unknown };
 }
 
 export interface ScriptInput {
@@ -138,6 +183,30 @@ export interface DrawContext {
 }
 
 /**
+ * What the `sound` hook receives: the real Web Audio API, so there are no limits on
+ * sound. Like draw hooks, it only presents: `self` and `world` are read-only.
+ */
+export interface SoundContext {
+  /** The real AudioContext: oscillators, filters, convolvers, buffers, `audio.currentTime`. */
+  audio: AudioContext;
+  /** Connect nodes here: the scene's bus. Muting and scene changes are handled for you. */
+  out: AudioNode;
+  self: ScriptEntity;
+  world: ScriptWorld;
+  params: Record<string, unknown>;
+  /** Simulation time in seconds. */
+  time: number;
+  /** Game events since this hook last ran, oldest first. */
+  events: DrawEvent[];
+  /** Plays a preset, one of the scene's own "sounds" or an audio file. `pitch` 2 is an octave up. */
+  play(name: string, options?: { volume?: number; pitch?: number }): void;
+  /** Per-entity memory for nodes and timers. Not game state. */
+  local: Record<string, unknown>;
+  /** A number in [0, 1) for variety. Never affects the game. */
+  random(): number;
+}
+
+/**
  * The default export of a script file. All hooks are optional.
  *
  * ```ts
@@ -165,9 +234,14 @@ export interface Script {
    * default HUD and "Level complete" screen are turned off: the game draws its own.
    */
   drawUI?(ctx: DrawContext): void;
+  /**
+   * Makes sound with the real Web Audio API, every rendered frame in the browser once the
+   * player has pressed a key (browsers block audio before that). Tests never call it.
+   */
+  sound?(ctx: SoundContext): void;
 }
 
-export const SCRIPT_HOOKS = ["start", "update", "touch", "draw", "drawUI"] as const;
+export const SCRIPT_HOOKS = ["start", "update", "touch", "draw", "drawUI", "sound"] as const;
 
 /** Printed by `ludra components script`. Keep in sync with the interfaces above. */
 export const SCRIPT_API_REFERENCE = `A script file default-exports hooks. Only "import type" is allowed: scripts run without a bundler.
@@ -179,9 +253,12 @@ export const SCRIPT_API_REFERENCE = `A script file default-exports hooks. Only "
     touch(ctx, other) {},    // when this entity starts touching another body (after physics)
     draw(ctx) {},            // paint this entity in world space (browser only, every rendered frame)
     drawUI(ctx) {},          // paint screen-space UI; replaces the default HUD and win screen
+    sound(ctx) {},           // make sound with the real Web Audio API (browser only, every rendered frame)
   } satisfies Script;
 
-ctx.self      the entity: id, x, y, vx, vy (read/write); grounded, width, height, exists (read);
+ctx.self      the entity: id, x, y, vx, vy, rotation, angularVelocity (read/write); grounded, mass, width, height, exists (read);
+              applyImpulse(x, y, at?)  strike it (velocity += impulse / mass)    applyForce(x, y, at?)  push every frame;
+              tween({ property, to | by, duration, ease?, delay?, repeat? })  ease x, y, rotation, scale or opacity;
               state (object kept between frames, testable as "<id>.state.<key>");
               has("component"), touches(otherOrId)
 ctx.world     time, frame, width, height, deaths, won, lost, exit (read); score, lives (read/write)
@@ -192,6 +269,10 @@ ctx.world     time, frame, width, height, deaths, won, lost, exit (read); score,
               goto(scenePath)   moves on to another scene (title -> level 1, a door to the next room)
               emit(name, data?) custom event: counted by "events.<name>" in tests, usable as an effects key
               random()          deterministic, seeded by world.seed. Never use Math.random or Date
+              raycast(from, to, { ignore?, sensors? }) -> { entity, x, y, distance, normal } | undefined
+              physics.name      "arcade" or "rapier"
+              physics.raw       rapier only: { RAPIER, world, body(e), collider(e), toRapier(p), fromRapier(p) }:
+                                the whole Rapier API (Rapier is y-up: convert points). Not in draw hooks.
 ctx.input     held(action), pressed(action)   actions: left right up down jump action
 ctx.params    the "params" object from the script component
 ctx.dt        seconds per frame (1/60)
@@ -207,6 +288,14 @@ ctx.recent(name?, seconds = 0.5)   recent events [{ name, time, x, y, entity, da
 ctx.image(path)   a loaded image (sprite images and string params ending in .svg/.png/... are preloaded)
 ctx.burst(x, y, particles?)  ctx.shake(px)  ctx.random()   presentation-only helpers
 self/world/params as in update, but read-only: changing the game in a draw hook is an error.
+
+Sound: the sound hook gets the real Web Audio API, so there are no limits on sound either.
+ctx.audio     the AudioContext (createOscillator, createBiquadFilter, createConvolver, currentTime...)
+ctx.out       connect your nodes here (the scene's bus; mute and scene changes are handled)
+ctx.events    game events since the last call: answer them with sound
+ctx.play(name, { volume?, pitch? })   a preset, one of the scene's "sounds", or an audio file
+ctx.local, ctx.time, ctx.random(), self/world/params read-only, as in draw hooks
+Run "ludra components sounds" for scene "sounds" (your own synthesized sounds) and "music" (tracks of notes).
 
 Scene-level presentation (all optional):
   "fonts": { "Orbitron": "google", "Pixel": "assets/pixel.woff2" }   load fonts for ctx.g.font

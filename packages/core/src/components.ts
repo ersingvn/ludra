@@ -6,7 +6,11 @@ export type FieldSpec =
   /** Spritesheet frame indices: "0", "1-4" or "0,2,4-6". Empty = not used. */
   | { type: "frames"; default?: string; description: string }
   /** Any JSON object. */
-  | { type: "object"; default?: Record<string, unknown>; description: string };
+  | { type: "object"; default?: Record<string, unknown>; description: string }
+  /** A list of [x, y] points in px. */
+  | { type: "points"; default?: [number, number][]; description: string }
+  /** A list of strings (tilemap rows). */
+  | { type: "strings"; default?: string[]; description: string };
 
 export interface ComponentSpec {
   description: string;
@@ -26,9 +30,13 @@ export const COMPONENT_NAMES = [
   "hazard",
   "goal",
   "checkpoint",
+  "joint",
   "emitter",
   "script",
   "camera",
+  "cameraZone",
+  "tilemap",
+  "tween",
 ] as const;
 export type ComponentName = (typeof COMPONENT_NAMES)[number];
 
@@ -55,11 +63,12 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
     fields: {
       x: { type: "number", description: "Center x in pixels." },
       y: { type: "number", description: "Center y in pixels." },
+      rotation: { type: "number", default: 0, description: "Rotation in degrees, clockwise. Rapier physics only: arcade bodies never rotate." },
     },
   },
   body: {
     description:
-      "Axis-aligned box collider. static = never moves (ground, walls). dynamic = falls with gravity and collides with static/kinematic bodies. kinematic = moves at a constant velocity, ignores gravity.",
+      "Collider. static = never moves (ground, walls). dynamic = falls with gravity and collides with other bodies. kinematic = moves at a constant velocity, ignores gravity. With arcade physics (the default) every body is an axis-aligned box; with \"physics\": \"rapier\" bodies can be circles or capsules, rotate, and have friction and mass.",
     requires: ["transform"],
     fields: {
       type: { type: "enum", values: ["static", "dynamic", "kinematic"], default: "static", description: "How the body moves." },
@@ -75,6 +84,22 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       },
       vx: { type: "number", default: 0, description: "Initial horizontal velocity in px/s." },
       vy: { type: "number", default: 0, description: "Initial vertical velocity in px/s." },
+      shape: {
+        type: "enum",
+        values: ["box", "circle", "capsule", "polygon", "polyline"],
+        default: "box",
+        description:
+          "Rapier only. circle: diameter = width. capsule: a rounded box, upright when taller than wide (characters). polygon: the convex shape around `points` (wedges, rocks, ramps). polyline: an open line through `points` (hills, curved ground); static or kinematic only.",
+      },
+      points: {
+        type: "points",
+        default: [],
+        description: "Rapier only, for polygon and polyline shapes: [[x, y], ...] offsets from the center in px. width and height stay the bounding box (images, arcade).",
+      },
+      friction: { type: "number", min: 0, default: 0.5, description: "Rapier only. 0 = ice, 1 = rubber." },
+      density: { type: "number", min: 0, default: 1, description: "Rapier only. Mass per area: heavier bodies push lighter ones." },
+      fixedRotation: { type: "boolean", default: false, description: "Rapier only. Keeps a dynamic body upright (crates that slide but never tip). Players are always upright." },
+      bullet: { type: "boolean", default: false, description: "Rapier only. Continuous collision detection, so fast bodies (bullets, balls) can't pass through thin walls." },
     },
   },
   sprite: {
@@ -97,6 +122,8 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       width: { type: "number", min: 0, default: 0, description: "Draw width in pixels. 0 = use the body width." },
       height: { type: "number", min: 0, default: 0, description: "Draw height in pixels. 0 = use the body height." },
       layer: { type: "number", default: 0, description: "Higher layers are drawn on top." },
+      scale: { type: "number", min: 0, default: 1, description: "Draw size multiplier (a tween can pulse or pop it). Never changes the body." },
+      opacity: { type: "number", min: 0, default: 1, description: "0 = invisible, 1 = solid. A tween can fade it." },
     },
   },
   platformer: {
@@ -108,6 +135,9 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       coyoteTime: { type: "number", min: 0, default: 0.1, description: "Seconds after leaving a ledge during which a jump still works." },
       jumpBuffer: { type: "number", min: 0, default: 0.1, description: "Seconds a jump press is remembered before landing." },
       variableJump: { type: "boolean", default: true, description: "Releasing jump early cuts the jump short." },
+      maxSlope: { type: "number", min: 0, default: 50, description: "Rapier only. Steepest slope in degrees the player can walk up; steeper ones slide it back down." },
+      stepHeight: { type: "number", min: 0, default: 10, description: "Rapier only. Ledges up to this many px are stepped onto without jumping (stairs, bumps). 0 turns it off." },
+      push: { type: "number", min: 0, default: 1, description: "Rapier only. How hard the player pushes dynamic bodies, as a multiple of its own mass. 0 = can't push." },
     },
   },
   topdown: {
@@ -163,6 +193,34 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       },
     },
   },
+  joint: {
+    description:
+      'Rapier only. Connects this body to another (`to`) or to a point in the world: a hinge (revolute), a slider (prismatic), a weld (fixed), a rope or a spring. Chains, bridges, pendulums, wheels, doors, cranes. Positions are offsets from each body\'s center in px. Give a list of joints for several connections: "joint": [{ ... }, { ... }].',
+    requires: ["transform", "body"],
+    fields: {
+      type: { type: "enum", values: ["revolute", "prismatic", "fixed", "rope", "spring"], default: "revolute", description: "revolute = hinge, prismatic = slides along axis, fixed = welded, rope = at most length apart, spring = pulled toward length." },
+      to: { type: "string", default: "", description: "Id of the other body. Empty: a fixed point in the world." },
+      anchor: {
+        type: "object",
+        default: { x: 0, y: 0 },
+        description: "Where the joint sits on this body: { x, y } offset from its center. A hinge, slider or weld joins the other body (or the world) right at that point: a pendulum hinged 200 px to its left is { \"x\": -200, \"y\": 0 }.",
+      },
+      toAnchor: {
+        type: "object",
+        default: { x: 0, y: 0 },
+        description: "rope and spring: where the other end is, as an offset from the other body's center, or with no `to` from this body's starting center (a rope hanging from 100 px above is { \"x\": 0, \"y\": -100 }).",
+      },
+      length: { type: "number", min: 0, default: 0, description: "rope: longest it stretches; spring: length it pulls toward. 0 = the distance at the start." },
+      stiffness: { type: "number", min: 0, default: 1000, description: "spring: how hard it pulls." },
+      damping: { type: "number", min: 0, default: 20, description: "spring: how quickly it stops bouncing." },
+      axis: { type: "number", default: 0, description: "prismatic: the direction it slides, in degrees clockwise from right." },
+      min: { type: "number", default: 0, description: "Limit: revolute angle in degrees, prismatic position in px. Used when min < max." },
+      max: { type: "number", default: 0, description: "Upper limit (see min)." },
+      motorSpeed: { type: "number", default: 0, description: "revolute: degrees per second clockwise; prismatic: px per second. Needs motorForce." },
+      motorForce: { type: "number", min: 0, default: 0, description: "How strong the motor is. 0 = no motor." },
+      collide: { type: "boolean", default: false, description: "Whether the two connected bodies still collide with each other." },
+    },
+  },
   checkpoint: {
     description:
       "When a player touches it, that player respawns here after dying (standing on the checkpoint's bottom edge). Fires a checkpoint event once. Its body must be a sensor.",
@@ -193,11 +251,60 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       zoom: { type: "number", min: 0.1, default: 1, description: "Camera zoom factor." },
     },
   },
+  cameraZone: {
+    description:
+      "An area that takes over the camera while the followed entity is inside it: \"room\" keeps the view inside the area (Metroid-style rooms, an arena that locks), \"fixed\" holds the view on the area's center (a vista, a boss fight), and \"zoom\" changes the zoom. Entering and leaving blend smoothly. Presentation only: it never changes the game.",
+    requires: ["transform"],
+    fields: {
+      width: { type: "number", min: 1, description: "Area width in px, centered on the transform." },
+      height: { type: "number", min: 1, description: "Area height in px, centered on the transform." },
+      mode: { type: "enum", values: ["room", "fixed"], default: "room", description: "room = the view stays inside the area and still follows; fixed = the view holds the area's center." },
+      zoom: { type: "number", min: 0, default: 0, description: "Zoom while inside. 0 = keep the camera's zoom. Below 1 shows more (a wide vista), above 1 closes in." },
+      blend: { type: "number", min: 0, default: 0.5, description: "Seconds to ease the camera in and out of the zone." },
+      priority: { type: "number", default: 0, description: "When zones overlap, the highest priority wins (then the last one listed)." },
+    },
+  },
+  tilemap: {
+    description:
+      'A grid level written as rows of characters, one per cell. Each character is looked up in the legend: a tile ({ "image", "color", "solid", "sensor", "layer", "components", "merge" }) or a prefab name to place in that cell. " " and "." are empty. Neighboring tiles of the same character merge into one body, so a 200-cell wall is one collider. The tilemap\'s transform is its top-left corner. It becomes ordinary entities named <id>-<row>-<col>, so tests, play --watch and scripts can use them.',
+    requires: ["transform"],
+    fields: {
+      tileSize: { type: "number", min: 1, default: 40, description: "Cell size in px." },
+      rows: { type: "strings", description: 'One string per row, one character per cell, e.g. ["#..c..#", "#######"].' },
+      legend: {
+        type: "object",
+        description:
+          'What each character is: { "#": { "image": "assets/brick.svg" }, "^": { "image": "assets/spikes.svg", "sensor": true, "components": { "hazard": {} } }, "c": "coin" } (a prefab).',
+      },
+    },
+  },
+  tween: {
+    description:
+      'Animates a value over time with easing: a door that slides open, a platform that glides and pauses, a coin that bobs, a sign that fades in. x/y move a kinematic or dynamic body by velocity, so riders are carried like on a patrol. Runs in the simulation (deterministic, testable). Give a list for several: "tween": [{ ... }, { ... }]. Scripts start tweens with self.tween({ ... }).',
+    requires: ["transform"],
+    fields: {
+      property: { type: "enum", values: ["x", "y", "rotation", "scale", "opacity"], default: "y", description: "What to animate. scale and opacity need a sprite." },
+      to: { type: "number", default: 0, description: "Target value. Ignored when by is set." },
+      by: { type: "number", default: 0, description: "Change relative to the start value (e.g. -120 = up 120 px). Used when not 0." },
+      duration: { type: "number", min: 0.01, description: "Seconds for one pass." },
+      delay: { type: "number", min: 0, default: 0, description: "Seconds to wait first (and between passes when it repeats)." },
+      ease: {
+        type: "enum",
+        values: ["linear", "sineInOut", "quadIn", "quadOut", "quadInOut", "cubicInOut", "backOut", "elasticOut", "bounceOut"],
+        default: "sineInOut",
+        description: "The curve: sineInOut glides, quadOut/backOut snap into place, elasticOut and bounceOut wobble and land.",
+      },
+      repeat: { type: "enum", values: ["once", "loop", "pingpong"], default: "once", description: "once, loop (jump back and go again) or pingpong (there and back forever)." },
+      on: { type: "string", default: "", description: 'Start when this event fires (a built-in one like "checkpoint", or a name a script emits). Empty = start with the scene.' },
+    },
+  },
 };
 
 export interface Transform {
   x: number;
   y: number;
+  /** Degrees, clockwise. Only rapier physics rotates bodies. */
+  rotation: number;
 }
 
 export interface Body {
@@ -209,6 +316,12 @@ export interface Body {
   bounce: number;
   vx: number;
   vy: number;
+  shape: "box" | "circle" | "capsule" | "polygon" | "polyline";
+  points: [number, number][];
+  friction: number;
+  density: number;
+  fixedRotation: boolean;
+  bullet: boolean;
 }
 
 export interface Sprite {
@@ -227,6 +340,8 @@ export interface Sprite {
   width: number;
   height: number;
   layer: number;
+  scale: number;
+  opacity: number;
 }
 
 export interface ParticleSpec {
@@ -255,6 +370,9 @@ export interface Platformer {
   coyoteTime: number;
   jumpBuffer: number;
   variableJump: boolean;
+  maxSlope: number;
+  stepHeight: number;
+  push: number;
 }
 
 export interface Topdown {
@@ -276,6 +394,22 @@ export interface Patrol {
 export interface Hazard {
   stompable: boolean;
   score: number;
+}
+
+export interface Joint {
+  type: "revolute" | "prismatic" | "fixed" | "rope" | "spring";
+  to: string;
+  anchor: { x: number; y: number };
+  toAnchor: { x: number; y: number };
+  length: number;
+  stiffness: number;
+  damping: number;
+  axis: number;
+  min: number;
+  max: number;
+  motorSpeed: number;
+  motorForce: number;
+  collide: boolean;
 }
 
 export interface Goal {

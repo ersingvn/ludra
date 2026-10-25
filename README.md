@@ -25,7 +25,7 @@ claude > ludra new slime-valley
          Done. Run `ludra dev` to play it.
 ```
 
-> **Status:** early (v0.8). 2D games in several genres (platformers, top-down adventures, breakout) with multiple levels, lives, checkpoints and prefabs, `ludra review` to catch unfinished work, art drawn in code with lighting, custom interfaces and GLSL post-processing, a library of ready-made gameplay blocks, custom TypeScript scripts, enemies, hazards, moving platforms, goals, animated SVG sprites, particles and sound, plus the full agent toolchain including real rendered screenshots, work today. 3D is on the [roadmap](#roadmap).
+> **Status:** early (v0.9). 2D games in several genres (platformers, top-down adventures, breakout, physics games) on arcade or real Rapier physics, with tilemaps, camera zones, tweens, multiple levels, lives, checkpoints and prefabs, `ludra review` to catch unfinished work, art drawn in code with lighting, custom interfaces and GLSL post-processing, a library of ready-made gameplay blocks, custom TypeScript scripts, enemies, hazards, moving platforms, goals, animated SVG sprites, particles, each game's own synthesized sounds and music, plus the full agent toolchain including real rendered screenshots, work today. 3D is on the [roadmap](#roadmap).
 
 ## The idea
 
@@ -217,6 +217,28 @@ The skill treats issues like failing tests, and every template reviews clean (`-
 
 `slime` comes from `prefabs/slime.prefab.json`, shared by every scene: the entity lists only what differs. Losing every life ends the game (`lost`, `gameover`); a checkpoint moves the respawn point; a goal's `next` (or `world.goto` from a script, e.g. a title screen) moves on to another scene, carrying score and lives. Every scene is checked, and each test can pick its scene. The platformer template is two levels built this way.
 
+### Real physics, when the game is physics
+
+Arcade physics (boxes that never rotate) stays the default: it is what precise platformers want. A scene that is *about* physics switches to [Rapier](https://rapier.rs) with one line, `"world": { "physics": "rapier" }`, and gets rotation, circles, capsules, polygons and curved ground, friction and mass, hinges, sliders, welds, ropes, springs and motors:
+
+<p align="center">
+  <img src="docs/media/physics.png" alt="A Ludra physics scene: a wrecking ball on a hinge has smashed into a crate pyramid, crates tumble rotated onto a seesaw, and a capsule player climbs a ramp while balls roll down it" width="960">
+</p>
+
+```json
+{ "id": "wrecking-ball",
+  "components": {
+    "body": { "type": "dynamic", "width": 64, "height": 64, "shape": "circle", "density": 12 },
+    "joint": { "type": "revolute", "anchor": { "x": 260, "y": -320 } } } }
+```
+
+- **Deterministic everywhere.** Ludra uses Rapier's deterministic build: the same scene simulates bit-for-bit the same frames on Linux, macOS, Windows, every Node version and in the browser. A golden-hash test checks this on every CI machine, so tests still prove what players get.
+- **Players feel right.** A character controller walks up slopes and slides off steep ones, steps onto ledges, pushes crates and rides platforms, and jumps exactly as high as under arcade.
+- **Scripts get the rest.** `applyImpulse`, `applyForce`, `world.raycast`, and `world.physics.raw`: Rapier itself, for anything the components don't cover.
+- **Agents can see it.** `ludra play --screenshot 1s --debug` draws every collider in its true shape, every joint and every id over the frame.
+
+Rapier is its own package, `@ludra/physics`, loaded only by scenes that ask for it.
+
 ### Blocks: tested pieces, combined with taste
 
 Like a video agent assembling scenes from a library of transitions and titles, a Ludra agent starts from **blocks**: ready-made, tested pieces of gameplay, each with its scripts, SVG art and effects.
@@ -283,9 +305,10 @@ Start from the template closest to your idea and reshape it:
 npx @ludra/cli new my-game                       # platformer: run, jump, stomp
 npx @ludra/cli new my-game --template topdown    # seen from above: gems, hedges, slimes
 npx @ludra/cli new my-game --template breakout   # paddle, bouncing ball, bricks
+npx @ludra/cli new my-game --template physics    # real physics: a crate to push, a rope bridge, a pendulum
 ```
 
-Each template ships with tests that prove it can be won without dying, and its own look: the platformer in SVG sprites, the breakout drawn entirely in code, the grove lit by code over SVG sprites. The breakout route is 28 seconds long, so the skill teaches agents to write a small autopilot that plays the level and prints the input, instead of guessing.
+Each template ships with tests that prove it can be won without dying, and its own look: the platformer in SVG sprites, the breakout drawn entirely in code, the grove lit by code over SVG sprites, Crate & Chasm on Rapier with joints you can see in `--debug`. The breakout route is 28 seconds long, so the skill teaches agents to write a small autopilot that plays the level and prints the input, instead of guessing.
 
 ### Scripts: any game logic, still testable
 
@@ -332,14 +355,30 @@ Agents can't use a paint program, so Ludra's art pipeline is text too. Sprites a
 }
 ```
 
-No audio files are needed: `jump`, `coin`, `hit`, `explosion`, `powerup`, `blip` and `thud` are synthesized in the browser. Presentation never touches the simulation, so polishing a game can't break its tests, and `ludra check` reports any missing image along with the files that do exist.
+No audio files are needed, and sound has no ceiling. A scene designs its own `"sounds"` from tone and noise layers (with `vary`, so repeats never sound copied) and writes its `"music"` as tracks of notes:
 
-## Components (v0.8)
+```json
+"sounds": {
+  "boot-on-wood": { "tones": [{ "wave": "sine", "from": 140, "to": 70, "duration": 0.09 }], "noise": [{ "filter": "bandpass", "from": 420, "duration": 0.07 }], "vary": 0.12 }
+},
+"music": {
+  "tempo": 100,
+  "tracks": [
+    { "wave": "triangle", "notes": "D4 F4 A4 ~ G4 F4 E4 C4 | D4 ~ A3 ~ C4 D4 ~ -" },
+    { "wave": "sine", "notes": "D2 ~ - D2 A2 ~ - A2 | C2 ~ - C2 G2 ~ - G2" },
+    { "wave": "noise", "filter": 110, "notes": "X - - - x - x -" }
+  ]
+}
+```
+
+For everything else, a script's `sound` hook gets the real Web Audio API, the way draw hooks get the real canvas: Crate & Chasm's wind grows as you climb, the spiked ball hisses as fast as it swings and the bridge creaks under your feet. Every template ships with its own sounds and music, and `ludra review` flags stock beeps and silent games. Presentation never touches the simulation, so polishing a game can't break its tests, and `ludra check` reports any missing image or audio file along with the files that do exist.
+
+## Components (v0.9)
 
 | Component | What it does |
 | --- | --- |
 | `transform` | Position (entity center, +y is down) |
-| `body` | Box collider: `static`, `dynamic` (gravity and collisions) or `kinematic`; `sensor` for triggers; `bounce` for balls that rebound |
+| `body` | Collider: `static`, `dynamic` (gravity and collisions) or `kinematic`; `sensor` for triggers; `bounce` for balls that rebound. Under rapier: `shape` (box, circle, capsule, polygon, polyline), `friction`, `density`, `fixedRotation`, `bullet` |
 | `sprite` | A colored shape, or an image: animated spritesheets (idle/run/jump/fall), tiles and mirroring |
 | `platformer` | Run and jump controls with coyote time, jump buffering and variable jump height |
 | `topdown` | Movement seen from above: 8 directions, 4 directions, or a single axis for paddles |
@@ -348,9 +387,13 @@ No audio files are needed: `jump`, `coin`, `hit`, `explosion`, `powerup`, `blip`
 | `hazard` | Kills the player on touch, who respawns at the start. `stompable` enemies die when landed on |
 | `goal` | Completes the level, optionally only after reaching `requireScore`; `next` moves on to another scene |
 | `checkpoint` | Touching it moves the player's respawn point there |
+| `joint` | Rapier: hinges, sliders, welds, ropes and springs, with limits and motors; one or a list |
 | `emitter` | Streams particles continuously: sparkles, fire, smoke |
 | `script` | Custom behavior in TypeScript: `start`, `update` and `touch` hooks with `params` |
 | `camera` | The browser camera follows this entity through worlds wider than the window |
+| `cameraZone` | An area that takes over the camera: a room the view stays inside, a fixed shot, a zoom; changes ease smoothly |
+| `tilemap` | A level drawn as rows of characters: tiles merge into big colliders, letters place prefabs |
+| `tween` | Eases x, y, rotation, scale or opacity: lifts that pause at each floor, gates that open on an event, bobbing coins |
 
 Falling out of the bottom of the world also counts as a death. Scene-level `effects` add particles, sound and shake to game events. Run `ludra components effects` for every option.
 
@@ -379,7 +422,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how it fits together.
 - ~~**v0.6: blocks and taste.** `ludra blocks` / `ludra add`, a library of tested gameplay blocks, and a design guide in the skill.~~ Done.
 - ~~**v0.7: genres.** A top-down controller, bounce physics, and templates for top-down adventures and breakout-style games.~~ Done.
 - ~~**v0.8: game structure and quality.** `ludra review`, multiple scenes and level transitions, prefabs, lives and checkpoints.~~ Done.
-- **v0.9: physics and worlds.** Rapier as one physics engine for 2D now and 3D later, tilemaps, camera zones, tweened animation.
+- ~~**v0.9: physics, sound and worlds.** Rapier as one physics engine for 2D now and 3D later, a game's own synthesized sounds and music with the full Web Audio API in scripts, tilemaps, camera zones, tweened animation. See [`examples/clockwork-keep`](examples/clockwork-keep).~~ Done.
 - **v0.10: 3D foundations.** 3D transforms and bodies, a Three.js renderer with lights and shadows, cameras, a character controller, and a first 3D template, all through the same check/play/test/review loop and real screenshots.
 - **v0.11: 3D content.** glTF models, free (CC0) model packs as blocks, skeletal animation, procedural geometry and terrain.
 - **v0.12: shipping.** A single-file web build ready for itch.io, touch and gamepad controls, performance budgets in `review`.

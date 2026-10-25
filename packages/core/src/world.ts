@@ -6,6 +6,7 @@ import {
   type Emitter,
   type Goal,
   type Hazard,
+  type Joint,
   type Patrol,
   type Platformer,
   type ScriptComponent,
@@ -17,6 +18,7 @@ import {
   getScript,
   ScriptError,
   type DrawContext,
+  type SoundContext,
   type Script,
   type ScriptContext,
   type ScriptEntity,
@@ -25,6 +27,10 @@ import {
   type ScriptWorld,
   type SpawnDef,
 } from "./script.ts";
+import { createPhysics } from "./engines.ts";
+import type { CameraZone } from "./camera.ts";
+import { advanceTween, createTween, startTween, type Tween, type TweenState } from "./tween.ts";
+import { at, feet, type PhysicsEngine, type PhysicsHost } from "./physics.ts";
 import { FIXED_DT } from "./time.ts";
 import { EVENT_TYPES, type Action, type Diagnostic, type EntityDef, type SceneDef } from "./types.ts";
 import { mergeComponents, validateScene } from "./validate.ts";
@@ -73,8 +79,13 @@ export interface Entity {
   hazard?: Hazard;
   goal?: Goal;
   checkpoint?: Record<string, never>;
+  /** Every joint this entity's `joint` component declares (one object or a list). */
+  joints?: Joint[];
   emitter?: Emitter;
   camera?: Camera;
+  cameraZone?: CameraZone;
+  /** Tweens declared on the entity or started by its scripts. */
+  tweens?: TweenState[];
 }
 
 /** `x`/`y` is where it happened, e.g. the coin's position for "collect" or the feet for "land". */
@@ -101,6 +112,8 @@ export interface EntitySnapshot {
   vx: number;
   vy: number;
   grounded: boolean;
+  /** Degrees, clockwise. Present only when the entity is rotated (rapier physics). */
+  rotation?: number;
   /** Present when a script stored data on the entity. */
   state?: Record<string, unknown>;
 }
@@ -108,6 +121,8 @@ export interface EntitySnapshot {
 export interface WorldOptions {
   /** Loaded script modules, keyed by the `src` path used in the scene. */
   scripts?: ScriptModules;
+  /** The physics engine that moves bodies. Defaults to the one the scene names (`world.physics`), arcade if none. */
+  physics?: PhysicsEngine;
   /** Values carried over from the previous scene, so a run keeps its score and lives. */
   carry?: { score?: number; deaths?: number; lives?: number };
 }
@@ -135,7 +150,6 @@ export class SceneValidationError extends Error {
 }
 
 const DEFAULT_GRAVITY = 1800;
-const MAX_FALL_SPEED = 1400;
 /** When jump is released early, upward speed is capped to this fraction of jumpSpeed. */
 const JUMP_CUT = 0.45;
 /** Upward speed after stomping an enemy, as a fraction of jumpSpeed. */
@@ -146,8 +160,6 @@ const STOMP_TOLERANCE = 8;
 const FALL_MARGIN = 100;
 /** Bodies this close count as touching for `touch` hooks, so solids (doors, walls) can be touched too. */
 const TOUCH_MARGIN = 1;
-/** Impacts slower than this (px/s, after bounce) stop instead of bouncing. */
-const MIN_BOUNCE_SPEED = 40;
 const EPSILON = 1e-4;
 
 /**
@@ -175,7 +187,12 @@ export class World {
   exit: string | undefined;
   private readonly prefabs: Record<string, { components: Record<string, Record<string, unknown>> }>;
   private readonly reached = new Set<string>();
+  /** Moves bodies; gameplay below only talks to it through velocities, grounded and overlaps. */
+  readonly physics: PhysicsEngine;
+  private readonly physicsHost: PhysicsHost;
   private previousInput: ReadonlySet<Action> = new Set();
+  /** World events the tweens have already looked at, to start those waiting for one. */
+  private tweenEvents = 0;
   private readonly scripts: ScriptModules | undefined;
   private seed: number;
   private spawnCount = 0;
@@ -198,7 +215,19 @@ export class World {
     this.score = options.carry?.score ?? 0;
     this.deaths = options.carry?.deaths ?? 0;
     this.lives = options.carry?.lives ?? scene.world?.lives;
-    this.entities = scene.entities.map((def) => this.createEntity(def));
+    this.physics = options.physics ?? createPhysics(scene.world?.physics ?? "arcade", { width: this.width, height: this.height, gravity: this.gravity });
+    const world = this;
+    this.physicsHost = {
+      get entities() {
+        return world.entities;
+      },
+      width: this.width,
+      height: this.height,
+      gravity: this.gravity,
+      emit: (event) => this.emit(event),
+    };
+    this.entities = [];
+    for (const def of scene.entities) this.entities.push(this.createEntity(def));
   }
 
   /** Validates raw scene JSON and builds a world, throwing on errors. */
@@ -233,7 +262,8 @@ export class World {
     this.updateScripts(input, pressed);
     if (this.over) return;
     this.updatePatrols();
-    this.updateBodies();
+    this.updateTweens();
+    this.physics.step(this.physicsHost);
     this.updateTouches();
     if (this.over) return;
     this.updateCollectibles();
@@ -253,6 +283,7 @@ export class World {
         vy: e.body?.vy ?? 0,
         grounded: e.body?.grounded ?? false,
       };
+      if (e.transform.rotation !== 0) entities[e.id]!.rotation = e.transform.rotation;
       // A JSON copy, so later frames can't change an earlier snapshot.
       if (Object.keys(e.state).length > 0) entities[e.id]!.state = JSON.parse(JSON.stringify(e.state));
     }
@@ -267,6 +298,7 @@ export class World {
     const index = this.entities.indexOf(entity);
     if (index >= 0) this.entities.splice(index, 1);
     entity.removed = true;
+    this.physics.remove(entity, this.physicsHost);
   }
 
   // ---------------------------------------------------------------- scripts
@@ -285,6 +317,7 @@ export class World {
       }
       entity.script = { ...resolved, params: { ...resolved.params }, module, started: false, touching: new Set() };
     }
+    this.physics.add(entity, this.physicsHost);
     return entity;
   }
 
@@ -308,7 +341,7 @@ export class World {
       if (!e.script?.module.touch || !e.body || e.removed) continue;
       const now = new Set<string>();
       for (const other of this.entities) {
-        if (other !== e && other.body && overlaps(e, other, TOUCH_MARGIN)) now.add(other.id);
+        if (other !== e && other.body && this.physics.overlaps(e, other, TOUCH_MARGIN)) now.add(other.id);
       }
       for (const id of now) {
         const other = this.get(id);
@@ -343,8 +376,25 @@ export class World {
     }
   }
 
+  /**
+   * Runs an entity's `sound` hook. Called by the browser, never by the simulation.
+   * Like draw hooks, `self` and `world` are read-only for the duration.
+   */
+  callSoundHook(entity: Entity, extras: Omit<SoundContext, "self" | "world" | "params">): void {
+    const script = entity.script;
+    const fn = script?.module.sound;
+    if (!script || !fn || entity.removed) return;
+    const ctx: SoundContext = { ...extras, self: this.handle(entity), world: this.api(), params: script.params };
+    this.drawing = true;
+    try {
+      this.run(entity, "sound", () => fn.call(script.module, ctx));
+    } finally {
+      this.drawing = false;
+    }
+  }
+
   /** True when any live entity's script has the given hook. */
-  hasHook(hook: "draw" | "drawUI"): boolean {
+  hasHook(hook: "draw" | "drawUI" | "sound"): boolean {
     return this.entities.some((e) => !e.removed && typeof e.script?.module[hook] === "function");
   }
 
@@ -365,7 +415,7 @@ export class World {
   /** Draw hooks only paint, so the browser can't drift from what tests verified. */
   private guard(what: string): void {
     if (this.drawing) {
-      throw this.misuse(`${what} changes the game, which a draw hook can't do. Change the game in update or touch, and keep visual memory in ctx.local.`);
+      throw this.misuse(`${what} changes the game, which a ${this.current?.hook === "sound" ? "sound" : "draw"} hook can't do. Change the game in update or touch, and keep presentation memory in ctx.local.`);
     }
   }
 
@@ -418,6 +468,41 @@ export class World {
       get grounded() {
         return e.body?.grounded ?? false;
       },
+      get rotation() {
+        return e.transform.rotation;
+      },
+      set rotation(value: number) {
+        world.guard("Setting rotation");
+        e.transform.rotation = value;
+      },
+      get angularVelocity() {
+        return e.body ? world.physics.angularVelocity(e) : 0;
+      },
+      set angularVelocity(value: number) {
+        world.guard("Setting angularVelocity");
+        if (e.body) world.physics.setAngularVelocity(e, value);
+      },
+      get mass() {
+        return e.body ? world.physics.mass(e) : 0;
+      },
+      applyImpulse(x: number, y: number, at?: { x: number; y: number }) {
+        world.guard("applyImpulse");
+        if (e.body) world.physics.applyImpulse(e, x, y, at);
+      },
+      tween(def: Parameters<ScriptEntity["tween"]>[0]) {
+        world.guard("tween");
+        const { diagnostics } = validateScene({ entities: [{ id: e.id, components: { transform: { x: 0, y: 0 }, ...(e.sprite ? { sprite: {} } : {}), tween: def as Record<string, unknown> } }] });
+        const problem = diagnostics.find((d) => d.severity === "error");
+        if (problem) throw world.misuse(`self.tween: ${problem.message}${problem.fix ? ` ${problem.fix}` : ""}`);
+        const spec = resolveComponent<Tween>("tween", { ...def, on: "" });
+        // A new tween of the same property replaces the old one.
+        e.tweens = [...(e.tweens ?? []).filter((t) => t.property !== spec.property), createTween(spec, readTweened(e, spec.property))];
+      },
+      applyForce(x: number, y: number, at?: { x: number; y: number }) {
+        world.guard("applyForce");
+        // A force acts over the frame: the impulse it delivers in one step.
+        if (e.body) world.physics.applyImpulse(e, x * FIXED_DT, y * FIXED_DT, at);
+      },
       get width() {
         return e.body?.width ?? e.sprite?.width ?? 0;
       },
@@ -436,7 +521,7 @@ export class World {
       },
       touches(other: ScriptEntity | string) {
         const target = world.get(typeof other === "string" ? other : other.id);
-        return !!target && target !== e && !e.removed && overlaps(e, target, TOUCH_MARGIN);
+        return !!target && target !== e && !e.removed && world.physics.overlaps(e, target, TOUCH_MARGIN);
       },
     };
     this.handles.set(e, handle);
@@ -546,6 +631,20 @@ export class World {
         const by = world.current?.entity;
         world.emit({ type: "custom", name, entity: by?.id ?? "script", data, x: by?.transform.x ?? 0, y: by?.transform.y ?? 0 });
       },
+      raycast: (from, to, options = {}) => {
+        const ignore = [options.ignore ?? []].flat().map((target) => world.resolve(target)).filter((e): e is Entity => !!e);
+        const hit = world.physics.raycast(world.physicsHost, from, to, { ignore, sensors: options.sensors });
+        return hit ? { ...hit, entity: world.handle(hit.entity) } : undefined;
+      },
+      physics: {
+        get name() {
+          return world.physics.name;
+        },
+        get raw() {
+          world.guard("world.physics.raw");
+          return world.physics.raw?.((target) => (target && (typeof target === "string" || typeof target === "object") ? world.resolve(target as ScriptEntity | string) : undefined));
+        },
+      },
       random: () => {
         world.guard("world.random (it advances the game's seed; use ctx.random in draw hooks)");
         return world.random();
@@ -645,6 +744,41 @@ export class World {
     }
   }
 
+  /**
+   * Eases tweened values. Moving bodies get the velocity that lands them on this step's
+   * value, so the physics engine moves them (and carries riders); everything else is set.
+   */
+  private updateTweens(): void {
+    // Tweens waiting for an event start when it fires.
+    const fresh = this.events.slice(this.tweenEvents);
+    this.tweenEvents = this.events.length;
+    const fired = new Set(fresh.map((e) => (e.type === "custom" ? e.name : e.type)));
+    for (const e of this.entities) {
+      if (!e.tweens) continue;
+      for (const tween of e.tweens) {
+        if (!tween.active && !tween.done && tween.on !== "" && fired.has(tween.on)) startTween(tween, readTweened(e, tween.property));
+        const settling = tween.done && tween.settle;
+        const value = advanceTween(tween, FIXED_DT);
+        const b = e.body;
+        const moved = (tween.property === "x" || tween.property === "y") && b && b.type !== "static";
+        if (value === undefined) {
+          // A body that just arrived stops there.
+          if (settling && moved) {
+            if (tween.property === "x") b.vx = 0;
+            else b.vy = 0;
+          }
+          tween.settle = false;
+          continue;
+        }
+        tween.settle = tween.done;
+        if (moved) {
+          if (tween.property === "x") b.vx = (value - e.transform.x) / FIXED_DT;
+          else b.vy = (value - e.transform.y) / FIXED_DT;
+        } else writeTweened(e, tween.property, value);
+      }
+    }
+  }
+
   /** Points each patrolling body toward the end of its path it is heading for. */
   private updatePatrols(): void {
     for (const e of this.entities) {
@@ -662,98 +796,14 @@ export class World {
     }
   }
 
-  private updateBodies(): void {
-    // Kinematic bodies move first, so anything standing on them can follow.
-    const moved = new Map<Entity, { dx: number; dy: number }>();
-    const walls = this.entities.filter((e) => e.body?.type === "static" && !e.body.sensor);
-    for (const e of this.entities) {
-      const b = e.body;
-      if (!b || b.type !== "kinematic") continue;
-      const { x, y } = e.transform;
-      e.transform.x += b.vx * FIXED_DT;
-      // A player-steered kinematic body (a paddle) stops at walls; scripted movers pass through.
-      if (e.topdown) for (const wall of walls) if (overlaps(e, wall)) e.transform.x = wall.transform.x + (Math.sign(e.transform.x - wall.transform.x) * (wall.body!.width + b.width)) / 2;
-      e.transform.y += b.vy * FIXED_DT;
-      if (e.topdown) for (const wall of walls) if (overlaps(e, wall)) e.transform.y = wall.transform.y + (Math.sign(e.transform.y - wall.transform.y) * (wall.body!.height + b.height)) / 2;
-      if (e.patrol) clampToPatrol(e, e.patrol);
-      if (e.topdown?.clampToWorld) this.clampToWorld(e);
-      moved.set(e, { dx: e.transform.x - x, dy: e.transform.y - y });
-    }
-
-    const solids = this.entities.filter((e) => e.body && !e.body.sensor && e.body.type !== "dynamic");
-
-    for (const e of this.entities) {
-      const b = e.body;
-      if (!b || b.type !== "dynamic") continue;
-
-      const carried = b.standingOn && moved.get(b.standingOn);
-      if (carried) {
-        e.transform.x += carried.dx;
-        e.transform.y += carried.dy;
-      }
-
-      // Top-down movers ignore gravity; everything else falls.
-      if (!e.topdown) b.vy = Math.min(b.vy + this.gravity * b.gravityScale * FIXED_DT, MAX_FALL_SPEED);
-      const wasGrounded = b.grounded;
-      b.grounded = false;
-      b.standingOn = undefined;
-
-      // Resolve each axis separately so bodies slide along walls and floors.
-      e.transform.x += b.vx * FIXED_DT;
-      for (const solid of solids) {
-        if (!overlaps(e, solid)) continue;
-        const half = (solid.body!.width + b.width) / 2;
-        if (b.vx > 0) e.transform.x = solid.transform.x - half;
-        else if (b.vx < 0) e.transform.x = solid.transform.x + half;
-        b.vx = this.rebound(e, solid, b.vx);
-      }
-
-      e.transform.y += b.vy * FIXED_DT;
-      for (const solid of solids) {
-        if (!overlaps(e, solid)) continue;
-        const half = (solid.body!.height + b.height) / 2;
-        const falling = b.vy > 0;
-        if (b.vy > 0) e.transform.y = solid.transform.y - half;
-        else if (b.vy < 0) e.transform.y = solid.transform.y + half;
-        b.vy = this.rebound(e, solid, b.vy);
-        // A body that stopped on top of something is standing on it; one that bounced off is airborne.
-        if (falling && b.vy === 0) {
-          b.grounded = true;
-          b.standingOn = solid;
-        }
-      }
-
-      if (e.topdown?.clampToWorld) this.clampToWorld(e);
-      if (b.grounded && !wasGrounded) this.emit({ type: "land", entity: e.id, ...feet(e) });
-    }
-  }
-
-  /**
-   * The velocity along one axis after hitting `solid`: 0, or reversed and scaled by `bounce`.
-   * Slow impacts stop instead, so resting bodies don't jitter.
-   */
-  private rebound(e: Entity, solid: Entity, velocity: number): number {
-    const bounce = e.body!.bounce;
-    if (bounce <= 0 || Math.abs(velocity) * bounce < MIN_BOUNCE_SPEED) return 0;
-    this.emit({ type: "bounce", entity: e.id, other: solid.id, ...e.transform });
-    return -velocity * bounce;
-  }
-
-  private clampToWorld(e: Entity): void {
-    const halfWidth = (e.body?.width ?? 0) / 2;
-    const halfHeight = (e.body?.height ?? 0) / 2;
-    e.transform.x = Math.min(this.width - halfWidth, Math.max(halfWidth, e.transform.x));
-    e.transform.y = Math.min(this.height - halfHeight, Math.max(halfHeight, e.transform.y));
-  }
-
   private updateCollectibles(): void {
     const players = this.players();
     for (const item of this.entities.filter((e) => e.collectible && e.body)) {
-      const collector = players.find((p) => overlaps(p, item));
+      const collector = players.find((p) => this.physics.overlaps(p, item));
       if (!collector) continue;
       this.remove(item);
       this.score += item.collectible!.score;
-      this.emit({ type: "collect", entity: collector.id, item: item.id, score: item.collectible!.score, ...item.transform });
+      this.emit({ type: "collect", entity: collector.id, item: item.id, score: item.collectible!.score, ...at(item) });
     }
   }
 
@@ -765,12 +815,12 @@ export class World {
         continue;
       }
       for (const hazard of this.entities.filter((e) => e.hazard && e.body)) {
-        if (!overlaps(player, hazard)) continue;
+        if (!this.physics.overlaps(player, hazard)) continue;
         if (hazard.hazard!.stompable && player.platformer && isStomp(player, hazard)) {
           this.remove(hazard);
           b.vy = -player.platformer!.jumpSpeed * STOMP_BOUNCE;
           this.score += hazard.hazard!.score;
-          this.emit({ type: "stomp", entity: player.id, enemy: hazard.id, score: hazard.hazard!.score, ...hazard.transform });
+          this.emit({ type: "stomp", entity: player.id, enemy: hazard.id, score: hazard.hazard!.score, ...at(hazard) });
           continue;
         }
         this.kill(player, hazard.id);
@@ -782,11 +832,11 @@ export class World {
   private updateGoals(): void {
     for (const goal of this.entities.filter((e) => e.goal && e.body)) {
       if (this.score < goal.goal!.requireScore) continue;
-      const player = this.players().find((p) => overlaps(p, goal));
+      const player = this.players().find((p) => this.physics.overlaps(p, goal));
       if (!player) continue;
       this.won = true;
       if (goal.goal!.next) this.exit = goal.goal!.next;
-      this.emit({ type: "win", entity: player.id, goal: goal.id, ...goal.transform });
+      this.emit({ type: "win", entity: player.id, goal: goal.id, ...at(goal) });
       return;
     }
   }
@@ -796,11 +846,11 @@ export class World {
     for (const checkpoint of this.entities.filter((e) => e.checkpoint && e.body)) {
       for (const player of this.players()) {
         const key = `${player.id}>${checkpoint.id}`;
-        if (this.reached.has(key) || !overlaps(player, checkpoint)) continue;
+        if (this.reached.has(key) || !this.physics.overlaps(player, checkpoint)) continue;
         this.reached.add(key);
         const bottom = checkpoint.transform.y + checkpoint.body!.height / 2;
         player.spawn = { x: checkpoint.transform.x, y: player.platformer ? bottom - player.body!.height / 2 : checkpoint.transform.y };
-        this.emit({ type: "checkpoint", entity: player.id, checkpoint: checkpoint.id, ...checkpoint.transform });
+        this.emit({ type: "checkpoint", entity: player.id, checkpoint: checkpoint.id, ...at(checkpoint) });
       }
     }
   }
@@ -816,7 +866,7 @@ export class World {
   private kill(player: Entity, cause: string): void {
     const b = player.body!;
     this.deaths++;
-    this.emit({ type: "die", entity: player.id, cause, ...player.transform });
+    this.emit({ type: "die", entity: player.id, cause, ...at(player) });
     if (this.lives !== undefined) {
       this.lives--;
       // Out of lives: the player stays where it fell and the game is over.
@@ -839,7 +889,7 @@ export class World {
 
 function createEntity(def: EntityDef): Entity {
   const c = def.components;
-  const transform = c.transform ? resolveComponent<Transform>("transform", c.transform) : { x: 0, y: 0 };
+  const transform = c.transform ? resolveComponent<Transform>("transform", c.transform) : { x: 0, y: 0, rotation: 0 };
   const entity: Entity = { id: def.id, state: {}, transform };
   if (c.body) entity.body = { ...resolveComponent<Body>("body", c.body), grounded: false };
   if (c.sprite) entity.sprite = resolveComponent<Sprite>("sprite", c.sprite);
@@ -858,22 +908,31 @@ function createEntity(def: EntityDef): Entity {
   if (c.hazard) entity.hazard = resolveComponent<Hazard>("hazard", c.hazard);
   if (c.goal) entity.goal = resolveComponent<Goal>("goal", c.goal);
   if (c.checkpoint) entity.checkpoint = {};
+  if (c.joint) entity.joints = (Array.isArray(c.joint) ? c.joint : [c.joint]).map((j) => resolveComponent<Joint>("joint", j as Record<string, unknown>));
   if (c.emitter) entity.emitter = resolveComponent<Emitter>("emitter", c.emitter);
   if (c.camera) entity.camera = resolveComponent<Camera>("camera", c.camera);
+  if (c.cameraZone) entity.cameraZone = resolveComponent<CameraZone>("cameraZone", c.cameraZone);
+  if (c.tween) {
+    entity.tweens = (Array.isArray(c.tween) ? c.tween : [c.tween]).map((t) => {
+      const spec = resolveComponent<Tween>("tween", t as Record<string, unknown>);
+      return createTween(spec, readTweened(entity, spec.property));
+    });
+  }
   return entity;
+}
+
+function readTweened(e: Entity, property: Tween["property"]): number {
+  if (property === "x" || property === "y" || property === "rotation") return e.transform[property];
+  return e.sprite?.[property] ?? 1;
+}
+
+function writeTweened(e: Entity, property: Tween["property"], value: number): void {
+  if (property === "x" || property === "y" || property === "rotation") e.transform[property] = value;
+  else if (e.sprite) e.sprite[property] = Math.max(0, value);
 }
 
 function isPlayer(e: Entity): boolean {
   return !!(e.platformer || e.topdown) && !!e.body;
-}
-
-function feet(e: Entity): { x: number; y: number } {
-  return { x: e.transform.x, y: e.transform.y + (e.body?.height ?? 0) / 2 };
-}
-
-function clampToPatrol(e: Entity, patrol: PatrolState): void {
-  if (patrol.axis === "x") e.transform.x = Math.min(patrol.originX + patrol.distance, Math.max(patrol.originX, e.transform.x));
-  else e.transform.y = Math.min(patrol.originY + patrol.distance, Math.max(patrol.originY, e.transform.y));
 }
 
 /** A stomp is a falling player whose feet were above the enemy's top on the previous frame. */
@@ -885,14 +944,5 @@ function isStomp(player: Entity, enemy: Entity): boolean {
   return previousBottom <= enemyTop + STOMP_TOLERANCE;
 }
 
-/**
- * Strict overlap: bodies that merely touch (e.g. standing on the ground) do not overlap.
- * A positive `margin` grows both boxes, so touching counts too.
- */
-export function overlaps(a: Entity, b: Entity, margin = 0): boolean {
-  if (!a.body || !b.body) return false;
-  return (
-    Math.abs(a.transform.x - b.transform.x) < (a.body.width + b.body.width) / 2 + margin - EPSILON &&
-    Math.abs(a.transform.y - b.transform.y) < (a.body.height + b.body.height) / 2 + margin - EPSILON
-  );
-}
+/** AABB overlap, as the arcade engine computes it. Kept here for code that imported it from the world. */
+export { overlaps } from "./arcade.ts";

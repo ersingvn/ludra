@@ -39,6 +39,8 @@ Then customize. Change `params` (speed, range, delay), restyle the art, and comb
 
 **Telegraph danger.** The player should see a threat before it can hurt them: enemies visible from a distance, turrets that fire on a rhythm, platforms that shake before they fall. No hazards that appear without warning.
 
+**Frame each space.** A camera zone per room or floor shows exactly the space the player is in, never the next puzzle's solution; a fixed or zoomed-out zone turns a big moment (a boss, the goal, a view from the top) into a shot. Motion with easing reads as built, not scripted: a lift that eases and pauses at each floor, a gate that rises when a lantern is lit (`"on": "checkpoint"`), coins that bob.
+
 **Readable paths.** The way forward should be obvious. Use coins as breadcrumbs to suggest a route or a jump arc. Optional secrets are fine; mandatory hidden paths are not.
 
 **Respect the numbers.** With the defaults, a jump rises ~128px and reaches ~180px. Design jumps at **≤ 80%** of that (rises ≤ 100px, gaps ≤ 140px), so a human with imperfect timing still makes them.
@@ -66,11 +68,11 @@ Every player action deserves feedback. Add `effects` for each event the level us
 
 | Moment | Feedback |
 | --- | --- |
-| jump, land | small dust puff (5-6 particles, short life), soft sound (`jump`, `thud`) |
-| collect | bright burst in the item's color, `coin` |
-| stomp | burst in the enemy's color, `hit`, shake 4-6 |
-| die | big red burst, `explosion`, shake 8-10 |
-| win | large burst in the goal's color, `powerup` |
+| jump, land | small dust puff (5-6 particles, short life), a soft sound in the ground's material |
+| collect | bright burst in the item's color, a bright sound that fits the item (a chime, a glint, a crystal ring) |
+| stomp | burst in the enemy's color, a squash, shake 4-6 |
+| die | big red burst, the sound of what killed you, shake 8-10 |
+| win | large burst in the goal's color, a short fanfare in the music's key |
 | custom (`door-open`, `teleport`...) | a burst in the object's color and a sound that matches it |
 
 - **Shake is seasoning.** Use it only for big moments (stomp, death, doors), never for every jump, and keep it ≤ 10.
@@ -135,9 +137,24 @@ SVG sprites are the starting point, not the ceiling. Draw hooks hand you the rea
 
 Look at screenshots after every visual step, at the start, mid-action, and at the win screen (`--screenshot 0.5s,2s,end` with a winning input). Ask: does it match the mood line? Can you still read every hazard instantly? Is the player still the eye's first stop?
 
+### Physics games
+
+When the game runs on rapier, physics is the material you design with. Treat it like any other mechanic: teach it, test it, twist it.
+
+- **Make weight readable.** Big and dark reads heavy, small and bright reads light; set `density` to match, so what looks heavy behaves heavy. A wrecking ball is dense; a stack of crates isn't.
+- **Show the joints.** A rope, chain or hinge pin drawn in a draw hook tells the player how things will move before they move.
+- **Let the player cause the chaos.** A structure that collapses on its own is noise; one that stands until the player kicks the right crate is a puzzle. Prove it stands still with no input.
+- **Keep it fair.** Physics is deterministic here, so a solution that worked once always works: prove every physics puzzle is solvable with a test, and sweep timings like any other level.
+- **Reward with physics.** Things that topple, swing and bounce after a good move are the juice: add shake, sound and particles on the impact events your scripts emit.
+
 ## 7. Sound
 
-Every player action and every important event gets a sound. Use presets that match: `jump`, `thud` for landing, `coin`, `hit` for stomps, `explosion` for deaths and big impacts, `powerup` for rewards and wins, `blip` for small UI-like events (turret shots, switches). Don't stack many loud sounds in one moment.
+Sound is half of how a game feels, and nothing limits it. Every player action and every important event gets a sound, and all of them come from the same world.
+
+- **Design the game's own sounds** in `"sounds"`. Presets are placeholders; a finished game doesn't use them. Start from the material and the mood: a wooden game thumps and creaks, a crystal cave rings, a neon arcade zaps. Give repeated sounds `vary` so they never sound copied.
+- **Write music for the mood.** A lullaby for a night meadow (slow, major, soft triangle melody), dorian adventure for a cliff at dusk, synthwave for neon (sixteenth arpeggios, pumping bass, four-on-the-floor). A melody that returns makes a level memorable. Wins and checkpoints sound best as short motifs in the music's key.
+- **Let the world make sound.** A `sound` hook can follow the game continuously: wind with height, an engine with speed, the hiss of a swinging hazard that warns before it arrives. That is anticipation through sound.
+- **Mix.** Effects sit on top, music under them, ambience under the music. Don't stack many loud sounds in one moment.
 
 ## 8. Ideas for mechanics
 
@@ -159,8 +176,9 @@ Most of these are one short script. Use them to make each game feel different:
 - [ ] A test proves it's completable with `deaths == 0`, and each mechanic has its own isolated test
 - [ ] Critical jumps work across a ≥ 0.2s window
 - [ ] Screenshots of the start, the hardest moment and the goal look right
-- [ ] Every event in the level has an effect and a sound
+- [ ] Every event in the level has an effect and a sound of the game's own, and the game has music that fits its mood
 - [ ] The palette is consistent and the player is the most visible thing on screen
+- [ ] Physics levels (rapier) stand still with no input, and their solution is proven by a test
 - [ ] It has a mood: a painted backdrop or lighting, its own `drawUI` interface and win screen, and a finishing shader; not flat sprites with the default HUD
 - [ ] `ludra.json` has a real name, not the folder name
 - [ ] You can state the hook in one sentence, and the level is about it

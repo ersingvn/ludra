@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createServer, type Server, type ServerResponse } from "node:http";
 import { stripTypeScriptTypes } from "node:module";
+import { createRequire } from "node:module";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { collectAssetPaths } from "@ludra/core";
@@ -33,6 +34,42 @@ export interface GameServer {
   server: Server;
   /** URL path of the engine's browser module, for `import()` in the page. */
   browserModule: string;
+  /** URL path of @ludra/physics, imported only by pages whose scene uses rapier. */
+  physicsModule: string;
+  /**
+   * A `<script type="importmap">` tag that lets the browser resolve "@ludra/core" and Rapier
+   * without a bundler. Pages put it before their first module script.
+   */
+  importMap: string;
+}
+
+/** Where the engine's packages are on disk, and the URLs the browser loads them from. */
+function enginePaths() {
+  const coreEntry = fileURLToPath(import.meta.resolve("@ludra/core/browser"));
+  const coreDir = dirname(coreEntry);
+  const coreIndex = fileURLToPath(import.meta.resolve("@ludra/core"));
+  const physicsEntry = fileURLToPath(import.meta.resolve("@ludra/physics"));
+  const physicsDir = dirname(physicsEntry);
+  // Rapier's ES module sits next to the CommonJS entry require() finds.
+  const rapierFile = join(dirname(createRequire(physicsEntry).resolve("@dimforge/rapier2d-deterministic-compat")), "rapier.mjs");
+  const url = (prefix: string, dir: string, file: string) => `${prefix}${relative(dir, file).replaceAll(sep, "/")}`;
+  return {
+    coreDir,
+    physicsDir,
+    rapierFile,
+    browserModule: url("/__ludra/core/", coreDir, coreEntry),
+    physicsModule: url("/__ludra/physics/", physicsDir, physicsEntry),
+    imports: { "@ludra/core": url("/__ludra/core/", coreDir, coreIndex), "@dimforge/rapier2d-deterministic-compat": "/__ludra/rapier.mjs" },
+  };
+}
+
+/** Serves an engine source file, type-stripped when it is TypeScript. */
+function serveModule(res: ServerResponse, dir: string, path: string): void {
+  const file = join(dir, decodeURIComponent(path));
+  if (!file.startsWith(dir + sep) || !existsSync(file)) return notFound(res);
+  const source = readFileSync(file, "utf8");
+  res.writeHead(200, { "content-type": "text/javascript; charset=utf-8" });
+  res.end(extname(file) === ".ts" ? stripTypeScriptTypes(source) : source);
 }
 
 /**
@@ -41,20 +78,20 @@ export interface GameServer {
  * source, its TypeScript files are type-stripped on the fly.
  * `indexHtml` builds the page served at "/".
  */
-export function createGameServer(project: Project, indexHtml: (browserModule: string) => string): GameServer {
-  const coreEntry = fileURLToPath(import.meta.resolve("@ludra/core/browser"));
-  const coreDir = dirname(coreEntry);
-  const browserModule = `/__ludra/core/${relative(coreDir, coreEntry).replaceAll(sep, "/")}`;
+export function createGameServer(project: Project, indexHtml: (page: { browserModule: string; physicsModule: string; importMap: string }) => string): GameServer {
+  const paths = enginePaths();
+  const { browserModule, physicsModule } = paths;
+  const importMap = `<script type="importmap">${JSON.stringify({ imports: paths.imports })}</script>`;
 
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     try {
       if (url.pathname === "/") {
         res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-        res.end(indexHtml(browserModule));
+        res.end(indexHtml({ browserModule, physicsModule, importMap }));
       } else if (url.pathname === BLANK_PATH) {
         res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-        res.end('<!doctype html><html><head><meta charset="utf-8"><title>Ludra</title></head><body style="margin:0"></body></html>');
+        res.end(`<!doctype html><html><head><meta charset="utf-8"><title>Ludra</title>${importMap}</head><body style="margin:0"></body></html>`);
       } else if (url.pathname === "/__ludra/scene") {
         // ?path= picks another scene, for goals with "next" and world.goto.
         const { scene, diagnostics } = readScene(project, url.searchParams.get("path") ?? undefined);
@@ -84,11 +121,13 @@ export function createGameServer(project: Project, indexHtml: (browserModule: st
         res.writeHead(200, { "content-type": type, "cache-control": "no-cache" });
         res.end(readFileSync(file));
       } else if (url.pathname.startsWith("/__ludra/core/")) {
-        const file = join(coreDir, decodeURIComponent(url.pathname.slice("/__ludra/core/".length)));
-        if (!file.startsWith(coreDir + sep) || !existsSync(file)) return notFound(res);
-        const source = readFileSync(file, "utf8");
-        res.writeHead(200, { "content-type": "text/javascript; charset=utf-8" });
-        res.end(extname(file) === ".ts" ? stripTypeScriptTypes(source) : source);
+        serveModule(res, paths.coreDir, url.pathname.slice("/__ludra/core/".length));
+      } else if (url.pathname.startsWith("/__ludra/physics/")) {
+        serveModule(res, paths.physicsDir, url.pathname.slice("/__ludra/physics/".length));
+      } else if (url.pathname === "/__ludra/rapier.mjs") {
+        // Rapier with its WebAssembly inlined: one file, a few MB, loaded only by rapier scenes.
+        res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "max-age=3600" });
+        res.end(readFileSync(paths.rapierFile));
       } else {
         notFound(res);
       }
@@ -97,7 +136,7 @@ export function createGameServer(project: Project, indexHtml: (browserModule: st
       res.end((err as Error).message);
     }
   });
-  return { server, browserModule };
+  return { server, browserModule, physicsModule, importMap };
 }
 
 /** Changes whenever a scene, prefab or any file they reference changes, so the page knows to reload. */

@@ -63,7 +63,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p "$RUNNER_TEMP/pack" "$RUNNER_TEMP/app"
-          npm pack --workspace packages/core --workspace packages/cli --pack-destination "$RUNNER_TEMP/pack"
+          npm pack --workspace packages/core --workspace packages/physics --workspace packages/cli --pack-destination "$RUNNER_TEMP/pack"
           cd "$RUNNER_TEMP/app"
           npm init -y > /dev/null
           npm install "$RUNNER_TEMP"/pack/*.tgz

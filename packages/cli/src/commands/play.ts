@@ -25,6 +25,7 @@ export interface PlayOptions {
   ascii?: boolean;
   columns?: string;
   screenshot?: string;
+  debug?: boolean;
   out?: string;
   json?: boolean;
 }
@@ -119,7 +120,7 @@ async function takeScreenshots(project: Project, options: PlayOptions, lastFrame
 
   const outDir = resolve(project.dir, options.out ?? "screenshots");
   mkdirSync(outDir, { recursive: true });
-  const captured = await captureScreenshots(project, { scene: options.scene, inputs: options.inputs ?? "", frames });
+  const captured = await captureScreenshots(project, { scene: options.scene, inputs: options.inputs ?? "", frames, debug: options.debug });
   return captured.map((shot) => {
     const path = join(outDir, `t-${fixed(shot.time, 2)}s.png`);
     writeFileSync(path, Buffer.from(shot.png.slice(shot.png.indexOf(",") + 1), "base64"));
@@ -129,16 +130,22 @@ async function takeScreenshots(project: Project, options: PlayOptions, lastFrame
 
 function printTimeline(rows: Row[], watch: string[]): void {
   const idWidth = Math.max(6, ...watch.map((id) => id.length));
+  // A rotation column only when something watched turns (rapier physics).
+  const turns = rows.some((row) => watch.some((id) => row.entities[id]?.rotation !== undefined));
   console.log(
-    paint("dim", `\n  ${pad("time", 7)} ${pad("input", 14)} ${pad("entity", idWidth)} ${padStart("x", 8)} ${padStart("y", 8)} ${padStart("vx", 8)} ${padStart("vy", 8)}  grounded`),
+    paint(
+      "dim",
+      `\n  ${pad("time", 7)} ${pad("input", 14)} ${pad("entity", idWidth)} ${padStart("x", 8)} ${padStart("y", 8)} ${padStart("vx", 8)} ${padStart("vy", 8)}${turns ? ` ${padStart("rot°", 8)}` : ""}  grounded`,
+    ),
   );
   for (const row of rows) {
     watch.forEach((id, i) => {
       const e = row.entities[id];
       const time = i === 0 ? pad(`${fixed(row.time, 2)}s`, 7) : " ".repeat(7);
       const input = i === 0 ? pad(row.input.join("+") || "-", 14) : " ".repeat(14);
+      const rotation = turns ? ` ${padStart(fixed(e?.rotation ?? 0), 8)}` : "";
       const values = e
-        ? `${padStart(fixed(e.x), 8)} ${padStart(fixed(e.y), 8)} ${padStart(fixed(e.vx), 8)} ${padStart(fixed(e.vy), 8)}  ${e.grounded ? "yes" : "no"}`
+        ? `${padStart(fixed(e.x), 8)} ${padStart(fixed(e.y), 8)} ${padStart(fixed(e.vx), 8)} ${padStart(fixed(e.vy), 8)}${rotation}  ${e.grounded ? "yes" : "no"}`
         : paint("dim", "(removed)");
       console.log(`  ${time} ${input} ${pad(id, idWidth)} ${values}`);
     });

@@ -22,7 +22,7 @@
   },
   "effects": {
     "bounce": {
-      "sound": "blip",
+      "sound": "zap",
       "particles": {
         "count": 5,
         "color": "#fff3b0",
@@ -33,22 +33,22 @@
       }
     },
     "brick": {
-      "sound": "hit",
+      "sound": "shatter",
       "shake": 4
     },
     "launch": {
-      "sound": "jump"
+      "sound": "launch"
     },
     "die": {
-      "sound": "explosion",
+      "sound": "meltdown",
       "shake": 10
     },
     "gameover": {
-      "sound": "explosion",
+      "sound": "power-down",
       "shake": 14
     },
     "win": {
-      "sound": "powerup",
+      "sound": "high-score",
       "shake": 4,
       "particles": {
         "count": 80,
@@ -59,6 +59,195 @@
         "gravity": 0
       }
     }
+  },
+  "sounds": {
+    "zap": {
+      "tones": [
+        {
+          "wave": "square",
+          "from": 660,
+          "to": 720,
+          "duration": 0.05,
+          "volume": 0.09
+        }
+      ],
+      "vary": 0.08
+    },
+    "shatter": {
+      "tones": [
+        {
+          "wave": "square",
+          "from": 880,
+          "to": 440,
+          "duration": 0.08,
+          "volume": 0.09
+        }
+      ],
+      "noise": [
+        {
+          "filter": "highpass",
+          "from": 3000,
+          "to": 1500,
+          "duration": 0.12,
+          "volume": 0.18
+        }
+      ],
+      "vary": 0.12
+    },
+    "launch": {
+      "tones": [
+        {
+          "wave": "sawtooth",
+          "from": 200,
+          "to": 800,
+          "duration": 0.25,
+          "volume": 0.126
+        }
+      ],
+      "noise": [
+        {
+          "filter": "bandpass",
+          "from": 1000,
+          "to": 4000,
+          "duration": 0.25,
+          "volume": 0.072
+        }
+      ]
+    },
+    "meltdown": {
+      "tones": [
+        {
+          "wave": "sawtooth",
+          "from": 400,
+          "to": 40,
+          "duration": 0.6,
+          "volume": 0.18
+        }
+      ],
+      "noise": [
+        {
+          "from": 2000,
+          "to": 80,
+          "duration": 0.6,
+          "volume": 0.324
+        }
+      ]
+    },
+    "power-down": {
+      "tones": [
+        {
+          "wave": "square",
+          "from": 440,
+          "to": 220,
+          "duration": 0.5,
+          "volume": 0.108
+        },
+        {
+          "wave": "square",
+          "from": 330,
+          "to": 110,
+          "start": 0.4,
+          "duration": 0.9,
+          "volume": 0.108
+        }
+      ],
+      "noise": [
+        {
+          "from": 1500,
+          "to": 60,
+          "duration": 1.2,
+          "volume": 0.18
+        }
+      ]
+    },
+    "high-score": {
+      "tones": [
+        {
+          "wave": "square",
+          "from": 440,
+          "start": 0,
+          "duration": 0.12,
+          "volume": 0.108
+        },
+        {
+          "wave": "square",
+          "from": 554,
+          "start": 0.07,
+          "duration": 0.12,
+          "volume": 0.108
+        },
+        {
+          "wave": "square",
+          "from": 659,
+          "start": 0.14,
+          "duration": 0.12,
+          "volume": 0.108
+        },
+        {
+          "wave": "square",
+          "from": 880,
+          "start": 0.21000000000000002,
+          "duration": 0.12,
+          "volume": 0.108
+        },
+        {
+          "wave": "square",
+          "from": 1109,
+          "start": 0.28,
+          "duration": 0.6,
+          "volume": 0.108
+        }
+      ]
+    }
+  },
+  "music": {
+    "tempo": 116,
+    "steps": 4,
+    "volume": 1,
+    "tracks": [
+      {
+        "wave": "square",
+        "volume": 0.075,
+        "decay": 0.5,
+        "filter": 2200,
+        "notes": "A3 C4 E4 A4 E4 C4 A3 C4 A3 C4 E4 A4 E4 C4 A3 C4 | F3 A3 C4 F4 C4 A3 F3 A3 F3 A3 C4 F4 C4 A3 F3 A3 | C4 E4 G4 C5 G4 E4 C4 E4 C4 E4 G4 C5 G4 E4 C4 E4 | G3 B3 D4 G4 D4 B3 G3 B3 G3 B3 D4 G4 D4 B3 G3 B3"
+      },
+      {
+        "wave": "sawtooth",
+        "volume": 0.2,
+        "decay": 0.6,
+        "filter": 500,
+        "notes": "A1 - A2 - A1 - A2 - A1 - A2 - A1 - A2 - | F1 - F2 - F1 - F2 - F1 - F2 - F1 - F2 - | C2 - C3 - C2 - C3 - C2 - C3 - C2 - C3 - | G1 - G2 - G1 - G2 - G1 - G2 - G1 - G2 -"
+      },
+      {
+        "wave": "triangle",
+        "volume": 0.125,
+        "decay": 1,
+        "attack": 0.2,
+        "notes": "A4 ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ | C5 ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ | E5 ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ | D5 ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~"
+      },
+      {
+        "wave": "noise",
+        "volume": 0.375,
+        "decay": 0.5,
+        "filter": 100,
+        "notes": "X - - - x - - - X - - - x - - -"
+      },
+      {
+        "wave": "noise",
+        "volume": 0.25,
+        "decay": 0.25,
+        "filter": 2000,
+        "notes": "- - - - x - - - - - - - x - - -"
+      },
+      {
+        "wave": "noise",
+        "volume": 0.063,
+        "decay": 0.1,
+        "filter": 9000,
+        "notes": "x - x - x - x - x - x - x - x x"
+      }
+    ]
   },
   "entities": [
     {

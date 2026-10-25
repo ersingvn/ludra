@@ -43,9 +43,21 @@ Scripts can have `draw` (world space, ordered with sprites by `sprite.layer`) an
 
 Scene `fonts` load before the game starts (Google Fonts CSS or FontFace, capped at 4 s). With `postfx`, `prepare()` compiles the shader (`postfx.ts`) on a WebGL canvas that replaces the page's canvas; the game keeps drawing into the original, now offscreen, canvas, and each frame is uploaded as a texture and drawn through the shader. Shader errors keep the 2D canvas visible and show the compiler message with the shader file's own line numbers (`#line 1` after the engine's header).
 
+### Camera and tweens
+
+The camera (`camera.ts`) is a pure function of the entities, `cameraGoal`, plus a `CameraRig` that eases between goals when the zone changes. The `View` advances the rig once per simulation step, so a screenshot of a given frame always frames the same view. Camera zones never touch the `World`.
+
+Tweens (`tween.ts`) are simulation state on the entity: `World.updateTweens` runs after patrols and before physics. It starts tweens whose `on` event fired since the last step, then eases each one. A moving `x`/`y` on a non-static body becomes the velocity that lands it on this step's value (so physics moves it and riders are carried, like a patrol), followed by one step at rest when it finishes; everything else is written directly. Each pass waits out `delay`, then runs `duration`; the time that overshoots a pass carries into the next.
+
+### Sound
+
+`audio.ts` holds the `SoundPlayer`. Its graph is master gain (mute) → a compressor → the speakers, with two inputs: a per-scene bus and the music. `setScene` replaces the bus on every scene start and restart (the old one fades out, taking any script nodes with it), and keeps music playing when the next scene has the same music (compared as JSON), otherwise crossfades. A sound name resolves to the scene's own `sounds` first, then a preset, then a file. Sound definitions (`sound.ts`) are tone and noise layers with envelopes; noise comes from one shared 2 s buffer started at a random offset. Music tracks are parsed by `parseNotes` (shared with validation, so `ludra check` reports a bad token with its position) and scheduled 0.25 s ahead each frame, each track looping on its own.
+
+The `sound` hook runs in `startGame`'s frame loop after the simulation steps, once the audio context is unlocked, through `World.callSoundHook`: the same read-only guard as draw hooks, with `ctx.audio`, `ctx.out` (the scene bus) and the events since its last call. `checkDrawHooks` runs it too, against the same accept-anything Proxy standing in for the AudioContext. Audio never runs headless, so tests are unaffected.
+
 ### Game structure
 
-`validateScene` expands prefabs first: an entity with `"prefab"` gets the prefab's components with its own merged over them (`mergeComponents`, one level deep, `null` removes), so everything after it, and the `World`, only sees plain entities. The expanded scene keeps its `prefabs` map, so `world.spawn({ prefab })` works at runtime. The CLI adds `prefabs/*.prefab.json` to every scene it reads.
+`validateScene` expands tilemaps first (`tilemap.ts`): each `tilemap` component is removed and the cells it describes are appended after the scene's own entities (so error paths into the file stay right), as merged static rectangles (horizontal runs, then identical runs stacked) or prefab placements. Then it expands prefabs, including the ones tilemaps placed: an entity with `"prefab"` gets the prefab's components with its own merged over them (`mergeComponents`, one level deep, `null` removes), so everything after it, and the `World`, only sees plain entities. The expanded scene keeps its `prefabs` map, so `world.spawn({ prefab })` works at runtime. The CLI adds `prefabs/*.prefab.json` to every scene it reads.
 
 `World.over` (won, lost, or `exit` set) stops the simulation. Deaths cost `lives` when the scene has them; the last one sets `lost` and fires `gameover` without respawning. A checkpoint moves the player's `spawn` once per player. A goal's `next` and `world.goto` set `exit`: headless runs simply end there (each scene is tested on its own), while `startGame` with a `loadScene` option shows the win screen or fades, loads the next scene and builds a new `World` with `carry` (score, deaths, lives).
 
@@ -73,9 +85,29 @@ The CLI is a thin layer over core: project loading (`ludra.json`), output format
 - No `Math.random` and no `Date.now` in the simulation.
 - Input is a set of held actions per step. "Pressed" is derived from the previous step's set, so scripts and keyboards behave identically.
 
-## Physics (v0.1)
+## Physics
 
-Axis-aligned boxes. Dynamic bodies integrate gravity, then move and resolve along x, then along y, against static and kinematic solids. Top-down movers skip gravity, and a kinematic top-down body (a paddle) is pushed out of static walls; other kinematic movers pass through. `body.bounce` reflects the velocity on the axis that hit (`-v · bounce`) and emits a `bounce` event; rebounds slower than 40 px/s stop instead, so bouncing things come to rest. This is simple on purpose. It is predictable, easy to explain to an agent, and easy to replace with a full physics engine (for example Rapier) behind the same component interface later.
+Bodies are moved by a `PhysicsEngine` (`physics.ts`): it is told about every created and removed entity, advances all bodies one fixed step, and answers overlap queries. Gameplay in `World` (platformer and top-down controls, patrols, pickups, hazards, goals, checkpoints) only talks to bodies through their velocities, `grounded`/`standingOn` and `overlaps`, so engines can be swapped without changing a game's rules. The entity's transform is the source of truth between steps, so gameplay can teleport an entity (a respawn) and the engine follows. `new World(scene, { physics })` takes any engine.
+
+### Arcade (default, `arcade.ts`)
+
+Axis-aligned boxes. Dynamic bodies integrate gravity, then move and resolve along x, then along y, against static and kinematic solids. Top-down movers skip gravity, and a kinematic top-down body (a paddle) is pushed out of static walls; other kinematic movers pass through. `body.bounce` reflects the velocity on the axis that hit (`-v · bounce`) and emits a `bounce` event; rebounds slower than 40 px/s stop instead, so bouncing things come to rest. This is simple on purpose: predictable, easy to explain to an agent, and tight enough for classic platformers.
+
+### Rapier (`@ludra/physics`)
+
+A scene opts in with `"world": { "physics": "rapier" }`. Engines are found by name in a registry (`engines.ts`, shared through `globalThis` so a second copy of the module still sees it); core only knows arcade, and `loadRapierPhysics()` from `@ludra/physics` loads Rapier's WebAssembly and registers "rapier". The CLI does that in `loadGame` when a scene asks for it, so arcade games never load Rapier.
+
+`@ludra/physics` wraps Rapier's **deterministic** 2D build (`@dimforge/rapier2d-deterministic-compat`, pinned to an exact version): the same scene gives bit-identical frames on every OS, Node version and browser, which a golden-hash test checks on every CI machine. The "compat" build embeds the WebAssembly in one file, so it loads without a bundler. Rapier works in pixels directly (`lengthUnit` = 50 px per meter tunes its tolerances). Each step hands gameplay's changes to Rapier (a moved transform is a teleport, dynamic velocities are written, kinematic bodies move by velocity and patrol limits), steps, and reads positions, accumulated rotation (not wrapped to ±180°) and velocities back. A body is grounded when a non-sensor contact pushes it upward; sensors use Rapier's intersection test. Restitution combines with "max", so `bounce` means the same as in arcade.
+
+Rapier runs with its natural +y up and every value crossing over is mirrored in y (positions, velocities, gravity, angles): its character controller only applies slope limits correctly that way (with a custom "up" of (0, -1) a player walks up any slope).
+
+Players (`platformer` or `topdown` with a moving body) are kinematic bodies moved by Rapier's character controller rather than by forces: they walk up slopes up to `platformer.maxSlope` and slide back from steeper ones, step onto ledges up to `stepHeight`, slide along walls instead of sticking, and push dynamic bodies in proportion to `push`. Gravity, jump speed and the fall-speed cap keep their arcade values, so jumps reach the same height. Three details came from testing: gravity isn't applied while a player stands (pressing into the ground makes round-bottomed players lose speed), players are lifted by the controller's gap when created or respawned (one placed exactly in contact can't keep its gap and sinks in), and players standing on a kinematic mover are carried by the mover's last displacement (the controller doesn't carry a standing character on its own).
+
+Every engine also answers `mass`, `applyImpulse`, `angularVelocity` and `raycast`, which scripts reach as `self.applyImpulse/applyForce/mass/angularVelocity` and `world.raycast`. Arcade gives the simple versions (velocity += impulse / mass, no spin, a slab test against boxes); rapier uses the real ones (impulses at a point spin bodies, rays hit rotated and round shapes). `world.physics.raw` hands scripts Rapier itself (`RAPIER`, the world, each entity's body, collider and joint, and y-flip helpers), so nothing Rapier can do is out of reach; like every mutating call it throws inside draw hooks.
+
+The `joint` component is created once both its ends exist (a target can be spawned later). The other body, or an invisible fixed body for a point in the world, is Rapier's first body, so the joint measures this body relative to it: limits and motor speeds keep Ludra's clockwise sign after the y-flip. Hinges, sliders and welds join both bodies at the same point (`anchor` on this body); ropes and springs run to `toAnchor`.
+
+In the browser the dev server serves `@ludra/physics` and Rapier's single-file module, and its pages carry an import map for `@ludra/core` and Rapier, so the same unbundled modules load as in Node. `startGame` and `captureFrames` take a `loadPhysics` hook and call it only for scenes that name an engine other than arcade, so arcade games never download Rapier. Sprites draw rotated about their centers; a sprite without an image follows its body's shape (circle, capsule). The debug view (`play --screenshot --debug`, or the backquote key in `ludra dev`) draws every collider in its true shape and rotation, sensors dashed, velocities, joints, grounded players and entity ids over the frame, so an agent can check the art against the physics.
 
 ## Development
 

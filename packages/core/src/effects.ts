@@ -13,7 +13,7 @@ export const EFFECT_FIELDS: Record<string, FieldSpec> = {
   sound: {
     type: "string",
     default: "",
-    description: `A preset (${SOUND_PRESETS.join(", ")}) or an audio file path relative to the project (${AUDIO_EXTENSIONS.join(", ")}).`,
+    description: `One of the scene's own "sounds" (see "ludra components sounds"), a preset (${SOUND_PRESETS.join(", ")}) or an audio file path relative to the project (${AUDIO_EXTENSIONS.join(", ")}).`,
   },
   shake: { type: "number", min: 0, default: 0, description: "Screen shake strength in pixels." },
 };
@@ -55,8 +55,14 @@ export function collectAssetPaths(scene: SceneDef): AssetReference[] {
   });
   for (const [event, effect] of Object.entries(scene.effects ?? {})) {
     const sound = effect?.sound;
-    if (typeof sound === "string" && sound !== "" && !isSoundPreset(sound)) refs.push({ path: sound, at: `effects.${event}.sound`, kind: "audio" });
+    if (typeof sound === "string" && sound !== "" && !isSoundPreset(sound) && !Object.hasOwn(scene.sounds ?? {}, sound)) refs.push({ path: sound, at: `effects.${event}.sound`, kind: "audio" });
   }
+  for (const [name, def] of Object.entries(scene.sounds ?? {})) {
+    if (typeof def === "string") refs.push({ path: def, at: `sounds.${name}`, kind: "audio" });
+  }
+  const music = scene.music;
+  if (typeof music === "string") refs.push({ path: music, at: "music", kind: "audio" });
+  else if (typeof music?.src === "string") refs.push({ path: music.src, at: "music.src", kind: "audio" });
   for (const [family, src] of Object.entries(scene.fonts ?? {})) {
     if (typeof src === "string" && src !== "google") refs.push({ path: src, at: `fonts.${family}`, kind: "font" });
   }

@@ -1,5 +1,7 @@
 import { COMPONENT_NAMES, COMPONENTS, isComponentName, isFrameList, PARTICLE_FIELDS, type ComponentName, type FieldSpec } from "./components.ts";
-import { AUDIO_EXTENSIONS, EFFECT_FIELDS, FONT_EXTENSIONS, IMAGE_EXTENSIONS, isSoundPreset, SOUND_PRESETS } from "./effects.ts";
+import { AUDIO_EXTENSIONS, EFFECT_FIELDS, FONT_EXTENSIONS, IMAGE_EXTENSIONS, SOUND_PRESETS } from "./effects.ts";
+import { isKnownSound, validateMusic, validateSounds } from "./sound.ts";
+import { expandTilemaps } from "./tilemap.ts";
 import { EVENT_TYPES, type Diagnostic, type SceneDef } from "./types.ts";
 
 export interface ValidationResult {
@@ -34,8 +36,8 @@ export function validateScene(input: unknown): ValidationResult {
     error("E_SCENE_NOT_OBJECT", "$", "A scene must be a JSON object.", 'Start from { "entities": [] }.');
     return result();
   }
-  // Prefabs become plain entities first, so everything below sees the final components.
-  const raw = expandPrefabs(input, error);
+  // Tilemaps and prefabs become plain entities first, so everything below sees the final components.
+  const raw = expandPrefabs(expandTilemaps(input, error), error);
   scene = raw;
 
   if (raw.world !== undefined) {
@@ -54,6 +56,10 @@ export function validateScene(input: unknown): ValidationResult {
       if (raw.world.background !== undefined && typeof raw.world.background !== "string") {
         error("E_INVALID_WORLD", "world.background", `world.background must be a CSS color string, got ${describe(raw.world.background)}.`);
       }
+      const physics = raw.world.physics;
+      if (physics !== undefined && physics !== "arcade" && physics !== "rapier") {
+        error("E_INVALID_WORLD", "world.physics", `world.physics must be "arcade" or "rapier", got ${describe(physics)}.`, '"arcade" (default) for tight box physics, "rapier" for rotation, round shapes and real collisions.');
+      }
       const lives = raw.world.lives;
       if (lives !== undefined && (typeof lives !== "number" || !Number.isInteger(lives) || lives < 1)) {
         error("E_INVALID_WORLD", "world.lives", `world.lives must be a whole number of at least 1, got ${describe(lives)}.`, "Leave it out for unlimited retries.");
@@ -61,7 +67,9 @@ export function validateScene(input: unknown): ValidationResult {
     }
   }
 
-  if (raw.effects !== undefined) validateEffects(raw.effects, error, warn);
+  if (raw.sounds !== undefined) validateSounds(raw.sounds, error);
+  if (raw.music !== undefined) validateMusic(raw.music, error);
+  if (raw.effects !== undefined) validateEffects(raw.effects, isObject(raw.sounds) ? raw.sounds : undefined, error, warn);
   if (raw.fonts !== undefined) validateFonts(raw.fonts, error);
   if (raw.postfx !== undefined) validatePostFx(raw.postfx, error);
 
@@ -72,6 +80,8 @@ export function validateScene(input: unknown): ValidationResult {
 
   const ids = new Map<string, number>();
   let hasPlayer = false;
+  const usesRapier = isObject(raw.world) && raw.world.physics === "rapier";
+  const jointTargets: { path: string; label: string; to: string }[] = [];
   let hasDynamic = false;
   const worldGravity = isObject(raw.world) && typeof raw.world.gravity === "number" ? raw.world.gravity : 1800;
   let hasSolid = false;
@@ -115,6 +125,14 @@ export function validateScene(input: unknown): ValidationResult {
           `Unknown component "${name}" on entity ${label}.`,
           `${suggestion ? `Did you mean "${suggestion}"? ` : ""}Run \`ludra components\` to list every component.`,
         );
+        continue;
+      }
+      if ((name === "joint" || name === "tween") && Array.isArray(value)) {
+        // Several joints on one body (a bridge's last plank, a car's wheels), several tweens on one thing.
+        value.forEach((item: unknown, i: number) => {
+          if (isObject(item)) validateFields(COMPONENTS[name].fields, item, `${componentPath}[${i}]`, name, ` on entity ${label}`, error, warn);
+          else error("E_COMPONENT_NOT_OBJECT", `${componentPath}[${i}]`, `Each ${name} on entity ${label} must be an object.`, `Use "${name}": [{ ... }, { ... }].`);
+        });
         continue;
       }
       if (!isObject(value)) {
@@ -161,6 +179,24 @@ export function validateScene(input: unknown): ValidationResult {
 
     const body = isObject(components.body) ? components.body : undefined;
     const bodyType = body?.type ?? "static";
+    // Fields only rapier understands do nothing under arcade physics: say so instead of silently ignoring them.
+    if (!usesRapier) {
+      const transform = isObject(components.transform) ? components.transform : undefined;
+      const rapierOnly = [
+        ...(transform && transform.rotation !== undefined && transform.rotation !== 0 ? ["transform.rotation"] : []),
+        ...RAPIER_BODY_FIELDS.filter((field) => body && body[field] !== undefined && !(field === "shape" && body.shape === "box")).map((field) => `body.${field}`),
+        ...("joint" in components ? ["the joint component"] : []),
+        ...RAPIER_PLATFORMER_FIELDS.filter((field) => isObject(components.platformer) && components.platformer[field] !== undefined).map((field) => `platformer.${field}`),
+      ];
+      if (rapierOnly.length > 0) {
+        warn(
+          "W_RAPIER_ONLY",
+          `${path}.components`,
+          `Entity ${label} sets ${rapierOnly.join(", ")}, which only rapier physics uses. Under arcade physics it is a box that never rotates.`,
+          'Add "physics": "rapier" to "world", or remove the field.',
+        );
+      }
+    }
     if ("topdown" in components && body && bodyType === "static") {
       error(
         "E_TOPDOWN_NEEDS_MOVING_BODY",
@@ -204,6 +240,54 @@ export function validateScene(input: unknown): ValidationResult {
       );
     }
 
+    const joints = Array.isArray(components.joint) ? components.joint : components.joint !== undefined ? [components.joint] : [];
+    joints.forEach((joint: unknown, i: number) => {
+      if (!isObject(joint)) return;
+      const jointPath = Array.isArray(components.joint) ? `${path}.components.joint[${i}]` : `${path}.components.joint`;
+      for (const field of ["anchor", "toAnchor"] as const) {
+        const value = joint[field];
+        if (value !== undefined && !(isObject(value) && typeof value.x === "number" && typeof value.y === "number")) {
+          error("E_INVALID_FIELD", `${jointPath}.${field}`, `joint.${field} on entity ${label} must be { "x": number, "y": number }, an offset in px.`);
+        }
+      }
+      if (typeof joint.to === "string" && joint.to !== "") jointTargets.push({ path: `${jointPath}.to`, label, to: joint.to });
+    });
+    const tweens = Array.isArray(components.tween) ? components.tween : components.tween !== undefined ? [components.tween] : [];
+    tweens.forEach((tween: unknown, i: number) => {
+      if (!isObject(tween)) return;
+      const tweenPath = Array.isArray(components.tween) ? `${path}.components.tween[${i}]` : `${path}.components.tween`;
+      const property = tween.property ?? "y";
+      if (tween.to === undefined && tween.by === undefined) {
+        error("E_TWEEN_TARGET", tweenPath, `The tween on entity ${label} has no "to" or "by", so it has nowhere to go.`, 'Add "to": <value> for a fixed target, or "by": <change> to move relative to where it starts (e.g. "by": -120).');
+      }
+      if ((property === "scale" || property === "opacity") && !("sprite" in components)) {
+        error("E_TWEEN_NEEDS_SPRITE", `${tweenPath}.property`, `A tween of ${String(property)} on entity ${label} needs a sprite to change.`, 'Add a "sprite", or tween x, y or rotation.');
+      }
+      if ((property === "x" || property === "y") && body && bodyType === "static" && body.sensor !== true) {
+        warn(
+          "W_TWEEN_STATIC_BODY",
+          `${tweenPath}.property`,
+          `Entity ${label} has a static body, so its tween teleports it each frame: players standing on it aren't carried.`,
+          'Use "type": "kinematic" for platforms, doors and lifts that move.',
+        );
+      }
+    });
+    // Free shapes need their points.
+    if (body && (body.shape === "polygon" || body.shape === "polyline")) {
+      const needed = body.shape === "polygon" ? 3 : 2;
+      const points = Array.isArray(body.points) ? body.points : [];
+      if (points.length < needed) {
+        error(
+          "E_SHAPE_POINTS",
+          `${path}.components.body.points`,
+          `A ${body.shape} on entity ${label} needs at least ${needed} points, got ${points.length}.`,
+          body.shape === "polygon" ? 'A wedge: "points": [[-40, 20], [40, 20], [40, -20]].' : 'A hill: "points": [[-200, 0], [-60, -40], [60, -40], [200, 0]].',
+        );
+      }
+      if (body.shape === "polyline" && bodyType === "dynamic") {
+        error("E_POLYLINE_DYNAMIC", `${path}.components.body.shape`, `A polyline on entity ${label} is a line with no area, so it can't be a dynamic body.`, 'Use "polygon" for a moving shape, or make the body "static" (ground) or "kinematic".');
+      }
+    }
     if (isObject(components.collectible)) availableScore += numberOr(components.collectible.score, 1);
     if (isObject(components.hazard) && components.hazard.stompable === true) availableScore += numberOr(components.hazard.score, 0);
     if (isObject(components.goal)) goals.push({ path: `${path}.components.goal.requireScore`, label, requireScore: numberOr(components.goal.requireScore, 0) });
@@ -223,6 +307,11 @@ export function validateScene(input: unknown): ValidationResult {
       'Add a ground entity with "body": { "type": "static", "width": 960, "height": 40 }.',
     );
   }
+  for (const joint of jointTargets) {
+    if (ids.has(joint.to)) continue;
+    const suggestion = closestName(joint.to, [...ids.keys()]);
+    error("E_JOINT_TARGET", joint.path, `The joint on entity ${joint.label} connects to "${joint.to}", which doesn't exist.`, suggestion ? `Did you mean "${suggestion}"?` : 'Use another entity\'s id, or "" for a fixed point in the world.');
+  }
   for (const goal of goals) {
     if (goal.requireScore > availableScore) {
       error(
@@ -239,6 +328,10 @@ export function validateScene(input: unknown): ValidationResult {
 
   return result();
 }
+
+/** Body fields that only rapier physics reads. */
+const RAPIER_BODY_FIELDS = ["shape", "friction", "density", "fixedRotation", "bullet"] as const;
+const RAPIER_PLATFORMER_FIELDS = ["maxSlope", "stepHeight", "push"] as const;
 
 /** Components that only work on sensor bodies, and what goes wrong otherwise. */
 const SENSOR_COMPONENTS: [ComponentName, string][] = [
@@ -382,7 +475,7 @@ function validatePostFx(postfx: unknown, error: Report): void {
   }
 }
 
-function validateEffects(effects: unknown, error: Report, warn: Report): void {
+function validateEffects(effects: unknown, sounds: Record<string, unknown> | undefined, error: Report, warn: Report): void {
   if (!isObject(effects)) {
     error("E_EFFECTS_NOT_OBJECT", "effects", '"effects" must map event names to effects.', 'Use "effects": { "collect": { "sound": "coin" } }.');
     return;
@@ -406,13 +499,14 @@ function validateEffects(effects: unknown, error: Report, warn: Report): void {
       continue;
     }
     validateFields(EFFECT_FIELDS, effect, path, `effects.${event}`, "", error, warn, ["particles"]);
-    if (typeof effect.sound === "string" && effect.sound !== "" && !isSoundPreset(effect.sound) && !hasExtension(effect.sound, AUDIO_EXTENSIONS)) {
-      const suggestion = closestName(effect.sound, SOUND_PRESETS);
+    if (typeof effect.sound === "string" && effect.sound !== "" && !isKnownSound(effect.sound, sounds)) {
+      const own = Object.keys(sounds ?? {});
+      const suggestion = closestName(effect.sound, [...own, ...SOUND_PRESETS]);
       error(
         "E_INVALID_SOUND",
         `${path}.sound`,
-        `"${effect.sound}" is neither a sound preset nor an audio file.`,
-        `${suggestion ? `Did you mean "${suggestion}"? ` : ""}Presets: ${SOUND_PRESETS.join(", ")}. Files must end in ${AUDIO_EXTENSIONS.join(", ")}.`,
+        `"${effect.sound}" is not one of the scene's "sounds", a preset or an audio file.`,
+        `${suggestion ? `Did you mean "${suggestion}"? ` : ""}${own.length ? `Scene sounds: ${own.join(", ")}. ` : ""}Presets: ${SOUND_PRESETS.join(", ")}. Files must end in ${AUDIO_EXTENSIONS.join(", ")}. Define your own in "sounds" (ludra components sounds).`,
       );
     }
     if (effect.particles !== undefined) {
@@ -450,6 +544,12 @@ function checkField(spec: FieldSpec, value: unknown): string | undefined {
       return typeof value === "string" && isFrameList(value) ? undefined : `must be a frame list like "0", "1-4" or "0,2-3", got ${describe(value)}.`;
     case "object":
       return isObject(value) ? undefined : `must be an object like { "speed": 80 }, got ${describe(value)}.`;
+    case "strings":
+      return Array.isArray(value) && value.every((s) => typeof s === "string") ? undefined : `must be a list of strings, got ${describe(value)}.`;
+    case "points":
+      return Array.isArray(value) && value.every((p) => Array.isArray(p) && p.length === 2 && p.every((n) => typeof n === "number" && Number.isFinite(n)))
+        ? undefined
+        : `must be a list of [x, y] points like [[-40, 20], [40, 20], [40, -20]], got ${describe(value)}.`;
   }
 }
 

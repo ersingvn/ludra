@@ -1,0 +1,63 @@
+{
+  "tests": [
+    {
+      "name": "the tilemap is a floor to stand on",
+      "duration": "1s",
+      "assert": [
+        "player.grounded == true",
+        "player.y == 982",
+        "deaths == 0"
+      ]
+    },
+    {
+      "name": "the cellar's spike pit kills",
+      "inputs": "right:1.8s",
+      "duration": "2s",
+      "assert": [
+        "deaths == 1",
+        "lives == 2"
+      ]
+    },
+    {
+      "name": "the lift rests at each floor and glides between them",
+      "duration": "8s",
+      "assert": [
+        "lift.y == 1010 at 1s",
+        "lift.y < 1000 at 2s",
+        "lift.y == 490 at 4.5s",
+        "lift.y == 490 at 5.2s",
+        "lift.y > 600 at 7.5s"
+      ]
+    },
+    {
+      "name": "the gliding platform crosses the hall's pit and pauses at each end",
+      "duration": "4s",
+      "assert": [
+        "glider.x == 720 at 0.4s",
+        "glider.x == 400 at 2.8s",
+        "glider.x == 400 at 3.1s",
+        "glider.x > 400 at 3.6s"
+      ]
+    },
+    {
+      "name": "the gate stays shut until the lantern is lit, then rises",
+      "inputs": "right:1.3s, right+jump:0.45s, right:0.9s, right+jump:0.45s, right:0.9s, right+jump:0.45s, right:1.6s, wait:2.4s, right:0.6s, wait:3.6s, left:1s",
+      "duration": "15s",
+      "assert": [
+        "gate.y == 380 at 12.5s",
+        "events.checkpoint == 1",
+        "gate.y == 200"
+      ]
+    },
+    {
+      "name": "Clockwork Keep can be completed without dying",
+      "inputs": "right:1.3s, right+jump:0.45s, right:0.9s, right+jump:0.45s, right:0.9s, right+jump:0.45s, right:1.6s, wait:2.4s, right:0.6s, wait:3.6s, left:1.4s, left+jump:0.45s, left:0.95s, left+jump:0.45s, left:0.75s, wait:2.7s, left:2.2s",
+      "duration": "22s",
+      "assert": [
+        "won == true",
+        "deaths == 0",
+        "score == 4"
+      ]
+    }
+  ]
+}

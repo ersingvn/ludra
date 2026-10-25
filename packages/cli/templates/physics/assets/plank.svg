@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="10" viewBox="0 0 48 10">
+  <!-- One bridge plank, roped at both ends. -->
+  <rect x="0" y="0" width="48" height="10" rx="2" fill="#b07d4f"/>
+  <rect x="0" y="0" width="48" height="3" rx="1.5" fill="#d29a64"/>
+  <rect x="0" y="7" width="48" height="3" fill="#7d5434"/>
+  <path d="M10 4 H30 M18 6 H40" stroke="#8f6340" stroke-width="0.8"/>
+  <rect x="2" y="0" width="3" height="10" fill="#e8d5a8"/>
+  <rect x="43" y="0" width="3" height="10" fill="#e8d5a8"/>
+</svg>

@@ -2,7 +2,7 @@ name: Release
 
 # Publishes @ludra/core and @ludra/cli to npm when a version tag is pushed,
 # then creates the GitHub release:
-#   git tag v0.8.0 && git push origin v0.8.0
+#   git tag v0.9.0 && git push origin v0.9.0
 # Needs an NPM_TOKEN repository secret (an npm token allowed to publish
 # both packages). A version already on npm, or a release that already
 # exists, is skipped, so a release that failed halfway can be finished by
@@ -34,7 +34,7 @@ jobs:
       - name: Tag matches package versions
         run: |
           tag="${GITHUB_REF_NAME#v}"
-          for pkg in packages/core packages/cli; do
+          for pkg in packages/core packages/physics packages/cli; do
             version=$(node -p "require('./$pkg/package.json').version")
             if [ "$version" != "$tag" ]; then
               echo "::error::$pkg is $version but the tag is v$tag. Bump the versions first."
@@ -47,12 +47,12 @@ jobs:
           npm run build
           npm test
 
-      # core first: the CLI depends on it.
+      # In dependency order: physics needs core, the CLI needs both.
       - name: Publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          for pkg in packages/core packages/cli; do
+          for pkg in packages/core packages/physics packages/cli; do
             name=$(node -p "require('./$pkg/package.json').name")
             version=$(node -p "require('./$pkg/package.json').version")
             if [ -n "$(npm view "$name@$version" version 2>/dev/null)" ]; then
@@ -82,6 +82,6 @@ jobs:
           else
             echo "::notice::No $notes, so the notes are generated from pull requests."
             version="${tag#v}"
-            npm="Published to npm: [@ludra/core@$version](https://www.npmjs.com/package/@ludra/core/v/$version) and [@ludra/cli@$version](https://www.npmjs.com/package/@ludra/cli/v/$version)."
+            npm="Published to npm: [@ludra/core@$version](https://www.npmjs.com/package/@ludra/core/v/$version), [@ludra/physics@$version](https://www.npmjs.com/package/@ludra/physics/v/$version) and [@ludra/cli@$version](https://www.npmjs.com/package/@ludra/cli/v/$version)."
             gh release create "$tag" --verify-tag --title "$tag" --generate-notes --notes "$npm"
           fi

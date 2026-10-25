@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
-import { runTest, type SceneDef, type Script, type TestCase, type TestResult } from "@ludra/core";
+import { isSoundPreset, runTest, type SceneDef, type Script, type TestCase, type TestResult } from "@ludra/core";
 import { paint } from "../format.ts";
 import { listScenes, loadGame, loadProject, type Game, type Project } from "../project.ts";
 
@@ -135,7 +135,15 @@ function reviewScene(project: Project, info: SceneInfo, hasTests: boolean, add: 
   }
   const mute = Object.entries(scene.effects ?? {}).filter(([name, effect]) => IMPORTANT_EVENTS.has(name) && effect && !effect.sound).map(([name]) => name);
   if (mute.length > 0) {
-    add("idea", "feel", "R_NO_SOUND", label, `These effects have no sound: ${list(mute)}.`, "Add a preset (jump, coin, hit, explosion, powerup, blip, thud) or an audio file.");
+    add("idea", "feel", "R_NO_SOUND", label, `These effects have no sound: ${list(mute)}.`, 'Give each a sound of the game\'s own ("sounds") or play one from a sound hook.');
+  }
+  const ownSounds = Object.keys(scene.sounds ?? {}).length > 0 || uses("sound");
+  const effectSounds = Object.values(scene.effects ?? {}).map((effect) => effect?.sound).filter((sound): sound is string => typeof sound === "string" && sound !== "");
+  if (!ownSounds && effectSounds.length > 0 && effectSounds.every((sound) => isSoundPreset(sound))) {
+    add("issue", "feel", "R_STOCK_SOUNDS", label, "Every sound is a built-in preset, the same beeps as every other Ludra game.", 'Design the game\'s own sounds in "sounds" (tone and noise layers, "vary" so repeats differ) to fit its world: wood, metal, magic, slime. Run `ludra components sounds`.');
+  }
+  if (!scene.music && !uses("sound")) {
+    add("issue", "feel", "R_NO_MUSIC", label, "The game has no music.", 'Write music that fits the mood: "music" with tracks of notes (a bass line, a melody, drums), an audio file, or adaptive music in a sound hook. Run `ludra components sounds`.');
   }
 
   // ---------------------------------------------------------------- looks

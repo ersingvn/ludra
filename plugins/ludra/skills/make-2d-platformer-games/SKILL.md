@@ -1,6 +1,6 @@
 ---
 name: make-2d-platformer-games
-description: Make beautiful 2D games of any genre: platformers, top-down adventures and arena games, breakout and other bouncing-ball games, with levels, coins, enemies, hazards, moving platforms, bounce physics, custom game logic in scripts (chasing enemies, keys and doors, timers, shooting, bosses), sprites, animations, particles, sound, code-drawn art and lighting, custom HUDs, fonts and post-processing shaders. Use whenever the user asks to make, build, change, fix, test or polish a game, or works in a project with a ludra.json. Builds with the Ludra engine proves the game works by play-testing it headlessly, and reviews it for anything that makes it feel unfinished.
+description: Make beautiful 2D games of any genre: platformers, top-down adventures and arena games, breakout and other bouncing-ball games, physics games (stacking, ropes, hinges, vehicles, physics puzzles), with levels, coins, enemies, hazards, moving platforms, real rigid-body physics, custom game logic in scripts (chasing enemies, keys and doors, timers, shooting, bosses), sprites, animations, particles, sound, code-drawn art and lighting, custom HUDs, fonts and post-processing shaders. Use whenever the user asks to make, build, change, fix, test or polish a game, or works in a project with a ludra.json. Builds with the Ludra engine proves the game works by play-testing it headlessly, and reviews it for anything that makes it feel unfinished.
 ---
 
 # Building games with Ludra
@@ -102,12 +102,69 @@ The player has a `platformer` component and a `dynamic` body; gravity pulls ever
 - Bricks are `static` bodies with a script that scores and destroys itself on `touch`. Leave the bottom of the world open and treat a lost ball as a death (`world.kill(paddle)`).
 - With gravity on and `bounce` below 1 you get bouncy balls, rubber enemies and grenades.
 
+## Physics: arcade or rapier
+
+Every scene picks its physics engine with `"world": { "physics": ... }`:
+
+- **`"arcade"`** (the default): boxes that never rotate, resolved one axis at a time. Tight and exactly predictable, which is what precise platformers, top-down games and breakout want.
+- **`"rapier"`**: a real physics engine. Choose it when physics *is* the game: stacking and toppling, rolling, swinging, ropes and chains, seesaws, vehicles, catapults, destruction, physics puzzles. It is deterministic too: every machine and the browser simulate the same frames, so tests stay valid.
+
+`npx @ludra/cli new my-game --template physics` starts from a working Rapier level: a crate pushed to climb a cliff, a rope bridge of jointed planks and a spiked pendulum, with tests for each.
+
+Under rapier:
+
+- **Shapes:** `body.shape` is `box`, `circle` (diameter = width), `capsule` (good for characters), `polygon` (the convex shape around `points`: wedges, rocks, ramps) or `polyline` (an open line through `points`: hills and curved ground; static or kinematic only). `points` are `[[x, y], ...]` offsets from the center; `width`/`height` stay the bounding box.
+- **Material:** `transform.rotation` (degrees, clockwise), `friction` (0 ice … 1 rubber), `density` (heavier pushes lighter), `fixedRotation` (slides but never tips), `bullet` (fast things don't pass through thin walls).
+- **Players** use a character controller: they walk up slopes up to `platformer.maxSlope` and slide back from steeper ones, step onto ledges up to `stepHeight`, push dynamic bodies (`push`, 0 = can't), ride moving platforms, and jump exactly as high as under arcade.
+- **Joints** (`"joint": { ... }` or a list `"joint": [{ ... }, { ... }]` for several):
+  - `revolute`: a hinge. Doors, wheels, pendulums, seesaws. `min`/`max` limit the angle; `motorSpeed` with `motorForce` drives it (degrees per second, clockwise).
+  - `prismatic`: a slider along `axis` (degrees). Pistons, elevators. `min`/`max` limit it in px.
+  - `fixed`: a weld. Compound objects.
+  - `rope`: at most `length` apart. Hanging signs, grappling.
+  - `spring`: pulled toward `length` with `stiffness` and `damping`. Bumpers, soft suspension.
+  - `to` is another entity's id, or empty for a fixed point in the world.
+  - **`anchor` is where the joint sits on this body** (offset from its center). A hinge, slider or weld joins the other body right there: a pendulum hinged 200 px to its left is `"anchor": { "x": -200, "y": 0 }`.
+  - Ropes and springs run from `anchor` to `toAnchor` (an offset on the other body, or from this body's start for a world point).
+  - A joint to an entity that is spawned later connects once it exists.
+- **Scripts:**
+  - `self.applyImpulse(x, y, at?)` strikes a body (velocity += impulse / mass; at a point off-center it spins). Scale by mass for a fixed kick: `self.applyImpulse(self.mass * 400, 0)`.
+  - `self.applyForce(x, y)` pushes every frame (thrusters, wind).
+  - `self.angularVelocity`, `self.rotation`, `self.mass`.
+  - `world.raycast(from, to, { ignore })` returns the first hit `{ entity, x, y, distance, normal }`: line of sight, lasers, "is there ground ahead?".
+- **No limits:** `world.physics.raw` is Rapier itself (`RAPIER`, `world`, `body(e)`, `collider(e)`, `joint(e, i)`, `toRapier`/`fromRapier`) for anything the components don't cover. Rapier runs y-up, so convert points with the helpers. Use it in `start`/`update`/`touch`, never in draw hooks.
+
+Lessons that save time:
+
+- **A ramp or slope must start inside the ground.** A plank whose low end sits even 10 px above the floor is a wall to a walking player. Sink its end below the floor's top.
+- **Rapier positions are fractional.** Assert ranges (`"ball.x > 400"`, `"crate-3.rotation != 0"`), not exact values. Players stand exactly on the ground, so `"player.grounded == true"` is reliable.
+- **Prove a physics level is stable:** a test with no input where everything still stands after 2 s (`"crate-top.y < 400"`). Tall thin stacks topple on their own.
+- **Watch it move:** `play --watch ball,crate --every 0.1s` adds a `rot°` column; `play --screenshot 1s --debug` draws every collider, joint and id over the frame. Check that art matches collider shapes, and that hinges sit where you meant.
+- **Draw rotation in draw hooks yourself:** `g.translate(self.x, self.y); g.rotate(self.rotation * Math.PI / 180)`. Sprites rotate on their own.
+
 ## Game structure: lives, checkpoints, prefabs, scenes
 
 - **Lives**: `"world": { "lives": 3 }`. Each death costs one; the last ends the game (`lost`, a `gameover` event, the simulation stops). Leave it out for unlimited retries. Scripts read and write `world.lives` (an extra life) and call `world.lose()` (a time limit ran out).
 - **Checkpoints**: a sensor body with `checkpoint: {}`. The first touch makes it the player's respawn point (standing on its bottom edge) and fires `checkpoint` once. Put them before hard parts, where the player naturally stands, and light them up when reached (`ctx.recent("checkpoint", 1e9)`; the event's `data.checkpoint` is its id).
 - **Prefabs**: `prefabs/<name>.prefab.json` holds `{ "components": { ... } }`. An entity uses one with `"prefab": "slime"` and only the components that differ: `"components": { "transform": { "x": 400, "y": 487 }, "patrol": { "speed": 120 } }` (merged field by field; `null` removes a component). Scripts spawn them: `world.spawn({ prefab: "bullet", components: { transform: { x, y } } })`. Use prefabs for anything placed more than once, so a change to the slime changes every slime.
 - **Scenes**: more scenes live in `scenes/`. A goal's `"next": "scenes/level-2.scene.json"` moves on after the win screen; `world.goto("scenes/level-1.scene.json")` moves on from anything (a title screen, a door). Score, deaths and lives carry over; R restarts the current scene, and after game over the whole run. Each scene is checked by `check` and tested on its own (`"scene"` in a test); `world.exit` tells draw hooks whether a win leads on.
+
+## Worlds: tilemaps, camera zones, tweens
+
+- **Tilemap**: draw a level as text. `"tilemap": { "tileSize": 40, "rows": ["#....c...#", "##########"], "legend": { ... } }` on an entity whose transform is the map's top-left corner.
+  - A legend entry is a tile: `{ "image": "assets/stone.svg" }` (solid by default), with `"sensor": true` and `"components": { "hazard": {} }` for spikes, `"solid": false` for decoration. Or a prefab name: `"c": "coin"` places a coin centered in each `c` cell. `" "` and `"."` are empty.
+  - Neighboring cells of the same tile merge into one body (wide rows first, then identical rows stacked), so walls and floors are a few colliders. Every cell becomes an ordinary entity named `<id>-<row>-<col>`: tests, `play --watch` and scripts can use them.
+  - Mix freely: build the structure with a tilemap and place moving parts, checkpoints and the goal as entities. Multiple tilemaps (a background layer with `"solid": false`, a foreground) are fine.
+- **Camera zones**: `"cameraZone": { "width", "height", "mode", "zoom", "blend", "priority" }` on an entity (no body).
+  - While the followed entity is inside, `"room"` keeps the view inside the area (rooms, floors, an arena), `"fixed"` holds the view on its center (a boss fight, a vista), and `zoom` changes the zoom (0.5 shows twice as much).
+  - Changes ease over `blend` seconds; overlapping zones go by `priority`. Zones are presentation only and show in `--debug` screenshots as violet frames.
+- **Tweens**: `"tween": { "property": "y", "by": -120, "duration": 1, "ease": "quadOut", "repeat": "once", "delay": 0, "on": "" }`, or a list.
+  - Properties: `x`, `y`, `rotation`, and `scale`/`opacity` (needs a sprite). `to` is a fixed target, `by` is relative.
+  - Eases: `linear`, `sineInOut` (glide), `quadIn`, `quadOut`, `quadInOut`, `cubicInOut`, `backOut` (snap with overshoot), `elasticOut`, `bounceOut`. `repeat`: `once`, `loop`, `pingpong`; `delay` waits before every pass, so a pingpong lift rests at each end.
+  - `on` starts it when an event fires (`"checkpoint"`, or a name a script emits). Scripts call `self.tween({ property: "y", by: -120, duration: 0.6, ease: "quadOut" })`.
+  - Tweens run in the simulation, so tests see them (`"gate.y == 200"`). Tweened kinematic bodies move by velocity and carry riders; give moving solids a kinematic body.
+  - Use them for lifts that pause, doors and gates, bobbing pickups, swinging signs, pop-in scale on spawn, fades.
+
+See `examples/clockwork-keep` for all three together, with a test for each moving part.
 
 ## Gameplay building blocks
 
@@ -194,12 +251,28 @@ Scene-level `effects` map events (`jump`, `land`, `collect`, `stomp`, `die`, `wi
 }
 ```
 
-- Sounds are synthesized presets: `jump`, `coin`, `hit`, `explosion`, `powerup`, `blip`, `thud`. Use those unless the user supplies audio files (`.wav`, `.mp3`, `.ogg` paths also work).
+- `sound` names one of the scene's own `sounds` (see "Sound and music" below), a preset (`jump`, `coin`, `hit`, `explosion`, `powerup`, `blip`, `thud`) or an audio file (`.wav`, `.mp3`, `.ogg`). Presets are placeholders: the same beeps in every Ludra game.
 - Particles: `direction` is degrees (-90 = up, 90 = down), `spread` is the cone width, and negative `gravity` floats up.
 - An `emitter` component streams particles continuously (sparkles on a goal, torch fire, steam).
 - Feedback for every player action makes a game feel good: a small dust puff on jump and land, a burst plus sound on pickups, and shake plus a big burst on death.
 
 Run `npx @ludra/cli components effects` for every field.
+
+### Sound and music: no limits either
+
+A game sounds like its world. Design its own sounds and write its music; `ludra review` flags stock presets and a game without music.
+
+- **`"sounds"`** (scene level): named sounds synthesized from layers, used in `effects` and `ctx.play` like presets.
+  - A tone layer is an oscillator sweep: `wave` (sine, square, sawtooth, triangle), `from`/`to` Hz, `start`, `duration`, `volume`, `attack`. A noise layer is filtered noise: `filter` (lowpass, highpass, bandpass), `from`/`to` filter Hz, the same timing fields.
+  - `vary` (0..1) changes the pitch on every play, so footsteps and hits never sound copied.
+  - Think about material: wood is a low sine thump plus band-passed noise; glass and crystal are high sines with overtones; slime is a falling sine plus mid noise; magic is a rising arpeggio with a soft high-passed shimmer.
+- **`"music"`** (scene level): an audio file, or tracks of notes that loop.
+  - `tempo` (BPM), `steps` (tokens per beat), and tracks: `wave` (or `"noise"` for drums), `notes`, `volume`, `decay`, `filter`, `attack`.
+  - Notes: `"C4 E4 G4 ~ | A3 - C4+E4 ~"`: a note, a chord with `+`, `-` rest, `~` hold, `|` bar lines for reading. Noise tracks use `x`/`X`; a low `filter` (≤ 250) is a kick, a high one (≥ 3000) a hat.
+  - Write real music: pick a key and tempo for the mood, a bass line on the roots, a melody that returns, a soft pad, light drums. Keep it under the effects (track volumes around 0.1-0.4). Different scenes can have different music.
+- **`sound(ctx)`** in a script gets the real Web Audio API, every rendered frame in the browser: `ctx.audio` (the AudioContext), `ctx.out` (connect here), `ctx.events` (events since the last call), `ctx.play(name, { volume, pitch })`, `ctx.local` for your nodes. Use it for sound that follows the game: an engine that rises with speed, wind that grows with height, a scrape while a crate slides, adaptive music layers. Like draw hooks it is read-only, and `ludra check` runs it against a stand-in AudioContext (`E_SOUND_HOOK`). Create nodes with `ctx.audio.createX()`, not `new XNode()`.
+
+Run `npx @ludra/cli components sounds` for every field and an example of each. The `physics` template's `scripts/ambience.ts` is a full sound hook.
 
 ### Layout and color
 
@@ -223,4 +296,4 @@ Sprites and effects are the floor. For real art, paint with code; read "Paint wi
   - Bloom, CRT scanlines, chromatic aberration, color grading, vignette, pixelation, water ripples: whatever the mood needs. Compile errors appear in the game and in `play --screenshot` with the line number.
 - `ludra check` runs every draw hook against a mock canvas, so typos and accidental game changes show up as `E_DRAW_HOOK` before the browser. Then look at real frames with `play --screenshot`: that is the only way to judge how it looks.
 
-See `scripts/` and `shaders/` in the `breakout` (everything drawn in code) and `topdown` (lighting over SVG sprites) templates.
+See `scripts/` and `shaders/` in the `breakout` (everything drawn in code) and `topdown` (lighting over SVG sprites) templates, and `physics` (a chain drawn from a pendulum's pivot).

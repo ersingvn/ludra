@@ -8,20 +8,20 @@ export function dev(dir: string, options: { port?: string }): number {
   const port = Number(options.port ?? 5173);
   if (!Number.isInteger(port) || port <= 0) throw new CliError(`Invalid --port "${options.port}".`);
 
-  const { server } = createGameServer(project, (browserModule) => page(project, browserModule));
+  const { server } = createGameServer(project, (engine) => page(project, engine));
   server.on("error", (err: NodeJS.ErrnoException) => {
     console.error(paint("red", err.code === "EADDRINUSE" ? `Port ${port} is in use. Try --port ${port + 1}.` : err.message));
     process.exit(1);
   });
   server.listen(port, "127.0.0.1", () => {
     console.log(paint("green", `▶ ${project.config.name} is running at http://localhost:${port}`));
-    console.log(paint("dim", `  Arrows/WASD to move, Space/Z to jump, M to mute, R to restart.`));
+    console.log(paint("dim", `  Arrows/WASD to move, Space/Z to jump, M to mute, R to restart, \` (backquote) for the debug view.`));
     console.log(paint("dim", `  Editing a scene, prefab, script or asset reloads the page. Ctrl+C to stop.`));
   });
   return 0;
 }
 
-function page(project: Project, browserModule: string): string {
+function page(project: Project, { browserModule, physicsModule, importMap }: { browserModule: string; physicsModule: string; importMap: string }): string {
   const { width, height } = project.config.window;
   const title = escapeHtml(project.config.name);
   return `<!doctype html>
@@ -40,8 +40,13 @@ function page(project: Project, browserModule: string): string {
 <body>
 <canvas id="game" width="${width}" height="${height}"></canvas>
 <pre id="errors" hidden></pre>
+${importMap}
 <script type="module">
 import { startGame } from "${browserModule}";
+// Rapier is a few MB of WebAssembly: only scenes with "physics": "rapier" load it.
+const loadPhysics = async (name) => {
+  if (name === "rapier") await (await import("${physicsModule}")).loadRapierPhysics();
+};
 
 const data = await (await fetch("/__ludra/scene")).json();
 if (data.ok) {
@@ -51,7 +56,7 @@ if (data.ok) {
     if (!next.ok) throw new Error(next.diagnostics.map((d) => d.code + " at " + d.path + ": " + d.message).join(" "));
     return next.scene;
   };
-  await startGame(document.getElementById("game"), data.scene, { assetBase: "${PROJECT_PREFIX}", scriptBase: "${SCRIPT_PREFIX}", scriptPaths, loadScene });
+  await startGame(document.getElementById("game"), data.scene, { assetBase: "${PROJECT_PREFIX}", scriptBase: "${SCRIPT_PREFIX}", scriptPaths, loadScene, loadPhysics });
 } else {
   document.getElementById("game").hidden = true;
   const errors = document.getElementById("errors");

@@ -1,0 +1,1029 @@
+{
+  "name": "Crate & Chasm",
+  "world": {
+    "width": 1920,
+    "height": 600,
+    "gravity": 1800,
+    "background": "#2b1b3d",
+    "physics": "rapier",
+    "lives": 3
+  },
+  "fonts": {
+    "Fredoka": "google"
+  },
+  "postfx": {
+    "shader": "shaders/glow.frag",
+    "uniforms": {
+      "bloom": 1.3,
+      "warmth": 0.8,
+      "vignette": 1
+    }
+  },
+  "effects": {
+    "jump": {
+      "sound": "hop",
+      "particles": {
+        "count": 6,
+        "color": "#cfd8ff",
+        "speed": 60,
+        "direction": 90,
+        "spread": 150,
+        "life": 0.25,
+        "size": 3,
+        "gravity": 0
+      }
+    },
+    "land": {
+      "sound": "boot-on-wood",
+      "particles": {
+        "count": 5,
+        "color": "#cfd8ff",
+        "speed": 50,
+        "direction": -90,
+        "spread": 160,
+        "life": 0.2,
+        "size": 2,
+        "gravity": 300
+      }
+    },
+    "collect": {
+      "sound": "glint",
+      "particles": {
+        "count": 14,
+        "color": "#ffd166",
+        "speed": 140,
+        "life": 0.45,
+        "size": 3,
+        "gravity": 200
+      }
+    },
+    "stomp": {
+      "sound": "thwack",
+      "shake": 5,
+      "particles": {
+        "count": 18,
+        "color": "#c77dff",
+        "speed": 180,
+        "life": 0.5,
+        "size": 4
+      }
+    },
+    "die": {
+      "sound": "spiked",
+      "shake": 10,
+      "particles": {
+        "count": 30,
+        "color": "#ff5d73",
+        "speed": 220,
+        "life": 0.7,
+        "size": 4
+      }
+    },
+    "win": {
+      "sound": "made-it",
+      "shake": 3,
+      "particles": {
+        "count": 60,
+        "color": "#4cc9f0",
+        "speed": 260,
+        "life": 1.2,
+        "size": 4,
+        "gravity": 150
+      }
+    },
+    "checkpoint": {
+      "sound": "lantern-lit",
+      "particles": {
+        "count": 24,
+        "color": "#ffd166",
+        "speed": 120,
+        "life": 0.7,
+        "size": 3,
+        "gravity": -60
+      }
+    },
+    "gameover": {
+      "sound": "no-more-tries",
+      "shake": 12
+    }
+  },
+  "sounds": {
+    "hop": {
+      "tones": [
+        {
+          "wave": "triangle",
+          "from": 280,
+          "to": 520,
+          "duration": 0.12,
+          "volume": 0.216
+        }
+      ],
+      "noise": [
+        {
+          "filter": "highpass",
+          "from": 3500,
+          "duration": 0.05,
+          "volume": 0.054
+        }
+      ],
+      "vary": 0.06
+    },
+    "boot-on-wood": {
+      "tones": [
+        {
+          "wave": "sine",
+          "from": 140,
+          "to": 70,
+          "duration": 0.09,
+          "volume": 0.27
+        }
+      ],
+      "noise": [
+        {
+          "filter": "bandpass",
+          "from": 420,
+          "to": 160,
+          "duration": 0.07,
+          "volume": 0.27
+        }
+      ],
+      "vary": 0.12
+    },
+    "glint": {
+      "tones": [
+        {
+          "wave": "triangle",
+          "from": 1319,
+          "duration": 0.08,
+          "volume": 0.144
+        },
+        {
+          "wave": "triangle",
+          "from": 1976,
+          "start": 0.07,
+          "duration": 0.35,
+          "volume": 0.144
+        },
+        {
+          "wave": "sine",
+          "from": 3951,
+          "start": 0.07,
+          "duration": 0.2,
+          "volume": 0.027
+        }
+      ],
+      "vary": 0.02
+    },
+    "thwack": {
+      "tones": [
+        {
+          "wave": "sine",
+          "from": 260,
+          "to": 80,
+          "duration": 0.15,
+          "volume": 0.27
+        }
+      ],
+      "noise": [
+        {
+          "filter": "bandpass",
+          "from": 1200,
+          "to": 300,
+          "duration": 0.12,
+          "volume": 0.27
+        }
+      ],
+      "vary": 0.1
+    },
+    "spiked": {
+      "tones": [
+        {
+          "wave": "sawtooth",
+          "from": 300,
+          "to": 55,
+          "duration": 0.4,
+          "volume": 0.162
+        }
+      ],
+      "noise": [
+        {
+          "filter": "highpass",
+          "from": 2500,
+          "to": 600,
+          "duration": 0.25,
+          "volume": 0.324
+        },
+        {
+          "from": 400,
+          "to": 60,
+          "start": 0.05,
+          "duration": 0.45,
+          "volume": 0.27
+        }
+      ]
+    },
+    "creak": {
+      "tones": [
+        {
+          "wave": "sawtooth",
+          "from": 95,
+          "to": 72,
+          "duration": 0.32,
+          "volume": 0.09,
+          "attack": 0.04
+        }
+      ],
+      "noise": [
+        {
+          "filter": "bandpass",
+          "from": 1300,
+          "to": 800,
+          "duration": 0.25,
+          "volume": 0.063,
+          "attack": 0.03
+        }
+      ],
+      "vary": 0.2
+    },
+    "lantern-lit": {
+      "tones": [
+        {
+          "wave": "sine",
+          "from": 587,
+          "duration": 0.6,
+          "volume": 0.126,
+          "attack": 0.04
+        },
+        {
+          "wave": "sine",
+          "from": 880,
+          "start": 0.08,
+          "duration": 0.7,
+          "volume": 0.09,
+          "attack": 0.04
+        }
+      ],
+      "noise": [
+        {
+          "filter": "bandpass",
+          "from": 2500,
+          "to": 5000,
+          "duration": 0.5,
+          "volume": 0.036,
+          "attack": 0.05
+        }
+      ]
+    },
+    "made-it": {
+      "tones": [
+        {
+          "wave": "triangle",
+          "from": 294,
+          "start": 0,
+          "duration": 0.18,
+          "volume": 0.216
+        },
+        {
+          "wave": "triangle",
+          "from": 349,
+          "start": 0.1,
+          "duration": 0.18,
+          "volume": 0.216
+        },
+        {
+          "wave": "triangle",
+          "from": 440,
+          "start": 0.2,
+          "duration": 0.18,
+          "volume": 0.216
+        },
+        {
+          "wave": "triangle",
+          "from": 587,
+          "start": 0.32,
+          "duration": 0.8,
+          "volume": 0.216
+        },
+        {
+          "wave": "sine",
+          "from": 147,
+          "duration": 1.1,
+          "volume": 0.162,
+          "attack": 0.02
+        }
+      ]
+    },
+    "no-more-tries": {
+      "tones": [
+        {
+          "wave": "triangle",
+          "from": 294,
+          "duration": 0.4,
+          "volume": 0.18
+        },
+        {
+          "wave": "triangle",
+          "from": 277,
+          "start": 0.35,
+          "duration": 0.4,
+          "volume": 0.18
+        },
+        {
+          "wave": "triangle",
+          "from": 220,
+          "start": 0.7,
+          "duration": 1.1,
+          "volume": 0.18
+        }
+      ]
+    }
+  },
+  "music": {
+    "tempo": 100,
+    "steps": 2,
+    "volume": 1,
+    "tracks": [
+      {
+        "wave": "triangle",
+        "volume": 0.25,
+        "decay": 0.45,
+        "notes": "D4 F4 A4 ~ G4 F4 E4 C4 | D4 ~ A3 ~ C4 D4 ~ - | D4 F4 A4 C5 B4 A4 G4 E4 | F4 ~ E4 ~ D4 ~ ~ -"
+      },
+      {
+        "wave": "sine",
+        "volume": 0.425,
+        "decay": 0.6,
+        "notes": "D2 ~ - D2 A2 ~ - A2 | C2 ~ - C2 G2 ~ - G2 | D2 ~ - D2 A2 ~ - A2 | Bb1 ~ - Bb1 A1 ~ - -"
+      },
+      {
+        "wave": "sawtooth",
+        "volume": 0.05,
+        "decay": 1,
+        "attack": 0.4,
+        "filter": 900,
+        "notes": "D3+F3+A3 ~ ~ ~ ~ ~ ~ ~ | C3+E3+G3 ~ ~ ~ ~ ~ ~ ~ | D3+F3+A3 ~ ~ ~ ~ ~ ~ ~ | Bb2+D3+F3 ~ ~ ~ A2+C#3+E3 ~ ~ ~"
+      },
+      {
+        "wave": "noise",
+        "volume": 0.325,
+        "decay": 0.5,
+        "filter": 110,
+        "notes": "X - - - x - x -"
+      },
+      {
+        "wave": "noise",
+        "volume": 0.055,
+        "decay": 0.12,
+        "filter": 8000,
+        "notes": "- - x - - - x x"
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "sky",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": 0
+        },
+        "script": {
+          "src": "scripts/backdrop.ts",
+          "params": {
+            "sky": [
+              "#2b1b3d",
+              "#d9725b"
+            ],
+            "hills": [
+              "#4a2c4f",
+              "#33203d"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "wall-left",
+      "components": {
+        "transform": {
+          "x": -10,
+          "y": 300
+        },
+        "body": {
+          "type": "static",
+          "width": 20,
+          "height": 600
+        }
+      }
+    },
+    {
+      "id": "wall-right",
+      "components": {
+        "transform": {
+          "x": 1930,
+          "y": 300
+        },
+        "body": {
+          "type": "static",
+          "width": 20,
+          "height": 600
+        }
+      }
+    },
+    {
+      "id": "ground",
+      "components": {
+        "transform": {
+          "x": 380,
+          "y": 630
+        },
+        "body": {
+          "type": "static",
+          "width": 760,
+          "height": 260
+        },
+        "sprite": {
+          "color": "#5c4332",
+          "image": "assets/rock.svg",
+          "tile": true
+        }
+      }
+    },
+    {
+      "id": "ground-grass",
+      "components": {
+        "transform": {
+          "x": 380,
+          "y": 520
+        },
+        "sprite": {
+          "color": "#5fbf6a",
+          "image": "assets/ground.svg",
+          "tile": true,
+          "width": 760,
+          "height": 40
+        }
+      }
+    },
+    {
+      "id": "cliff-left",
+      "components": {
+        "transform": {
+          "x": 930,
+          "y": 470
+        },
+        "body": {
+          "type": "static",
+          "width": 340,
+          "height": 260
+        },
+        "sprite": {
+          "color": "#5c4332",
+          "image": "assets/rock.svg",
+          "tile": true
+        }
+      }
+    },
+    {
+      "id": "cliff-left-grass",
+      "components": {
+        "transform": {
+          "x": 930,
+          "y": 360
+        },
+        "sprite": {
+          "color": "#5fbf6a",
+          "image": "assets/ground.svg",
+          "tile": true,
+          "width": 340,
+          "height": 40
+        }
+      }
+    },
+    {
+      "id": "cliff-right",
+      "components": {
+        "transform": {
+          "x": 1710,
+          "y": 470
+        },
+        "body": {
+          "type": "static",
+          "width": 420,
+          "height": 260
+        },
+        "sprite": {
+          "color": "#5c4332",
+          "image": "assets/rock.svg",
+          "tile": true
+        }
+      }
+    },
+    {
+      "id": "cliff-right-grass",
+      "components": {
+        "transform": {
+          "x": 1710,
+          "y": 360
+        },
+        "sprite": {
+          "color": "#5fbf6a",
+          "image": "assets/ground.svg",
+          "tile": true,
+          "width": 420,
+          "height": 40
+        }
+      }
+    },
+    {
+      "id": "player",
+      "components": {
+        "transform": {
+          "x": 80,
+          "y": 482
+        },
+        "body": {
+          "type": "dynamic",
+          "width": 28,
+          "height": 36,
+          "shape": "capsule"
+        },
+        "sprite": {
+          "color": "#7cf29c",
+          "image": "assets/player.svg",
+          "frameWidth": 28,
+          "frameHeight": 36,
+          "idle": "0",
+          "run": "1-2",
+          "jump": "3",
+          "fall": "4",
+          "fps": 10,
+          "flip": true,
+          "layer": 3
+        },
+        "platformer": {
+          "speed": 240,
+          "jumpSpeed": 680
+        }
+      }
+    },
+    {
+      "id": "crate",
+      "components": {
+        "transform": {
+          "x": 460,
+          "y": 470
+        },
+        "body": {
+          "type": "dynamic",
+          "width": 60,
+          "height": 60,
+          "friction": 0.6
+        },
+        "sprite": {
+          "color": "#a0683d",
+          "image": "assets/crate.svg",
+          "layer": 2
+        }
+      }
+    },
+    {
+      "id": "coin-1",
+      "components": {
+        "transform": {
+          "x": 722,
+          "y": 392
+        },
+        "body": {
+          "type": "static",
+          "width": 20,
+          "height": 20,
+          "sensor": true
+        },
+        "sprite": {
+          "shape": "circle",
+          "color": "#ffd166",
+          "image": "assets/coin.svg",
+          "frameWidth": 20,
+          "idle": "0-3",
+          "layer": 1
+        },
+        "collectible": {
+          "score": 1
+        }
+      }
+    },
+    {
+      "id": "coin-2",
+      "components": {
+        "transform": {
+          "x": 980,
+          "y": 310
+        },
+        "body": {
+          "type": "static",
+          "width": 20,
+          "height": 20,
+          "sensor": true
+        },
+        "sprite": {
+          "shape": "circle",
+          "color": "#ffd166",
+          "image": "assets/coin.svg",
+          "frameWidth": 20,
+          "idle": "0-3",
+          "layer": 1
+        },
+        "collectible": {
+          "score": 1
+        }
+      }
+    },
+    {
+      "id": "coin-3",
+      "components": {
+        "transform": {
+          "x": 1640,
+          "y": 310
+        },
+        "body": {
+          "type": "static",
+          "width": 20,
+          "height": 20,
+          "sensor": true
+        },
+        "sprite": {
+          "shape": "circle",
+          "color": "#ffd166",
+          "image": "assets/coin.svg",
+          "frameWidth": 20,
+          "idle": "0-3",
+          "layer": 1
+        },
+        "collectible": {
+          "score": 1
+        }
+      }
+    },
+    {
+      "id": "lantern",
+      "components": {
+        "transform": {
+          "x": 830,
+          "y": 308
+        },
+        "body": {
+          "type": "static",
+          "width": 24,
+          "height": 64,
+          "sensor": true
+        },
+        "sprite": {
+          "color": "#6b4f3a",
+          "image": "assets/lantern.svg",
+          "layer": 1
+        },
+        "checkpoint": {},
+        "script": {
+          "src": "scripts/lantern.ts"
+        }
+      }
+    },
+    {
+      "id": "plank-0",
+      "components": {
+        "transform": {
+          "x": 1125,
+          "y": 345
+        },
+        "body": {
+          "type": "dynamic",
+          "width": 48,
+          "height": 10,
+          "density": 0.6,
+          "friction": 0.9
+        },
+        "sprite": {
+          "color": "#b07d4f",
+          "image": "assets/plank.svg"
+        },
+        "joint": {
+          "type": "revolute",
+          "anchor": {
+            "x": -25,
+            "y": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "plank-1",
+      "components": {
+        "transform": {
+          "x": 1175,
+          "y": 345
+        },
+        "body": {
+          "type": "dynamic",
+          "width": 48,
+          "height": 10,
+          "density": 0.6,
+          "friction": 0.9
+        },
+        "sprite": {
+          "color": "#b07d4f",
+          "image": "assets/plank.svg"
+        },
+        "joint": {
+          "type": "revolute",
+          "to": "plank-0",
+          "anchor": {
+            "x": -25,
+            "y": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "plank-2",
+      "components": {
+        "transform": {
+          "x": 1225,
+          "y": 345
+        },
+        "body": {
+          "type": "dynamic",
+          "width": 48,
+          "height": 10,
+          "density": 0.6,
+          "friction": 0.9
+        },
+        "sprite": {
+          "color": "#b07d4f",
+          "image": "assets/plank.svg"
+        },
+        "joint": {
+          "type": "revolute",
+          "to": "plank-1",
+          "anchor": {
+            "x": -25,
+            "y": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "plank-3",
+      "components": {
+        "transform": {
+          "x": 1275,
+          "y": 345
+        },
+        "body": {
+          "type": "dynamic",
+          "width": 48,
+          "height": 10,
+          "density": 0.6,
+          "friction": 0.9
+        },
+        "sprite": {
+          "color": "#b07d4f",
+          "image": "assets/plank.svg"
+        },
+        "joint": {
+          "type": "revolute",
+          "to": "plank-2",
+          "anchor": {
+            "x": -25,
+            "y": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "plank-4",
+      "components": {
+        "transform": {
+          "x": 1325,
+          "y": 345
+        },
+        "body": {
+          "type": "dynamic",
+          "width": 48,
+          "height": 10,
+          "density": 0.6,
+          "friction": 0.9
+        },
+        "sprite": {
+          "color": "#b07d4f",
+          "image": "assets/plank.svg"
+        },
+        "joint": {
+          "type": "revolute",
+          "to": "plank-3",
+          "anchor": {
+            "x": -25,
+            "y": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "plank-5",
+      "components": {
+        "transform": {
+          "x": 1375,
+          "y": 345
+        },
+        "body": {
+          "type": "dynamic",
+          "width": 48,
+          "height": 10,
+          "density": 0.6,
+          "friction": 0.9
+        },
+        "sprite": {
+          "color": "#b07d4f",
+          "image": "assets/plank.svg"
+        },
+        "joint": {
+          "type": "revolute",
+          "to": "plank-4",
+          "anchor": {
+            "x": -25,
+            "y": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "plank-6",
+      "components": {
+        "transform": {
+          "x": 1425,
+          "y": 345
+        },
+        "body": {
+          "type": "dynamic",
+          "width": 48,
+          "height": 10,
+          "density": 0.6,
+          "friction": 0.9
+        },
+        "sprite": {
+          "color": "#b07d4f",
+          "image": "assets/plank.svg"
+        },
+        "joint": {
+          "type": "revolute",
+          "to": "plank-5",
+          "anchor": {
+            "x": -25,
+            "y": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "plank-7",
+      "components": {
+        "transform": {
+          "x": 1475,
+          "y": 345
+        },
+        "body": {
+          "type": "dynamic",
+          "width": 48,
+          "height": 10,
+          "density": 0.6,
+          "friction": 0.9
+        },
+        "sprite": {
+          "color": "#b07d4f",
+          "image": "assets/plank.svg"
+        },
+        "joint": [
+          {
+            "type": "revolute",
+            "to": "plank-6",
+            "anchor": {
+              "x": -25,
+              "y": 0
+            }
+          },
+          {
+            "type": "revolute",
+            "anchor": {
+              "x": 25,
+              "y": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "pendulum",
+      "components": {
+        "transform": {
+          "x": 1490,
+          "y": 120
+        },
+        "body": {
+          "type": "dynamic",
+          "width": 52,
+          "height": 52,
+          "shape": "circle",
+          "sensor": true,
+          "density": 4
+        },
+        "sprite": {
+          "color": "#5c5470",
+          "image": "assets/spikeball.svg",
+          "layer": 2
+        },
+        "hazard": {},
+        "joint": {
+          "type": "revolute",
+          "anchor": {
+            "x": -190,
+            "y": 0
+          }
+        },
+        "script": {
+          "src": "scripts/chain.ts",
+          "params": {
+            "pivot": {
+              "x": 1300,
+              "y": 120
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "flag",
+      "components": {
+        "transform": {
+          "x": 1840,
+          "y": 300
+        },
+        "body": {
+          "type": "static",
+          "width": 24,
+          "height": 80,
+          "sensor": true
+        },
+        "sprite": {
+          "color": "#4cc9f0",
+          "image": "assets/flag.svg",
+          "frameWidth": 24,
+          "idle": "0-1",
+          "fps": 3,
+          "flip": false,
+          "layer": 1
+        },
+        "emitter": {
+          "rate": 6,
+          "color": "#fff3b0",
+          "speed": 30,
+          "spread": 70,
+          "life": 1.2,
+          "size": 3,
+          "gravity": -20
+        },
+        "goal": {
+          "requireScore": 3
+        }
+      }
+    },
+    {
+      "id": "ambience",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": 0
+        },
+        "script": {
+          "src": "scripts/ambience.ts"
+        }
+      }
+    },
+    {
+      "id": "hud",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": 0
+        },
+        "script": {
+          "src": "scripts/hud.ts",
+          "params": {
+            "title": "Crate & Chasm",
+            "level": 1,
+            "lives": 3
+          }
+        }
+      }
+    }
+  ]
+}

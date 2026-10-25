@@ -22,7 +22,7 @@ process.emitWarning = ((warning: string | Error, ...rest: unknown[]) => {
 const HELP = `ludra: the game engine built for AI agents
 
 Usage
-  ludra new <folder> [--template <name>]       Create a game project (templates: platformer, topdown, breakout)
+  ludra new <folder> [--template <name>]       Create a game project (templates: platformer, topdown, breakout, physics)
   ludra check [folder] [--json]                Validate every scene; every problem comes with a fix
   ludra play [folder] [options]                Simulate the game headlessly
       --scene scenes/level-2.scene.json        Scene to play (default: the entry scene in ludra.json)
@@ -33,6 +33,7 @@ Usage
       --ascii                                  Print the final frame as a text map
       --columns 120                            Width of the text map (default: 80)
       --screenshot 1s,2.5s,end                 Save real rendered frames as PNGs (needs Chrome, Edge or Chromium)
+      --debug                                  Draw colliders, sensors, joints and ids over the screenshots
       --out screenshots                        Folder for screenshots, relative to the project (default: screenshots)
       --json                                   Machine-readable output
   ludra test [folder] [--json]                 Run tests/*.test.json (a test can pick its "scene")
@@ -60,6 +61,7 @@ async function main(argv: string[]): Promise<number> {
       ascii: { type: "boolean" },
       columns: { type: "string" },
       screenshot: { type: "string" },
+      debug: { type: "boolean" },
       out: { type: "string" },
       json: { type: "boolean" },
       template: { type: "string" },

@@ -1,0 +1,619 @@
+{
+  "name": "Clockwork Keep",
+  "world": {
+    "width": 1920,
+    "height": 1080,
+    "gravity": 1800,
+    "background": "#1a1626",
+    "lives": 3
+  },
+  "fonts": {
+    "Fredoka": "google"
+  },
+  "postfx": {
+    "shader": "shaders/glow.frag",
+    "uniforms": {
+      "bloom": 1.2,
+      "warmth": 1,
+      "vignette": 1.1
+    }
+  },
+  "effects": {
+    "jump": {
+      "sound": "hop",
+      "particles": {
+        "count": 6,
+        "color": "#cfd8ff",
+        "speed": 60,
+        "direction": 90,
+        "spread": 150,
+        "life": 0.25,
+        "size": 3,
+        "gravity": 0
+      }
+    },
+    "land": {
+      "sound": "stone-step",
+      "particles": {
+        "count": 5,
+        "color": "#cfd8ff",
+        "speed": 50,
+        "direction": -90,
+        "spread": 160,
+        "life": 0.2,
+        "size": 2,
+        "gravity": 300
+      }
+    },
+    "collect": {
+      "sound": "chime",
+      "particles": {
+        "count": 14,
+        "color": "#ffd166",
+        "speed": 140,
+        "life": 0.45,
+        "size": 3,
+        "gravity": 200
+      }
+    },
+    "die": {
+      "sound": "spiked",
+      "shake": 10,
+      "particles": {
+        "count": 30,
+        "color": "#ff5d73",
+        "speed": 220,
+        "life": 0.7,
+        "size": 4
+      }
+    },
+    "win": {
+      "sound": "fanfare",
+      "shake": 3,
+      "particles": {
+        "count": 60,
+        "color": "#4cc9f0",
+        "speed": 260,
+        "life": 1.2,
+        "size": 4,
+        "gravity": 150
+      }
+    },
+    "checkpoint": {
+      "sound": "gate-bell",
+      "particles": {
+        "count": 24,
+        "color": "#ffd166",
+        "speed": 120,
+        "life": 0.7,
+        "size": 3,
+        "gravity": -60
+      }
+    },
+    "gameover": {
+      "sound": "toll",
+      "shake": 12
+    }
+  },
+  "sounds": {
+    "hop": {
+      "tones": [
+        {
+          "wave": "triangle",
+          "from": 300,
+          "to": 560,
+          "duration": 0.12,
+          "volume": 0.2
+        }
+      ],
+      "noise": [
+        {
+          "filter": "highpass",
+          "from": 4000,
+          "duration": 0.05,
+          "volume": 0.05
+        }
+      ],
+      "vary": 0.06
+    },
+    "stone-step": {
+      "tones": [
+        {
+          "wave": "sine",
+          "from": 110,
+          "to": 55,
+          "duration": 0.07,
+          "volume": 0.22
+        }
+      ],
+      "noise": [
+        {
+          "filter": "bandpass",
+          "from": 1800,
+          "to": 900,
+          "duration": 0.05,
+          "volume": 0.12
+        }
+      ],
+      "vary": 0.15
+    },
+    "chime": {
+      "tones": [
+        {
+          "wave": "sine",
+          "from": 1175,
+          "duration": 0.3,
+          "volume": 0.14
+        },
+        {
+          "wave": "sine",
+          "from": 1760,
+          "start": 0.06,
+          "duration": 0.45,
+          "volume": 0.12
+        },
+        {
+          "wave": "triangle",
+          "from": 3520,
+          "start": 0.06,
+          "duration": 0.15,
+          "volume": 0.03
+        }
+      ],
+      "vary": 0.03
+    },
+    "spiked": {
+      "tones": [
+        {
+          "wave": "sawtooth",
+          "from": 320,
+          "to": 55,
+          "duration": 0.4,
+          "volume": 0.15
+        }
+      ],
+      "noise": [
+        {
+          "filter": "highpass",
+          "from": 3000,
+          "to": 700,
+          "duration": 0.25,
+          "volume": 0.3
+        }
+      ]
+    },
+    "gate-bell": {
+      "tones": [
+        {
+          "wave": "sine",
+          "from": 587,
+          "duration": 0.9,
+          "volume": 0.12,
+          "attack": 0.01
+        },
+        {
+          "wave": "sine",
+          "from": 1480,
+          "duration": 0.6,
+          "volume": 0.04
+        }
+      ],
+      "noise": [
+        {
+          "filter": "bandpass",
+          "from": 2400,
+          "to": 1600,
+          "start": 0.1,
+          "duration": 1.3,
+          "volume": 0.07,
+          "attack": 0.1
+        }
+      ]
+    },
+    "fanfare": {
+      "tones": [
+        {
+          "wave": "triangle",
+          "from": 294,
+          "start": 0,
+          "duration": 0.2,
+          "volume": 0.2
+        },
+        {
+          "wave": "triangle",
+          "from": 370,
+          "start": 0.11,
+          "duration": 0.2,
+          "volume": 0.2
+        },
+        {
+          "wave": "triangle",
+          "from": 440,
+          "start": 0.22,
+          "duration": 0.2,
+          "volume": 0.2
+        },
+        {
+          "wave": "triangle",
+          "from": 587,
+          "start": 0.34,
+          "duration": 0.9,
+          "volume": 0.2
+        },
+        {
+          "wave": "sine",
+          "from": 147,
+          "duration": 1.2,
+          "volume": 0.15,
+          "attack": 0.02
+        }
+      ]
+    },
+    "toll": {
+      "tones": [
+        {
+          "wave": "sine",
+          "from": 147,
+          "duration": 2,
+          "volume": 0.25,
+          "attack": 0.005
+        },
+        {
+          "wave": "sine",
+          "from": 353,
+          "duration": 1.4,
+          "volume": 0.06
+        }
+      ]
+    }
+  },
+  "music": {
+    "tempo": 88,
+    "steps": 2,
+    "volume": 1,
+    "tracks": [
+      {
+        "wave": "triangle",
+        "volume": 0.24,
+        "decay": 0.55,
+        "notes": "D4 F4 A4 ~ G4 F4 E4 ~ | D4 E4 F4 ~ E4 D4 C#4 ~ | D4 F4 A4 ~ Bb4 A4 G4 ~ | F4 E4 D4 ~ ~ ~ - -"
+      },
+      {
+        "wave": "sine",
+        "volume": 0.35,
+        "decay": 1,
+        "attack": 0.05,
+        "notes": "D2 ~ ~ ~ ~ ~ ~ ~ | A1 ~ ~ ~ ~ ~ ~ ~ | Bb1 ~ ~ ~ ~ ~ ~ ~ | A1 ~ ~ ~ | D2 ~ ~ ~"
+      },
+      {
+        "wave": "sawtooth",
+        "volume": 0.05,
+        "decay": 1,
+        "attack": 0.5,
+        "filter": 800,
+        "notes": "D3+A3 ~ ~ ~ ~ ~ ~ ~ | A2+E3 ~ ~ ~ ~ ~ ~ ~ | Bb2+F3 ~ ~ ~ ~ ~ ~ ~ | A2+E3 ~ ~ ~ D3+A3 ~ ~ ~"
+      },
+      {
+        "wave": "noise",
+        "volume": 0.3,
+        "decay": 0.45,
+        "filter": 130,
+        "notes": "X - - - x - - x"
+      },
+      {
+        "wave": "noise",
+        "volume": 0.05,
+        "decay": 0.2,
+        "filter": 5000,
+        "notes": "- - x - - - x -"
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "backdrop",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": 0
+        },
+        "script": {
+          "src": "scripts/keep-wall.ts"
+        }
+      }
+    },
+    {
+      "id": "keep",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": 0
+        },
+        "tilemap": {
+          "tileSize": 40,
+          "rows": [
+            "################################################",
+            "#..............................................#",
+            "#..............................................#",
+            "#..............................................#",
+            "#..............................................#",
+            "#..............................................#",
+            "#..............................................#",
+            "#..............................................#",
+            "#.......................c......................#",
+            "#..............................................#",
+            "#.............................c................#",
+            "#..............................................#",
+            "###########^^^^^^#####^^^################......#",
+            "#########################################......#",
+            "#..............................................#",
+            "#..............................................#",
+            "#..............................................#",
+            "#..............................................#",
+            "#..............................................#",
+            "#..............................................#",
+            "#..............................................#",
+            "#..............................................#",
+            "#.....................c......c.................#",
+            "#...................####.......................#",
+            "#...................####.......................#",
+            "############^^^#############^^^#################",
+            "################################################"
+          ],
+          "legend": {
+            "#": {
+              "image": "assets/stone.svg",
+              "color": "#4a4560"
+            },
+            "^": {
+              "image": "assets/spikes.svg",
+              "color": "#ff5d73",
+              "sensor": true,
+              "components": {
+                "hazard": {}
+              }
+            },
+            "c": "coin"
+          }
+        }
+      }
+    },
+    {
+      "id": "cellar-room",
+      "components": {
+        "transform": {
+          "x": 960,
+          "y": 800
+        },
+        "cameraZone": {
+          "width": 1920,
+          "height": 560,
+          "mode": "room",
+          "blend": 0.7
+        }
+      }
+    },
+    {
+      "id": "hall-room",
+      "components": {
+        "transform": {
+          "x": 960,
+          "y": 260
+        },
+        "cameraZone": {
+          "width": 1920,
+          "height": 520,
+          "mode": "room",
+          "blend": 0.7
+        }
+      }
+    },
+    {
+      "id": "vista",
+      "components": {
+        "transform": {
+          "x": 220,
+          "y": 260
+        },
+        "cameraZone": {
+          "width": 440,
+          "height": 520,
+          "mode": "fixed",
+          "zoom": 0.5,
+          "blend": 1.2,
+          "priority": 1
+        }
+      }
+    },
+    {
+      "id": "player",
+      "components": {
+        "transform": {
+          "x": 100,
+          "y": 982
+        },
+        "body": {
+          "type": "dynamic",
+          "width": 28,
+          "height": 36
+        },
+        "sprite": {
+          "color": "#7cf29c",
+          "image": "assets/player.svg",
+          "frameWidth": 28,
+          "frameHeight": 36,
+          "idle": "0",
+          "run": "1-2",
+          "jump": "3",
+          "fall": "4",
+          "fps": 10,
+          "flip": true,
+          "layer": 3
+        },
+        "platformer": {
+          "speed": 240,
+          "jumpSpeed": 680
+        }
+      }
+    },
+    {
+      "id": "lift",
+      "components": {
+        "transform": {
+          "x": 1740,
+          "y": 1010
+        },
+        "body": {
+          "type": "kinematic",
+          "width": 200,
+          "height": 20
+        },
+        "sprite": {
+          "color": "#c9a227",
+          "image": "assets/lift.svg",
+          "tile": true,
+          "layer": 1
+        },
+        "tween": {
+          "property": "y",
+          "by": -520,
+          "duration": 3,
+          "delay": 1.2,
+          "ease": "sineInOut",
+          "repeat": "pingpong"
+        }
+      }
+    },
+    {
+      "id": "lantern",
+      "components": {
+        "transform": {
+          "x": 1560,
+          "y": 448
+        },
+        "body": {
+          "type": "static",
+          "width": 24,
+          "height": 64,
+          "sensor": true
+        },
+        "sprite": {
+          "color": "#6b4f3a",
+          "image": "assets/lantern.svg",
+          "layer": 1
+        },
+        "checkpoint": {},
+        "script": {
+          "src": "scripts/lantern.ts"
+        }
+      }
+    },
+    {
+      "id": "gate",
+      "components": {
+        "transform": {
+          "x": 1300,
+          "y": 380
+        },
+        "body": {
+          "type": "kinematic",
+          "width": 40,
+          "height": 200
+        },
+        "sprite": {
+          "color": "#7a6a58",
+          "image": "assets/gate.svg",
+          "layer": 2
+        },
+        "tween": {
+          "property": "y",
+          "by": -180,
+          "duration": 1.4,
+          "ease": "quadInOut",
+          "on": "checkpoint"
+        }
+      }
+    },
+    {
+      "id": "glider",
+      "components": {
+        "transform": {
+          "x": 720,
+          "y": 490
+        },
+        "body": {
+          "type": "kinematic",
+          "width": 100,
+          "height": 20
+        },
+        "sprite": {
+          "color": "#c9a227",
+          "image": "assets/lift.svg",
+          "tile": true,
+          "layer": 1
+        },
+        "tween": {
+          "property": "x",
+          "by": -320,
+          "duration": 2.2,
+          "delay": 0.5,
+          "ease": "sineInOut",
+          "repeat": "pingpong"
+        }
+      }
+    },
+    {
+      "id": "flag",
+      "components": {
+        "transform": {
+          "x": 120,
+          "y": 440
+        },
+        "body": {
+          "type": "static",
+          "width": 24,
+          "height": 80,
+          "sensor": true
+        },
+        "sprite": {
+          "color": "#4cc9f0",
+          "image": "assets/flag.svg",
+          "frameWidth": 24,
+          "idle": "0-1",
+          "fps": 3,
+          "flip": false,
+          "layer": 1
+        },
+        "emitter": {
+          "rate": 6,
+          "color": "#fff3b0",
+          "speed": 30,
+          "spread": 70,
+          "life": 1.2,
+          "size": 3,
+          "gravity": -20
+        },
+        "goal": {
+          "requireScore": 4
+        }
+      }
+    },
+    {
+      "id": "hud",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": 0
+        },
+        "script": {
+          "src": "scripts/hud.ts",
+          "params": {
+            "title": "Clockwork Keep",
+            "level": 1,
+            "lives": 3
+          }
+        }
+      }
+    }
+  ]
+}

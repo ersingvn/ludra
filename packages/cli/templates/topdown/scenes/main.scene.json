@@ -19,7 +19,7 @@
   },
   "effects": {
     "collect": {
-      "sound": "coin",
+      "sound": "crystal",
       "particles": {
         "count": 14,
         "color": "#7fe0ff",
@@ -30,7 +30,7 @@
       }
     },
     "die": {
-      "sound": "explosion",
+      "sound": "slimed",
       "shake": 8,
       "particles": {
         "count": 26,
@@ -42,7 +42,7 @@
       }
     },
     "win": {
-      "sound": "powerup",
+      "sound": "grove-opens",
       "shake": 3,
       "particles": {
         "count": 60,
@@ -53,6 +53,146 @@
         "gravity": 0
       }
     }
+  },
+  "sounds": {
+    "crystal": {
+      "tones": [
+        {
+          "wave": "sine",
+          "from": 2637,
+          "duration": 0.45,
+          "volume": 0.108
+        },
+        {
+          "wave": "sine",
+          "from": 3520,
+          "start": 0.03,
+          "duration": 0.55,
+          "volume": 0.072
+        },
+        {
+          "wave": "triangle",
+          "from": 1319,
+          "duration": 0.15,
+          "volume": 0.09
+        }
+      ],
+      "vary": 0.04
+    },
+    "slimed": {
+      "tones": [
+        {
+          "wave": "sine",
+          "from": 260,
+          "to": 70,
+          "duration": 0.4,
+          "volume": 0.252
+        }
+      ],
+      "noise": [
+        {
+          "filter": "bandpass",
+          "from": 700,
+          "to": 150,
+          "duration": 0.35,
+          "volume": 0.252
+        }
+      ]
+    },
+    "grove-opens": {
+      "tones": [
+        {
+          "wave": "sine",
+          "from": 587,
+          "start": 0,
+          "duration": 0.8,
+          "volume": 0.126,
+          "attack": 0.02
+        },
+        {
+          "wave": "sine",
+          "from": 740,
+          "start": 0.09,
+          "duration": 0.8,
+          "volume": 0.126,
+          "attack": 0.02
+        },
+        {
+          "wave": "sine",
+          "from": 880,
+          "start": 0.18,
+          "duration": 0.8,
+          "volume": 0.126,
+          "attack": 0.02
+        },
+        {
+          "wave": "sine",
+          "from": 1109,
+          "start": 0.27,
+          "duration": 0.8,
+          "volume": 0.126,
+          "attack": 0.02
+        },
+        {
+          "wave": "sine",
+          "from": 1319,
+          "start": 0.36,
+          "duration": 0.8,
+          "volume": 0.126,
+          "attack": 0.02
+        },
+        {
+          "wave": "triangle",
+          "from": 147,
+          "duration": 1.4,
+          "volume": 0.144,
+          "attack": 0.1
+        }
+      ],
+      "noise": [
+        {
+          "filter": "highpass",
+          "from": 6000,
+          "duration": 1,
+          "volume": 0.027,
+          "attack": 0.3
+        }
+      ]
+    }
+  },
+  "music": {
+    "tempo": 72,
+    "steps": 2,
+    "volume": 1,
+    "tracks": [
+      {
+        "wave": "sine",
+        "volume": 0.175,
+        "decay": 0.9,
+        "notes": "A4 - E5 - D5 - A4 B4 | - - F#5 - E5 - - - | A4 - E5 - G#5 - F#5 E5 | D5 - - - - - - -"
+      },
+      {
+        "wave": "triangle",
+        "volume": 0.112,
+        "decay": 1,
+        "attack": 1,
+        "notes": "D3+A3 ~ ~ ~ ~ ~ ~ ~ | E3+B3 ~ ~ ~ ~ ~ ~ ~ | D3+A3 ~ ~ ~ ~ ~ ~ ~ | A2+E3 ~ ~ ~ ~ ~ ~ ~"
+      },
+      {
+        "wave": "sine",
+        "volume": 0.3,
+        "decay": 1,
+        "attack": 0.2,
+        "notes": "D2 ~ ~ ~ ~ ~ ~ ~ | E2 ~ ~ ~ ~ ~ ~ ~ | D2 ~ ~ ~ ~ ~ ~ ~ | A1 ~ ~ ~ ~ ~ ~ ~"
+      },
+      {
+        "wave": "noise",
+        "volume": 0.03,
+        "decay": 0.5,
+        "filter": 9000,
+        "notes": "- - - x - - - -"
+      }
+    ]
   },
   "entities": [
     {

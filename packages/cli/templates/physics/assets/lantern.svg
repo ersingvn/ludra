@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="64" viewBox="0 0 24 64">
+  <!-- A checkpoint: a wooden post with an unlit lantern hanging from it. lantern.ts lights it. -->
+  <rect x="10" y="6" width="4" height="58" rx="1.5" fill="#6b4f3a"/>
+  <rect x="10" y="6" width="2" height="58" fill="#80624a"/>
+  <rect x="4" y="6" width="16" height="3" rx="1.5" fill="#5c4332"/>
+  <path d="M6 9 v4" stroke="#cfd8ff" stroke-width="1"/>
+  <rect x="2" y="13" width="8" height="12" rx="2" fill="#2a3150" stroke="#cfd8ff" stroke-width="1.2"/>
+  <rect x="4" y="11" width="4" height="2" rx="1" fill="#cfd8ff"/>
+</svg>

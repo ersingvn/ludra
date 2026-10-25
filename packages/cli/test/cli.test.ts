@@ -124,6 +124,7 @@ describe("ludra review", () => {
     writeFileSync(
       join(bare, "scenes", "main.scene.json"),
       JSON.stringify({
+        effects: { jump: { sound: "jump" }, land: { sound: "thud" } },
         entities: [
           { id: "player", components: { transform: { x: 100, y: 482 }, body: { type: "dynamic", width: 28, height: 36 }, platformer: {}, sprite: { color: "#fff" } } },
           { id: "ground", components: { transform: { x: 480, y: 520 }, body: { type: "static", width: 960, height: 40 }, sprite: { color: "#345" } } },
@@ -133,7 +134,7 @@ describe("ludra review", () => {
     const { code, out } = ludra("review", bare, "--json", "--strict");
     assert.equal(code, 1);
     const codes = (JSON.parse(out).findings as { code: string }[]).map((f) => f.code);
-    for (const expected of ["R_NO_TESTS", "R_DEFAULT_HUD", "R_FLAT_BACKDROP", "R_PLAIN_SHAPES", "R_NO_POSTFX", "R_UNNAMED_SCENE"]) {
+    for (const expected of ["R_NO_TESTS", "R_DEFAULT_HUD", "R_FLAT_BACKDROP", "R_PLAIN_SHAPES", "R_NO_POSTFX", "R_UNNAMED_SCENE", "R_STOCK_SOUNDS", "R_NO_MUSIC"]) {
       assert.ok(codes.includes(expected), `${expected} in ${codes.join(", ")}`);
     }
     assert.equal(ludra("review", bare).code, 0, "without --strict, review only advises");
@@ -164,5 +165,52 @@ describe("multiple scenes", () => {
     } finally {
       writeFileSync(path, original);
     }
+  });
+});
+
+describe("rapier physics through the CLI", () => {
+  test("a scene with \"physics\": \"rapier\" loads Rapier on its own for check, play and test", () => {
+    const dir = join(workDir, "tumble");
+    mkdirSync(join(dir, "scenes"), { recursive: true });
+    mkdirSync(join(dir, "tests"), { recursive: true });
+    writeFileSync(join(dir, "ludra.json"), JSON.stringify({ name: "Tumble" }));
+    const body = (width: number, height: number, extra = {}) => ({ type: "dynamic", width, height, ...extra });
+    writeFileSync(
+      join(dir, "scenes", "main.scene.json"),
+      JSON.stringify({
+        world: { physics: "rapier" },
+        entities: [
+          { id: "ground", components: { transform: { x: 480, y: 520 }, body: { type: "static", width: 960, height: 40 } } },
+          { id: "ramp", components: { transform: { x: 250, y: 300, rotation: 20 }, body: { type: "static", width: 360, height: 16 } } },
+          { id: "ball", components: { transform: { x: 110, y: 200 }, body: body(36, 36, { shape: "circle", density: 4 }) } },
+          ...[480, 439, 398].map((y, i) => ({ id: `crate-${i + 1}`, components: { transform: { x: 700, y }, body: body(40, 40) } })),
+        ],
+      }),
+    );
+    writeFileSync(
+      join(dir, "tests", "physics.test.json"),
+      JSON.stringify({
+        tests: [
+          { name: "the ball rolls and spins", duration: "1.5s", assert: ["ball.x > 400", "ball.rotation > 180"] },
+          { name: "the tower falls", duration: "4s", assert: ["crate-3.y > 440", "crate-3.rotation != 0"] },
+        ],
+      }),
+    );
+    assert.equal(ludra("check", dir).code, 0);
+    const played = JSON.parse(ludra("play", dir, "--duration", "1s", "--json").out);
+    assert.ok(played.final.entities.ball.rotation > 0, "rotation is in play's output");
+    const { code, out } = ludra("test", dir);
+    assert.equal(code, 0, out);
+  });
+
+  test("screenshots of a rapier scene load Rapier in the browser, with and without --debug", { skip: findBrowser() ? false : "no Chrome, Edge or Chromium installed" }, () => {
+    const dir = join(workDir, "tumble");
+    const normal = ludra("play", dir, "--duration", "1s", "--screenshot", "1s", "--out", "shots", "--json");
+    assert.equal(normal.code, 0, normal.out);
+    const debug = ludra("play", dir, "--duration", "1s", "--screenshot", "1s", "--out", "shots-debug", "--debug", "--json");
+    assert.equal(debug.code, 0, debug.out);
+    const [plain, overlay] = [join(dir, "shots", "t-1.00s.png"), join(dir, "shots-debug", "t-1.00s.png")].map((p) => readFileSync(p));
+    assert.equal(plain!.subarray(1, 4).toString(), "PNG");
+    assert.notDeepEqual(plain, overlay, "the debug view draws over the frame");
   });
 });
