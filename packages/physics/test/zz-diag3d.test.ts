@@ -38,6 +38,12 @@ test("diagnose 3D determinism", async () => {
     simulate(world, InputScript.parse("up:1s, up+jump:0.4s, up:1.2s, left+up:1s, wait:0.4s"), 360, (w) => {
       const h = createHash("sha256").update(JSON.stringify(w.snapshot())).digest("hex").slice(0, 8);
       hashes.push(h);
+      if (name === "ball" && w.frame >= 236 && w.frame <= 242) {
+        const raw = (w.physics as unknown as { world: { bodies: { forEach(cb: (b: { rotation(): unknown }) => void): void } } }).world;
+        const qs: unknown[] = [];
+        raw.bodies.forEach((b) => qs.push(b.rotation()));
+        console.log(`DIAGF ${w.frame} ${JSON.stringify(w.snapshot().entities.ball)} ${JSON.stringify(qs)}`);
+      }
       if (first === undefined && [1, 2, 3, 5, 10, 30, 60, 120, 240, 360].includes(w.frame)) void 0;
     });
     const marks = [1, 2, 3, 5, 10, 20, 30, 60, 120, 240, 360].map((f) => `${f}:${hashes[f]}`).join(" ");
