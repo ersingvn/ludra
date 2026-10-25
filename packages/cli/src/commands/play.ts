@@ -17,6 +17,7 @@ import { captureScreenshots } from "../headless.ts";
 import { CliError, loadProject, requireGame, type Project } from "../project.ts";
 
 export interface PlayOptions {
+  scene?: string;
   inputs?: string;
   duration?: string;
   watch?: string;
@@ -38,7 +39,7 @@ const MAX_EVENTS_SHOWN = 40;
 
 export async function play(dir: string, options: PlayOptions): Promise<number> {
   const project = loadProject(dir);
-  const { scene, scripts } = await requireGame(project);
+  const { scene, scripts } = await requireGame(project, options.scene);
   const script = parse(() => InputScript.parse(options.inputs ?? ""));
   const frames = secondsToFrames(options.duration ? parse(() => parseDuration(options.duration!)) : defaultDuration(script));
   const every = Math.max(1, secondsToFrames(parse(() => parseDuration(options.every ?? "0.25s"))));
@@ -118,7 +119,7 @@ async function takeScreenshots(project: Project, options: PlayOptions, lastFrame
 
   const outDir = resolve(project.dir, options.out ?? "screenshots");
   mkdirSync(outDir, { recursive: true });
-  const captured = await captureScreenshots(project, { inputs: options.inputs ?? "", frames });
+  const captured = await captureScreenshots(project, { scene: options.scene, inputs: options.inputs ?? "", frames });
   return captured.map((shot) => {
     const path = join(outDir, `t-${fixed(shot.time, 2)}s.png`);
     writeFileSync(path, Buffer.from(shot.png.slice(shot.png.indexOf(",") + 1), "base64"));
@@ -160,11 +161,17 @@ function describeEvent(event: GameEvent): string {
     case "stomp":
       return `${event.entity} stomped ${event.enemy}${event.score ? ` (+${event.score})` : ""}`;
     case "die":
-      return `${event.entity} ${event.cause === "fall" ? "fell out of the world" : `hit ${event.cause}`}, respawned`;
+      return `${event.entity} ${event.cause === "fall" ? "fell out of the world" : `hit ${event.cause}`}`;
     case "win":
       return event.entity === event.goal ? `${event.entity} (script) completed the level` : `${event.entity} reached ${event.goal}`;
     case "bounce":
       return `${event.entity} bounced off ${event.other}`;
+    case "checkpoint":
+      return `${event.entity} reached ${event.checkpoint} (respawns there now)`;
+    case "gameover":
+      return event.cause === "script" ? `game over (from ${event.entity}'s script)` : `${event.entity} is out of lives: game over`;
+    case "goto":
+      return `${event.entity} → ${event.scene}`;
     case "custom":
       return `from ${event.entity}'s script${event.data === undefined ? "" : ` ${JSON.stringify(event.data)}`}`;
     default:

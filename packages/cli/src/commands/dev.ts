@@ -16,7 +16,7 @@ export function dev(dir: string, options: { port?: string }): number {
   server.listen(port, "127.0.0.1", () => {
     console.log(paint("green", `▶ ${project.config.name} is running at http://localhost:${port}`));
     console.log(paint("dim", `  Arrows/WASD to move, Space/Z to jump, M to mute, R to restart.`));
-    console.log(paint("dim", `  Editing ${project.entryLabel} or its images and sounds reloads the page. Ctrl+C to stop.`));
+    console.log(paint("dim", `  Editing a scene, prefab, script or asset reloads the page. Ctrl+C to stop.`));
   });
   return 0;
 }
@@ -46,7 +46,12 @@ import { startGame } from "${browserModule}";
 const data = await (await fetch("/__ludra/scene")).json();
 if (data.ok) {
   const scriptPaths = await (await fetch("/__ludra/scripts")).json();
-  await startGame(document.getElementById("game"), data.scene, { assetBase: "${PROJECT_PREFIX}", scriptBase: "${SCRIPT_PREFIX}", scriptPaths });
+  const loadScene = async (path) => {
+    const next = await (await fetch("/__ludra/scene?path=" + encodeURIComponent(path))).json();
+    if (!next.ok) throw new Error(next.diagnostics.map((d) => d.code + " at " + d.path + ": " + d.message).join(" "));
+    return next.scene;
+  };
+  await startGame(document.getElementById("game"), data.scene, { assetBase: "${PROJECT_PREFIX}", scriptBase: "${SCRIPT_PREFIX}", scriptPaths, loadScene });
 } else {
   document.getElementById("game").hidden = true;
   const errors = document.getElementById("errors");

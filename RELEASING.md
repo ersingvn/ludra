@@ -21,15 +21,16 @@ Both always share one version number.
 ## Each release
 
 1. Bump the version in `packages/core/package.json`, `packages/cli/package.json` (and its `@ludra/core` dependency), the plugin version in `plugins/ludra/.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`, and the template's `packages/cli/templates/platformer/package.json`, then run `npm install` to update the lockfile.
-2. Merge that to `main` through a pull request so CI checks it.
-3. Tag the merge commit and push the tag:
+2. Write the release notes in `docs/releases/v<version>.md`. The first line, `# v<version>: <title>`, becomes the release title; the rest is the body. See the earlier files there for the shape: what it's about, highlights with examples, the merged PRs and a changelog link.
+3. Merge that to `main` through a pull request so CI checks it.
+4. Tag the merge commit and push the tag:
 
    ```bash
-   git tag v0.7.0
-   git push origin v0.7.0
+   git tag v0.8.0
+   git push origin v0.8.0
    ```
 
-The [Release workflow](.github/workflows/release.yml) then checks that the tag matches both package versions, builds, runs the tests, and publishes `@ludra/core` and then `@ludra/cli` with [npm provenance](https://docs.npmjs.com/generating-provenance-statements). A version that is already on npm is skipped, so if a release fails halfway, fix the cause and re-run the workflow from the Actions tab.
+The [Release workflow](.github/workflows/release.yml) then checks that the tag matches both package versions, builds, runs the tests, and publishes `@ludra/core` and then `@ludra/cli` with [npm provenance](https://docs.npmjs.com/generating-provenance-statements), then creates the GitHub release from the notes file. Without a notes file, GitHub generates the notes from the merged pull requests, with links to both npm packages on top. A version that is already on npm, or a release that already exists, is skipped, so if a release fails halfway, fix the cause and re-run the workflow from the Actions tab.
 
 ## Checking a release before publishing
 

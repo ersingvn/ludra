@@ -39,6 +39,8 @@ export function findBrowser(): string | undefined {
 }
 
 export interface ScreenshotRequest {
+  /** Scene to render, relative to the project. Defaults to the entry scene. */
+  scene?: string;
   inputs: string;
   frames: number[];
 }
@@ -47,6 +49,10 @@ export interface ScreenshotRequest {
  * Renders frames of a project in a headless browser, using the same renderer
  * players see. Starts a private game server and browser, and stops both.
  */
+function sceneUrl(scene: string | undefined): string {
+  return scene ? `/__ludra/scene?path=${encodeURIComponent(scene)}` : "/__ludra/scene";
+}
+
 export async function captureScreenshots(project: Project, request: ScreenshotRequest): Promise<CapturedFrame[]> {
   const browserPath = findBrowser();
   if (!browserPath) {
@@ -93,7 +99,7 @@ export async function captureScreenshots(project: Project, request: ScreenshotRe
 
     const script = `(async () => {
       const { captureFrames } = await import(${JSON.stringify(browserModule)});
-      const data = await (await fetch("/__ludra/scene")).json();
+      const data = await (await fetch(${JSON.stringify(sceneUrl(request.scene))})).json();
       if (!data.ok) throw new Error("The scene has errors. Run ludra check.");
       const canvas = document.createElement("canvas");
       canvas.width = ${width};
@@ -124,8 +130,20 @@ export async function captureScreenshots(project: Project, request: ScreenshotRe
       });
     }
     server.close();
-    // The browser can hold its profile for a moment after exiting on Windows.
-    rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    removeProfile(profile);
+  }
+}
+
+/**
+ * The browser can keep its profile busy for a moment after exiting: files held open
+ * on Windows, helper processes still writing on macOS (ENOTEMPTY). Retry, and if it
+ * still won't go, leave it to the OS's temp cleanup rather than fail a capture that worked.
+ */
+function removeProfile(profile: string): void {
+  try {
+    rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
+  } catch (err) {
+    console.warn(`Could not remove the temporary browser profile ${profile}: ${(err as Error).message}`);
   }
 }
 

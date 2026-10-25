@@ -1,0 +1,8 @@
+{
+  "description": "A spinning gold coin worth 1 point. Place it with just a transform.",
+  "components": {
+    "body": { "type": "static", "width": 20, "height": 20, "sensor": true },
+    "sprite": { "shape": "circle", "color": "#ffd166", "image": "assets/coin.svg", "frameWidth": 20, "idle": "0-3", "layer": 1 },
+    "collectible": { "score": 1 }
+  }
+}

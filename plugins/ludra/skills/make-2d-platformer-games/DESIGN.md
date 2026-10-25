@@ -57,7 +57,8 @@ A level an agent can beat with frame-perfect input can still be miserable for a 
   If only one value works, widen the platform, slow the enemy, or move the hazard.
 - **One mechanic per test:** besides the full playthrough, test each mechanic in isolation ("the door blocks you without the key", "the chaser waits while you're far away"). Make sure nothing else interferes. If the chaser kills the player before they reach the door, that test proves nothing about the door.
 - **No blind jumps:** the landing spot is on screen when the player takes off.
-- **Cheap failure:** if death is likely, the respawn should be close. Split long levels or add checkpoints when they exist.
+- **Cheap failure:** if death is likely, the respawn should be close. Put a `checkpoint` right before each hard part, where the player already stands, and give the game `lives` only when losing them makes it more exciting, not just longer.
+- **Levels grow:** the first level teaches, later ones combine. Several short levels (goal `next`) beat one long one, and prefabs keep their pieces consistent.
 
 ## 5. Game feel (juice)
 
@@ -154,6 +155,7 @@ Most of these are one short script. Use them to make each game feel different:
 ## 9. Before you hand it off
 
 - [ ] `check` passes with no warnings you can't explain
+- [ ] `review` shows no issues (✗), and you considered each idea (○)
 - [ ] A test proves it's completable with `deaths == 0`, and each mechanic has its own isolated test
 - [ ] Critical jumps work across a ≥ 0.2s window
 - [ ] Screenshots of the start, the hardest moment and the goal look right

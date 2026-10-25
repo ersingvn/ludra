@@ -43,11 +43,21 @@ Scripts can have `draw` (world space, ordered with sprites by `sprite.layer`) an
 
 Scene `fonts` load before the game starts (Google Fonts CSS or FontFace, capped at 4 s). With `postfx`, `prepare()` compiles the shader (`postfx.ts`) on a WebGL canvas that replaces the page's canvas; the game keeps drawing into the original, now offscreen, canvas, and each frame is uploaded as a texture and drawn through the shader. Shader errors keep the 2D canvas visible and show the compiler message with the shader file's own line numbers (`#line 1` after the engine's header).
 
+### Game structure
+
+`validateScene` expands prefabs first: an entity with `"prefab"` gets the prefab's components with its own merged over them (`mergeComponents`, one level deep, `null` removes), so everything after it, and the `World`, only sees plain entities. The expanded scene keeps its `prefabs` map, so `world.spawn({ prefab })` works at runtime. The CLI adds `prefabs/*.prefab.json` to every scene it reads.
+
+`World.over` (won, lost, or `exit` set) stops the simulation. Deaths cost `lives` when the scene has them; the last one sets `lost` and fires `gameover` without respawning. A checkpoint moves the player's `spawn` once per player. A goal's `next` and `world.goto` set `exit`: headless runs simply end there (each scene is tested on its own), while `startGame` with a `loadScene` option shows the win screen or fades, loads the next scene and builds a new `World` with `carry` (score, deaths, lives).
+
 ### `ludra` (CLI)
 
 The CLI is a thin layer over core: project loading (`ludra.json`), output formatting (`--json` everywhere), templates and the dev server. `ludra check` adds file-system checks core can't do, such as `E_ASSET_MISSING`.
 
 `server.ts` serves a project to a browser: the engine's browser module (type-stripped on the fly when running from source; no bundler), the validated scene, and only media files from the project. `ludra dev` puts a game page in front of it and reloads when the scene or any asset changes.
+
+### Review
+
+`commands/review.ts` loads every scene, runs every test (`runTest` reports the events each run fired) and reads the scripts' sources. It reports findings by area (proof, feel, looks, identity) as issues or ideas: no passing win test without deaths, a script with gameplay hooks whose entities and emitted events no assertion mentions, important events that fired with no `effects` entry and no `recent("…")` in a draw hook, no `drawUI`, no backdrop, sprites without art, no postfx. It's heuristic on purpose: it can't judge beauty, but it reliably catches the signs of unfinished work. `--strict` exits 1 on issues; CI runs it on the templates.
 
 ### Blocks
 

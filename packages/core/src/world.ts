@@ -27,7 +27,7 @@ import {
 } from "./script.ts";
 import { FIXED_DT } from "./time.ts";
 import { EVENT_TYPES, type Action, type Diagnostic, type EntityDef, type SceneDef } from "./types.ts";
-import { validateScene } from "./validate.ts";
+import { mergeComponents, validateScene } from "./validate.ts";
 
 export interface BodyState extends Body {
   grounded: boolean;
@@ -72,6 +72,7 @@ export interface Entity {
   patrol?: PatrolState;
   hazard?: Hazard;
   goal?: Goal;
+  checkpoint?: Record<string, never>;
   emitter?: Emitter;
   camera?: Camera;
 }
@@ -85,6 +86,9 @@ export type GameEvent = { frame: number; time: number; x: number; y: number } & 
   | { type: "stomp"; entity: string; enemy: string; score: number }
   | { type: "win"; entity: string; goal: string }
   | { type: "bounce"; entity: string; other: string }
+  | { type: "checkpoint"; entity: string; checkpoint: string }
+  | { type: "gameover"; entity: string; cause: string }
+  | { type: "goto"; entity: string; scene: string }
   /** Fired by a script with world.emit(name, data). */
   | { type: "custom"; name: string; entity: string; data?: unknown }
 );
@@ -104,6 +108,8 @@ export interface EntitySnapshot {
 export interface WorldOptions {
   /** Loaded script modules, keyed by the `src` path used in the scene. */
   scripts?: ScriptModules;
+  /** Values carried over from the previous scene, so a run keeps its score and lives. */
+  carry?: { score?: number; deaths?: number; lives?: number };
 }
 
 export interface WorldSnapshot {
@@ -112,6 +118,9 @@ export interface WorldSnapshot {
   score: number;
   deaths: number;
   won: boolean;
+  lost: boolean;
+  /** Lives left; undefined when the scene has unlimited retries. */
+  lives?: number;
   entities: Record<string, EntitySnapshot>;
 }
 
@@ -158,6 +167,14 @@ export class World {
   deaths = 0;
   /** Set when a player reaches a goal. The simulation stops changing after that. */
   won = false;
+  /** Set when the game is over: out of lives, or a script called world.lose(). */
+  lost = false;
+  /** Lives left, or undefined for unlimited retries. */
+  lives: number | undefined;
+  /** The scene to play next (a won goal's `next`, or world.goto). Hosts that can load scenes move on to it. */
+  exit: string | undefined;
+  private readonly prefabs: Record<string, { components: Record<string, Record<string, unknown>> }>;
+  private readonly reached = new Set<string>();
   private previousInput: ReadonlySet<Action> = new Set();
   private readonly scripts: ScriptModules | undefined;
   private seed: number;
@@ -177,6 +194,10 @@ export class World {
     this.background = scene.world?.background ?? "#1d2333";
     this.seed = scene.world?.seed ?? 1;
     this.scripts = options.scripts;
+    this.prefabs = scene.prefabs ?? {};
+    this.score = options.carry?.score ?? 0;
+    this.deaths = options.carry?.deaths ?? 0;
+    this.lives = options.carry?.lives ?? scene.world?.lives;
     this.entities = scene.entities.map((def) => this.createEntity(def));
   }
 
@@ -191,6 +212,11 @@ export class World {
     return this.frame * FIXED_DT;
   }
 
+  /** True once nothing more happens in this scene: won, lost, or moving on to another scene. */
+  get over(): boolean {
+    return this.won || this.lost || this.exit !== undefined;
+  }
+
   get(id: string): Entity | undefined {
     return this.entities.find((e) => e.id === id);
   }
@@ -200,18 +226,20 @@ export class World {
     const pressed = new Set([...input].filter((action) => !this.previousInput.has(action)));
     this.previousInput = new Set(input);
     this.frame++;
-    if (this.won) return;
+    if (this.over) return;
 
     this.updatePlatformers(input, pressed);
     this.updateTopdown(input);
     this.updateScripts(input, pressed);
-    if (this.won) return;
+    if (this.over) return;
     this.updatePatrols();
     this.updateBodies();
     this.updateTouches();
-    if (this.won) return;
+    if (this.over) return;
     this.updateCollectibles();
+    this.updateCheckpoints();
     this.updateHazards();
+    if (this.over) return;
     this.updateGoals();
   }
 
@@ -228,7 +256,7 @@ export class World {
       // A JSON copy, so later frames can't change an earlier snapshot.
       if (Object.keys(e.state).length > 0) entities[e.id]!.state = JSON.parse(JSON.stringify(e.state));
     }
-    return { frame: this.frame, time: this.time, score: this.score, deaths: this.deaths, won: this.won, entities };
+    return { frame: this.frame, time: this.time, score: this.score, deaths: this.deaths, won: this.won, lost: this.lost, lives: this.lives, entities };
   }
 
   private emit(event: EventPayload): void {
@@ -269,8 +297,8 @@ export class World {
         e.script.started = true;
         this.callHook(e, "start");
       }
-      if (!e.removed && !this.won) this.callHook(e, "update");
-      if (this.won) return;
+      if (!e.removed && !this.over) this.callHook(e, "update");
+      if (this.over) return;
     }
   }
 
@@ -445,6 +473,21 @@ export class World {
       get won() {
         return world.won;
       },
+      get lost() {
+        return world.lost;
+      },
+      get exit() {
+        return world.exit;
+      },
+      get lives() {
+        return world.lives;
+      },
+      set lives(value: number | undefined) {
+        world.guard("Setting lives");
+        if (value !== undefined && (typeof value !== "number" || !Number.isFinite(value))) throw world.misuse("world.lives must be a number.");
+        world.lives = value;
+        if (value !== undefined && value <= 0) world.gameOver(world.current?.entity.id ?? "script", "script");
+      },
       set score(value: number) {
         world.guard("Setting score");
         world.score = value;
@@ -482,6 +525,18 @@ export class World {
         world.won = true;
         world.emit({ type: "win", entity: by?.id ?? "script", goal: by?.id ?? "script", x: by?.transform.x ?? 0, y: by?.transform.y ?? 0 });
       },
+      lose: () => {
+        world.guard("world.lose");
+        world.gameOver(world.current?.entity.id ?? "script", "script");
+      },
+      goto: (scene) => {
+        world.guard("world.goto");
+        if (typeof scene !== "string" || scene === "") throw world.misuse('world.goto needs a scene path, e.g. "scenes/level-1.scene.json".');
+        if (world.exit !== undefined) return;
+        world.exit = scene;
+        const by = world.current?.entity;
+        world.emit({ type: "goto", entity: by?.id ?? "script", scene, x: by?.transform.x ?? 0, y: by?.transform.y ?? 0 });
+      },
       emit: (name, data) => {
         world.guard("world.emit");
         if (typeof name !== "string" || name === "") throw world.misuse("world.emit needs a non-empty event name.");
@@ -500,18 +555,27 @@ export class World {
   }
 
   private spawn(def: SpawnDef): ScriptEntity {
-    if (typeof def !== "object" || def === null || typeof def.components !== "object") {
-      throw this.misuse('world.spawn needs { components: { ... } }, e.g. { components: { transform: { x: 0, y: 0 } } }.');
+    if (typeof def !== "object" || def === null || (def.prefab === undefined && typeof def.components !== "object")) {
+      throw this.misuse('world.spawn needs { components: { ... } } or { prefab: "name" }, e.g. { prefab: "bullet", components: { transform: { x: 0, y: 0 } } }.');
+    }
+    let components = def.components ?? {};
+    if (def.prefab !== undefined) {
+      const prefab = this.prefabs[def.prefab];
+      if (!prefab) {
+        const names = Object.keys(this.prefabs);
+        throw this.misuse(`world.spawn: prefab "${def.prefab}" does not exist.${names.length > 0 ? ` Prefabs: ${names.join(", ")}.` : " Create prefabs/<name>.prefab.json."}`);
+      }
+      components = mergeComponents(prefab.components, components);
     }
     const id = def.id ?? `${this.current?.entity.id ?? "spawned"}-${++this.spawnCount}`;
     if (this.get(id)) throw this.misuse(`world.spawn: an entity with id "${id}" already exists. Leave id out to get a unique one.`);
-    const { diagnostics } = validateScene({ entities: [{ id, components: def.components }] });
+    const { diagnostics } = validateScene({ entities: [{ id, components }] });
     const errors = diagnostics.filter((d) => d.severity === "error" && d.code !== "E_GOAL_UNREACHABLE");
     if (errors.length > 0) {
       const details = errors.map((d) => `${d.path.replace("entities[0]", id)}: ${d.message}${d.fix ? ` Fix: ${d.fix}` : ""}`);
       throw this.misuse(`world.spawn got an invalid entity. ${details.join(" ")}`);
     }
-    const entity = this.createEntity({ id, components: def.components });
+    const entity = this.createEntity({ id, components });
     this.entities.push(entity);
     return this.handle(entity);
   }
@@ -721,9 +785,31 @@ export class World {
       const player = this.players().find((p) => overlaps(p, goal));
       if (!player) continue;
       this.won = true;
+      if (goal.goal!.next) this.exit = goal.goal!.next;
       this.emit({ type: "win", entity: player.id, goal: goal.id, ...goal.transform });
       return;
     }
+  }
+
+  /** A touched checkpoint becomes the player's respawn point, standing on the checkpoint's bottom edge. */
+  private updateCheckpoints(): void {
+    for (const checkpoint of this.entities.filter((e) => e.checkpoint && e.body)) {
+      for (const player of this.players()) {
+        const key = `${player.id}>${checkpoint.id}`;
+        if (this.reached.has(key) || !overlaps(player, checkpoint)) continue;
+        this.reached.add(key);
+        const bottom = checkpoint.transform.y + checkpoint.body!.height / 2;
+        player.spawn = { x: checkpoint.transform.x, y: player.platformer ? bottom - player.body!.height / 2 : checkpoint.transform.y };
+        this.emit({ type: "checkpoint", entity: player.id, checkpoint: checkpoint.id, ...checkpoint.transform });
+      }
+    }
+  }
+
+  private gameOver(entity: string, cause: string): void {
+    if (this.lost) return;
+    this.lost = true;
+    const e = this.get(entity);
+    this.emit({ type: "gameover", entity, cause, x: e?.transform.x ?? 0, y: e?.transform.y ?? 0 });
   }
 
   /** Sends a player back to where it started. Collected items stay collected. */
@@ -731,6 +817,11 @@ export class World {
     const b = player.body!;
     this.deaths++;
     this.emit({ type: "die", entity: player.id, cause, ...player.transform });
+    if (this.lives !== undefined) {
+      this.lives--;
+      // Out of lives: the player stays where it fell and the game is over.
+      if (this.lives <= 0) return this.gameOver(player.id, cause);
+    }
     player.transform.x = player.spawn?.x ?? player.transform.x;
     player.transform.y = player.spawn?.y ?? player.transform.y;
     b.vx = 0;
@@ -766,6 +857,7 @@ function createEntity(def: EntityDef): Entity {
   if (c.patrol) entity.patrol = { ...resolveComponent<Patrol>("patrol", c.patrol), originX: transform.x, originY: transform.y };
   if (c.hazard) entity.hazard = resolveComponent<Hazard>("hazard", c.hazard);
   if (c.goal) entity.goal = resolveComponent<Goal>("goal", c.goal);
+  if (c.checkpoint) entity.checkpoint = {};
   if (c.emitter) entity.emitter = resolveComponent<Emitter>("emitter", c.emitter);
   if (c.camera) entity.camera = resolveComponent<Camera>("camera", c.camera);
   return entity;

@@ -18,7 +18,7 @@ const REQUIRED_EXAMPLES: Partial<Record<ComponentName, string>> = {
  * Checks a parsed scene file. Every diagnostic names the exact JSON path and,
  * where possible, a fix an agent can apply without guessing.
  */
-export function validateScene(raw: unknown): ValidationResult {
+export function validateScene(input: unknown): ValidationResult {
   const diagnostics: Diagnostic[] = [];
   const error = (code: string, path: string, message: string, fix?: string) =>
     diagnostics.push({ severity: "error", code, path, message, fix });
@@ -26,13 +26,17 @@ export function validateScene(raw: unknown): ValidationResult {
     diagnostics.push({ severity: "warning", code, path, message, fix });
   const result = (): ValidationResult => {
     const ok = !diagnostics.some((d) => d.severity === "error");
-    return { ok, diagnostics, scene: ok ? (raw as SceneDef) : undefined };
+    return { ok, diagnostics, scene: ok ? (scene as SceneDef) : undefined };
   };
 
-  if (!isObject(raw)) {
+  let scene: unknown = input;
+  if (!isObject(input)) {
     error("E_SCENE_NOT_OBJECT", "$", "A scene must be a JSON object.", 'Start from { "entities": [] }.');
     return result();
   }
+  // Prefabs become plain entities first, so everything below sees the final components.
+  const raw = expandPrefabs(input, error);
+  scene = raw;
 
   if (raw.world !== undefined) {
     if (!isObject(raw.world)) {
@@ -49,6 +53,10 @@ export function validateScene(raw: unknown): ValidationResult {
       }
       if (raw.world.background !== undefined && typeof raw.world.background !== "string") {
         error("E_INVALID_WORLD", "world.background", `world.background must be a CSS color string, got ${describe(raw.world.background)}.`);
+      }
+      const lives = raw.world.lives;
+      if (lives !== undefined && (typeof lives !== "number" || !Number.isInteger(lives) || lives < 1)) {
+        error("E_INVALID_WORLD", "world.lives", `world.lives must be a whole number of at least 1, got ${describe(lives)}.`, "Leave it out for unlimited retries.");
       }
     }
   }
@@ -237,7 +245,68 @@ const SENSOR_COMPONENTS: [ComponentName, string][] = [
   ["collectible", "players would bump into it instead of picking it up"],
   ["hazard", "players would stand on it instead of being hurt"],
   ["goal", "players would bump into it instead of reaching it"],
+  ["checkpoint", "players would bump into it instead of passing through"],
 ];
+
+/**
+ * Replaces `"prefab": "<name>"` entities with the prefab's components, with the
+ * entity's own components merged over them (field by field; `null` removes a
+ * component). Returns a new scene object; reports unknown prefabs.
+ */
+function expandPrefabs(raw: Record<string, unknown>, error: Report): Record<string, unknown> {
+  const prefabs = raw.prefabs;
+  if (prefabs !== undefined) {
+    if (!isObject(prefabs)) {
+      error("E_PREFABS_NOT_OBJECT", "prefabs", '"prefabs" must map names to { "components": { ... } }.');
+      return raw;
+    }
+    for (const [name, prefab] of Object.entries(prefabs)) {
+      if (!isObject(prefab) || !isObject(prefab.components)) {
+        error("E_INVALID_PREFAB", `prefabs.${name}`, `Prefab "${name}" needs a "components" object.`, 'Use { "components": { "body": { ... }, "sprite": { ... } } }.');
+        continue;
+      }
+      for (const component of Object.keys(prefab.components)) {
+        if (!isComponentName(component)) {
+          const suggestion = closestName(component, COMPONENT_NAMES);
+          error("E_UNKNOWN_COMPONENT", `prefabs.${name}.components.${component}`, `Unknown component "${component}" in prefab "${name}".`, suggestion ? `Did you mean "${suggestion}"?` : undefined);
+        }
+      }
+    }
+  }
+  if (!Array.isArray(raw.entities)) return raw;
+  const known = isObject(prefabs) ? prefabs : {};
+  const entities = raw.entities.map((entity: unknown, i: number) => {
+    if (!isObject(entity) || entity.prefab === undefined) return entity;
+    const name = entity.prefab;
+    const prefab = typeof name === "string" ? known[name] : undefined;
+    if (!isObject(prefab) || !isObject(prefab.components)) {
+      const names = Object.keys(known);
+      const suggestion = typeof name === "string" ? closestName(name, names) : undefined;
+      error(
+        "E_UNKNOWN_PREFAB",
+        `entities[${i}].prefab`,
+        `Prefab ${describe(name)} does not exist.`,
+        suggestion ? `Did you mean "${suggestion}"?` : names.length > 0 ? `Prefabs: ${names.join(", ")}.` : "Create prefabs/<name>.prefab.json with { \"components\": { ... } }.",
+      );
+      return entity;
+    }
+    const { prefab: _, ...rest } = entity;
+    return { ...rest, components: mergeComponents(prefab.components, isObject(entity.components) ? entity.components : {}) };
+  });
+  return { ...raw, entities };
+}
+
+/** A prefab's components with overrides merged in, one level deep. `null` drops a component. */
+export function mergeComponents(base: Record<string, unknown>, overrides: Record<string, unknown>): Record<string, Record<string, unknown>> {
+  const merged: Record<string, Record<string, unknown>> = {};
+  for (const [name, value] of Object.entries(base)) if (isObject(value)) merged[name] = structuredClone(value);
+  for (const [name, value] of Object.entries(overrides)) {
+    if (value === null) delete merged[name];
+    else if (isObject(value) && isObject(merged[name])) merged[name] = { ...merged[name], ...structuredClone(value) };
+    else merged[name] = structuredClone(value) as Record<string, unknown>;
+  }
+  return merged;
+}
 
 function numberOr(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;

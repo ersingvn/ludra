@@ -1,6 +1,6 @@
 ---
 name: make-2d-platformer-games
-description: Make beautiful 2D games of any genre: platformers, top-down adventures and arena games, breakout and other bouncing-ball games, with levels, coins, enemies, hazards, moving platforms, bounce physics, custom game logic in scripts (chasing enemies, keys and doors, timers, shooting, bosses), sprites, animations, particles, sound, code-drawn art and lighting, custom HUDs, fonts and post-processing shaders. Use whenever the user asks to make, build, change, fix, test or polish a game, or works in a project with a ludra.json. Builds with the Ludra engine and proves the game works by play-testing it headlessly.
+description: Make beautiful 2D games of any genre: platformers, top-down adventures and arena games, breakout and other bouncing-ball games, with levels, coins, enemies, hazards, moving platforms, bounce physics, custom game logic in scripts (chasing enemies, keys and doors, timers, shooting, bosses), sprites, animations, particles, sound, code-drawn art and lighting, custom HUDs, fonts and post-processing shaders. Use whenever the user asks to make, build, change, fix, test or polish a game, or works in a project with a ludra.json. Builds with the Ludra engine proves the game works by play-testing it headlessly, and reviews it for anything that makes it feel unfinished.
 ---
 
 # Building games with Ludra
@@ -28,11 +28,12 @@ Commands below use `npx @ludra/cli`, which downloads the CLI from npm on first u
 Repeat until the game does what the user asked:
 
 1. **Edit** the scene JSON.
-2. **Check**: `npx @ludra/cli check`. Fix every error before doing anything else. Each diagnostic gives the JSON path and a `fix:` line. Apply it.
-3. **Play**: `npx @ludra/cli play --inputs "<script>" --ascii`. Read the timeline (position, velocity, grounded per sample), the events (jump, land, collect, stomp, die, win, bounce) and the ASCII map of the final frame. Use `--watch player,lift,enemy` to time moving things, `--every 0.1s` for finer timing and `--columns 160` for wide worlds.
+2. **Check**: `npx @ludra/cli check` validates every scene. Fix every error before doing anything else. Each diagnostic gives the JSON path and a `fix:` line. Apply it.
+3. **Play**: `npx @ludra/cli play --inputs "<script>" --ascii`. Read the timeline (position, velocity, grounded per sample), the events (jump, land, collect, stomp, die, win, bounce, checkpoint, gameover, goto) and the ASCII map of the final frame. `--scene scenes/level-2.scene.json` plays another scene. Use `--watch player,lift,enemy` to time moving things, `--every 0.1s` for finer timing and `--columns 160` for wide worlds.
 4. **Look**: add `--screenshot 1s,end` (any times, or `end`) to `play` to render real frames as PNGs into `screenshots/`, then open them with your image-reading tool. The ASCII map shows layout; screenshots show what players see: art, animation, particles, overlaps, readability. Do this after every visual change. It needs Chrome, Edge or Chromium installed; if none is found, say so and rely on the ASCII map.
 5. **Test**: encode the requirement in `tests/<name>.test.json` and run `npx @ludra/cli test`.
-6. **Hand off**: tell the user to run `npx @ludra/cli dev` to play it.
+6. **Review**: `npx @ludra/cli review` lists what makes a game feel unfinished: untested mechanics, events nothing answers, the default HUD, a flat backdrop, plain shapes. Fix every issue (✗) and consider the ideas (○). A game with review issues is not done, even if its tests pass.
+7. **Hand off**: tell the user to run `npx @ludra/cli dev` to play it.
 
 ## Input scripts
 
@@ -62,7 +63,8 @@ Example: `"right:0.55s, right+jump:0.45s, right:0.45s, right+jump:0.45s"`
 
 Assertions: `<subject> <op> <value> [at <time|end>]`, with op one of `< <= > >= == !=`.
 
-- Subjects: `score`, `deaths`, `won`, `events.jump|land|collect|stomp|die|win|bounce` (count so far, custom script events too), `<entityId>.x|y|vx|vy|grounded|exists`.
+- Subjects: `score`, `deaths`, `won`, `lost`, `lives`, `events.<name>` (count so far: jump, land, collect, stomp, die, win, bounce, checkpoint, gameover, goto, or a custom script event), `<entityId>.x|y|vx|vy|grounded|exists`, `<entityId>.state.<key>`.
+- A test runs the entry scene unless it says `"scene": "scenes/level-2.scene.json"`.
 - `at` defaults to `end`. The run lasts the input script plus 1s unless `duration` is set.
 
 Write at least one test proving the level can be completed: `"won == true"` and `"deaths == 0"`. If you cannot find an input script that completes it, the level is probably impossible. Fix the level, not the test.
@@ -99,6 +101,13 @@ The player has a `platformer` component and a `dynamic` body; gravity pulls ever
 - A paddle is `kinematic` with `topdown` `"directions": "x"`: player-steered kinematic bodies stop at walls, and the ball rebounds off them. Aim the ball in the paddle's `touch` script by where it hit.
 - Bricks are `static` bodies with a script that scores and destroys itself on `touch`. Leave the bottom of the world open and treat a lost ball as a death (`world.kill(paddle)`).
 - With gravity on and `bounce` below 1 you get bouncy balls, rubber enemies and grenades.
+
+## Game structure: lives, checkpoints, prefabs, scenes
+
+- **Lives**: `"world": { "lives": 3 }`. Each death costs one; the last ends the game (`lost`, a `gameover` event, the simulation stops). Leave it out for unlimited retries. Scripts read and write `world.lives` (an extra life) and call `world.lose()` (a time limit ran out).
+- **Checkpoints**: a sensor body with `checkpoint: {}`. The first touch makes it the player's respawn point (standing on its bottom edge) and fires `checkpoint` once. Put them before hard parts, where the player naturally stands, and light them up when reached (`ctx.recent("checkpoint", 1e9)`; the event's `data.checkpoint` is its id).
+- **Prefabs**: `prefabs/<name>.prefab.json` holds `{ "components": { ... } }`. An entity uses one with `"prefab": "slime"` and only the components that differ: `"components": { "transform": { "x": 400, "y": 487 }, "patrol": { "speed": 120 } }` (merged field by field; `null` removes a component). Scripts spawn them: `world.spawn({ prefab: "bullet", components: { transform: { x, y } } })`. Use prefabs for anything placed more than once, so a change to the slime changes every slime.
+- **Scenes**: more scenes live in `scenes/`. A goal's `"next": "scenes/level-2.scene.json"` moves on after the win screen; `world.goto("scenes/level-1.scene.json")` moves on from anything (a title screen, a door). Score, deaths and lives carry over; R restarts the current scene, and after game over the whole run. Each scene is checked by `check` and tested on its own (`"scene"` in a test); `world.exit` tells draw hooks whether a win leads on.
 
 ## Gameplay building blocks
 

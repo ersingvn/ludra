@@ -4,7 +4,8 @@
     "width": 960,
     "height": 540,
     "gravity": 0,
-    "background": "#05001a"
+    "background": "#05001a",
+    "lives": 3
   },
   "fonts": {
     "Orbitron": "google"
@@ -38,9 +39,13 @@
     "launch": {
       "sound": "jump"
     },
-    "ball-lost": {
+    "die": {
       "sound": "explosion",
       "shake": 10
+    },
+    "gameover": {
+      "sound": "explosion",
+      "shake": 14
     },
     "win": {
       "sound": "powerup",

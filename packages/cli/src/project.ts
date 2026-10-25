@@ -55,19 +55,52 @@ export function loadProject(dir: string): Project {
 export interface SceneLoad {
   scene?: SceneDef;
   diagnostics: Diagnostic[];
+  /** The scene's path relative to the project, for messages. */
+  label: string;
 }
 
-/** Reads and validates the entry scene. JSON syntax errors become diagnostics too. */
-export function readScene(project: Project): SceneLoad {
-  if (!existsSync(project.entryPath)) {
+/** Every scene in the project: the entry scene, then every .scene.json file under scenes/. */
+export function listScenes(project: Project): string[] {
+  const inFolder = listFiles(project.dir, "scenes").filter((path) => path.endsWith(".scene.json"));
+  return [...new Set([project.entryLabel, ...inFolder])];
+}
+
+/** Prefab files (prefabs/<name>.prefab.json) by name, plus problems reading them. */
+export function readPrefabs(project: Project): { prefabs: Record<string, unknown>; diagnostics: Diagnostic[] } {
+  const prefabs: Record<string, unknown> = {};
+  const diagnostics: Diagnostic[] = [];
+  for (const path of listFiles(project.dir, "prefabs").filter((p) => p.endsWith(".prefab.json"))) {
+    const name = path.slice(path.lastIndexOf("/") + 1, -".prefab.json".length);
+    try {
+      prefabs[name] = JSON.parse(readFileSync(join(project.dir, path), "utf8"));
+    } catch (err) {
+      diagnostics.push({ severity: "error", code: "E_JSON_SYNTAX", path, message: `Invalid JSON in ${path}: ${(err as Error).message}` });
+    }
+  }
+  return { prefabs, diagnostics };
+}
+
+/**
+ * Reads and validates a scene (the entry scene by default), with the project's
+ * prefab files merged in. JSON syntax errors become diagnostics too.
+ */
+export function readScene(project: Project, scenePath: string = project.entryLabel): SceneLoad {
+  const file = resolve(project.dir, scenePath);
+  const label = relative(project.dir, file).replaceAll("\\", "/");
+  if (!isInside(project.dir, file) || !existsSync(file)) {
+    const scenes = listScenes(project).filter((s) => existsSync(join(project.dir, s)));
     return {
+      label,
       diagnostics: [
         {
           severity: "error",
           code: "E_SCENE_MISSING",
           path: "$",
-          message: `Entry scene ${project.entryLabel} does not exist.`,
-          fix: `Create it, or point "entry" in ludra.json at an existing scene.`,
+          message: `Scene ${label} does not exist.`,
+          fix:
+            label === project.entryLabel
+              ? `Create it, or point "entry" in ludra.json at an existing scene.`
+              : `Create it${scenes.length > 0 ? `, or use one of: ${scenes.join(", ")}` : ""}.`,
         },
       ],
     };
@@ -75,27 +108,37 @@ export function readScene(project: Project): SceneLoad {
 
   let raw: unknown;
   try {
-    raw = JSON.parse(readFileSync(project.entryPath, "utf8"));
+    raw = JSON.parse(readFileSync(file, "utf8"));
   } catch (err) {
     return {
+      label,
       diagnostics: [{ severity: "error", code: "E_JSON_SYNTAX", path: "$", message: `Invalid JSON: ${(err as Error).message}` }],
     };
   }
+  // Prefab files are shared by every scene; a scene's own "prefabs" win over files of the same name.
+  const files = readPrefabs(project);
+  if (raw && typeof raw === "object" && !Array.isArray(raw) && Object.keys(files.prefabs).length > 0) {
+    const own = (raw as { prefabs?: unknown }).prefabs;
+    raw = { ...raw, prefabs: { ...files.prefabs, ...(own && typeof own === "object" ? own : {}) } };
+  }
   const { scene, diagnostics } = validateScene(raw);
-  if (!scene) return { diagnostics };
+  diagnostics.unshift(...files.diagnostics);
+  if (!scene) return { label, diagnostics };
 
   const missing = missingAssets(project, scene);
-  return { scene: missing.length === 0 ? scene : undefined, diagnostics: [...diagnostics, ...missing] };
+  const ok = missing.length === 0 && !files.diagnostics.some((d) => d.severity === "error");
+  return { label, scene: ok ? scene : undefined, diagnostics: [...diagnostics, ...missing] };
 }
 
-const EXAMPLE_FILE = { image: "player.svg", audio: "jump.wav", script: "enemy.ts", font: "pixel.woff2", shader: "crt.frag" } as const;
+const EXAMPLE_FILE = { image: "player.svg", audio: "jump.wav", script: "enemy.ts", font: "pixel.woff2", shader: "crt.frag", scene: "level-2.scene.json" } as const;
+const FOLDER = { image: "assets", audio: "assets", script: "scripts", font: "assets", shader: "shaders", scene: "scenes" } as const;
 
 /** Files the scene references that are not in the project. */
 function missingAssets(project: Project, scene: SceneDef): Diagnostic[] {
   return collectAssetPaths(scene)
     .filter((ref) => !isInside(project.dir, resolve(project.dir, ref.path)) || !existsSync(resolve(project.dir, ref.path)))
     .map((ref) => {
-      const folder = ref.kind === "script" ? "scripts" : ref.kind === "shader" ? "shaders" : "assets";
+      const folder = FOLDER[ref.kind];
       const available = listFiles(project.dir, folder);
       return {
         severity: "error" as const,
@@ -136,9 +179,9 @@ export interface Game {
  * Reads the scene and imports its scripts. Node runs TypeScript scripts
  * directly (type stripping), so no build step is needed.
  */
-export async function loadGame(project: Project): Promise<{ game?: Game; diagnostics: Diagnostic[] }> {
-  const { scene, diagnostics } = readScene(project);
-  if (!scene) return { diagnostics };
+export async function loadGame(project: Project, scenePath?: string): Promise<{ game?: Game; diagnostics: Diagnostic[]; label: string }> {
+  const { scene, diagnostics, label } = readScene(project, scenePath);
+  if (!scene) return { diagnostics, label };
 
   const scripts = new Map<string, Script>();
   for (const src of scriptPaths(project, scene)) {
@@ -168,7 +211,7 @@ export async function loadGame(project: Project): Promise<{ game?: Game; diagnos
   }
 
   const ok = !diagnostics.some((d) => d.severity === "error");
-  return { game: ok ? { scene, scripts } : undefined, diagnostics };
+  return { game: ok ? { scene, scripts } : undefined, diagnostics, label };
 }
 
 /**
@@ -187,10 +230,10 @@ function describeLoadError(err: unknown, src: string): { message: string; fix?: 
 }
 
 /** Like `loadGame`, but stops with the diagnostics when anything is wrong. */
-export async function requireGame(project: Project): Promise<Game> {
-  const { game, diagnostics } = await loadGame(project);
+export async function requireGame(project: Project, scenePath?: string): Promise<Game> {
+  const { game, diagnostics, label } = await loadGame(project, scenePath);
   if (!game) {
-    throw new CliError(`${formatDiagnostics(diagnostics, project.entryLabel)}\n\nFix the errors above (see \`ludra check\`) and try again.`);
+    throw new CliError(`${formatDiagnostics(diagnostics, label)}\n\nFix the errors above (see \`ludra check\`) and try again.`);
   }
   return game;
 }
@@ -201,10 +244,10 @@ export function isInside(dir: string, path: string): boolean {
 }
 
 /** Like `readScene`, but stops with the diagnostics when the scene has errors. */
-export function requireScene(project: Project): SceneDef {
-  const { scene, diagnostics } = readScene(project);
+export function requireScene(project: Project, scenePath?: string): SceneDef {
+  const { scene, diagnostics, label } = readScene(project, scenePath);
   if (!scene) {
-    throw new CliError(`${formatDiagnostics(diagnostics, project.entryLabel)}\n\nFix the errors above (see \`ludra check\`) and try again.`);
+    throw new CliError(`${formatDiagnostics(diagnostics, label)}\n\nFix the errors above (see \`ludra check\`) and try again.`);
   }
   return scene;
 }

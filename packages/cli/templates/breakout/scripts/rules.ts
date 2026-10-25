@@ -60,7 +60,7 @@ export default {
     const left = (self.state.bricksLeft as number) ?? total;
 
     // A red flash from the edges when the ball is lost.
-    const lost = recent("ball-lost", 0.7).at(-1);
+    const lost = recent("die", 0.7).at(-1);
     if (lost) {
       const strength = 1 - (time - lost.time) / 0.7;
       const edge = g.createRadialGradient(view.width / 2, view.height / 2, view.height * 0.3, view.width / 2, view.height / 2, view.width * 0.7);
@@ -92,11 +92,16 @@ export default {
     }
     g.shadowBlur = 0;
 
-    if (world.deaths > 0) {
-      g.font = `700 11px ${FONT}`;
-      g.fillStyle = "rgba(255, 120, 140, 0.8)";
-      g.fillText(`BALLS LOST ${world.deaths}`, view.width - 36, 84);
+    // Balls left, as glowing dots under the meter.
+    for (let i = 0; i < (world.lives ?? 0); i++) {
+      g.fillStyle = "#ffd60a";
+      g.shadowColor = "#ffd60a";
+      g.shadowBlur = 10;
+      g.beginPath();
+      g.arc(view.width - 42 - i * 18, 84, 5, 0, Math.PI * 2);
+      g.fill();
     }
+    g.shadowBlur = 0;
 
     g.textAlign = "center";
     if (time < 2.5 && !world.won) {
@@ -122,6 +127,20 @@ export default {
       g.font = `700 12px ${FONT}`;
       g.fillStyle = "rgba(255, 255, 255, 0.6)";
       g.fillText("PRESS R TO PLAY AGAIN", view.width / 2, view.height / 2 + 84);
+      g.globalAlpha = 1;
+    }
+
+    if (world.lost) {
+      const over = recent("gameover", 1e9).at(-1);
+      const since = over ? time - over.time : 0;
+      g.fillStyle = `rgba(20, 0, 10, ${Math.min(0.75, since * 1.5)})`;
+      g.fillRect(0, 0, view.width, view.height);
+      g.globalAlpha = Math.min(1, since * 2);
+      neonText(g, "GAME OVER", view.width / 2, view.height / 2 - 6, 64, "#ff2a6d");
+      neonText(g, `${left} BRICK${left === 1 ? "" : "S"} TO GO   ·   SCORE ${world.score}`, view.width / 2, view.height / 2 + 44, 20, "#00f0ff", 700);
+      g.font = `700 12px ${FONT}`;
+      g.fillStyle = "rgba(255, 255, 255, 0.6)";
+      g.fillText("PRESS R TO TRY AGAIN", view.width / 2, view.height / 2 + 84);
       g.globalAlpha = 1;
     }
   },

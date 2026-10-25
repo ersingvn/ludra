@@ -1,7 +1,10 @@
 name: CI
 
+# Pull requests are checked as they are; main is checked again after each merge.
+# Branch pushes don't run it twice, and version tags are covered by the Release workflow.
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
@@ -47,6 +50,8 @@ jobs:
             echo "::group::$game"
             npm run -s ludra -- check "$game"
             npm run -s ludra -- test "$game"
+            # Templates are what agents start from, so they must review clean.
+            case "$game" in packages/cli/templates/*) npm run -s ludra -- review --strict "$game" ;; esac
             echo "::endgroup::"
           done
 

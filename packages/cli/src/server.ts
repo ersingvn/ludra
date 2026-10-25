@@ -1,10 +1,10 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createServer, type Server, type ServerResponse } from "node:http";
 import { stripTypeScriptTypes } from "node:module";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { collectAssetPaths } from "@ludra/core";
-import { isInside, readScene, scriptPaths, type Project } from "./project.ts";
+import { isInside, listScenes, readScene, scriptPaths, type Project } from "./project.ts";
 
 export const PROJECT_PREFIX = "/__ludra/project/";
 export const SCRIPT_PREFIX = "/__ludra/script/";
@@ -56,7 +56,8 @@ export function createGameServer(project: Project, indexHtml: (browserModule: st
         res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
         res.end('<!doctype html><html><head><meta charset="utf-8"><title>Ludra</title></head><body style="margin:0"></body></html>');
       } else if (url.pathname === "/__ludra/scene") {
-        const { scene, diagnostics } = readScene(project);
+        // ?path= picks another scene, for goals with "next" and world.goto.
+        const { scene, diagnostics } = readScene(project, url.searchParams.get("path") ?? undefined);
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: !!scene, scene, diagnostics }));
       } else if (url.pathname === "/__ludra/version") {
@@ -99,16 +100,20 @@ export function createGameServer(project: Project, indexHtml: (browserModule: st
   return { server, browserModule };
 }
 
-/** Changes whenever the scene or any file it references changes, so the page knows to reload. */
+/** Changes whenever a scene, prefab or any file they reference changes, so the page knows to reload. */
 function version(project: Project): string {
   if (!existsSync(project.entryPath)) return "missing";
-  const files = [project.entryPath];
-  const { scene } = readScene(project);
-  if (scene) {
+  const files: string[] = [];
+  for (const path of listScenes(project)) {
+    files.push(resolve(project.dir, path));
+    const { scene } = readScene(project, path);
+    if (!scene) continue;
     files.push(...collectAssetPaths(scene).map((ref) => resolve(project.dir, ref.path)));
-    files.push(...scriptPaths(project, scene).map((path) => resolve(project.dir, path)));
+    files.push(...scriptPaths(project, scene).map((p) => resolve(project.dir, p)));
   }
-  return files.map((file) => (existsSync(file) ? statSync(file).mtimeMs : 0)).join(":");
+  const prefabs = join(project.dir, "prefabs");
+  if (existsSync(prefabs)) files.push(prefabs, ...readdirSync(prefabs).map((name) => join(prefabs, name)));
+  return [...new Set(files)].map((file) => (existsSync(file) ? statSync(file).mtimeMs : 0)).join(":");
 }
 
 function notFound(res: ServerResponse): void {

@@ -19,7 +19,7 @@ export const EFFECT_FIELDS: Record<string, FieldSpec> = {
 };
 
 export const EFFECTS_DESCRIPTION =
-  'Scene-level "effects" map a game event (jump, land, collect, die, stomp, win) to feedback: a particle burst at the event position, a sound and a screen shake. They never affect gameplay.';
+  'Scene-level "effects" map a game event (jump, land, collect, die, stomp, win, bounce, checkpoint, gameover, goto, or a custom one) to feedback: a particle burst at the event position, a sound and a screen shake. They never affect gameplay.';
 
 export function isSoundPreset(sound: string): sound is SoundPreset {
   return (SOUND_PRESETS as readonly string[]).includes(sound);
@@ -30,7 +30,7 @@ export interface AssetReference {
   path: string;
   /** JSON path of the field that references it. */
   at: string;
-  kind: "image" | "audio" | "script" | "font" | "shader";
+  kind: "image" | "audio" | "script" | "font" | "shader" | "scene";
 }
 
 /** Every file a scene points at, so tools can check that they exist. */
@@ -39,6 +39,8 @@ export function collectAssetPaths(scene: SceneDef): AssetReference[] {
   scene.entities.forEach((entity, i) => {
     const image = entity.components.sprite?.image;
     if (typeof image === "string" && image !== "") refs.push({ path: image, at: `entities[${i}].components.sprite.image`, kind: "image" });
+    const next = entity.components.goal?.next;
+    if (typeof next === "string" && next !== "") refs.push({ path: next, at: `entities[${i}].components.goal.next`, kind: "scene" });
     const src = entity.components.script?.src;
     if (typeof src === "string" && src !== "") refs.push({ path: src, at: `entities[${i}].components.script.src`, kind: "script" });
     // Images named in script params are preloaded for draw hooks (ctx.image).

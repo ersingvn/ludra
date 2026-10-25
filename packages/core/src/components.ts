@@ -25,6 +25,7 @@ export const COMPONENT_NAMES = [
   "patrol",
   "hazard",
   "goal",
+  "checkpoint",
   "emitter",
   "script",
   "camera",
@@ -155,7 +156,18 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
     requires: ["transform", "body"],
     fields: {
       requireScore: { type: "number", min: 0, default: 0, description: "Score needed before the goal accepts the player." },
+      next: {
+        type: "string",
+        default: "",
+        description: 'Scene to play after this one is won, e.g. "scenes/level-2.scene.json". The browser moves on and keeps score, deaths and lives; each scene is tested on its own.',
+      },
     },
+  },
+  checkpoint: {
+    description:
+      "When a player touches it, that player respawns here after dying (standing on the checkpoint's bottom edge). Fires a checkpoint event once. Its body must be a sensor.",
+    requires: ["transform", "body"],
+    fields: {},
   },
   emitter: {
     description: "Continuously emits visual particles from the entity (torches, sparkles, smoke). It does not affect gameplay.",
@@ -268,6 +280,7 @@ export interface Hazard {
 
 export interface Goal {
   requireScore: number;
+  next: string;
 }
 
 export interface Camera {
