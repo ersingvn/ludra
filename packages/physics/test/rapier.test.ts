@@ -216,6 +216,32 @@ describe("character controller", () => {
     assert.ok(Math.min(...ys) >= 430 + 18 - 1, `stopped under the ceiling, highest y ${Math.min(...ys).toFixed(1)}`);
   });
 
+  // Rapier's rounding shows up on big colliders, like a level's 260px tall ground blocks.
+  const block = (id: string, left: number, right: number, top: number): EntityDef => ({
+    id,
+    components: { transform: { x: (left + right) / 2, y: top + 130 }, body: { type: "static", width: right - left, height: 260 } },
+  });
+
+  test("jumping while pressed against a wall still reaches full height", () => {
+    const cliff = block("cliff", 300, 600, 340);
+    const apex = Math.min(...path({ world: { physics: "rapier" }, entities: [block("floor", 0, 960, 500), cliff, hero(200, 482)] }, "right:0.5s, right+jump:0.6s", 1.2).ys);
+    assert.ok(apex < 365, `rose along the wall to y ${apex.toFixed(1)} (full height is about 354)`);
+  });
+
+  test("a landed capsule runs on without landing again", () => {
+    const capsule: EntityDef = { id: "hero", components: { transform: { x: 80, y: 482 }, body: { type: "dynamic", width: 28, height: 36, shape: "capsule" }, platformer: {} } };
+    const world = run({ world: { physics: "rapier" }, entities: [block("floor", 0, 760, 500), capsule] }, 2, "right+jump:0.45s, right:1.5s");
+    const lands = world.events.filter((e) => e.type === "land" && e.entity === "hero").length;
+    assert.equal(lands, 2, "one landing at spawn, one after the jump");
+  });
+
+  test("a player that just ran off a ledge can still jump for a moment", () => {
+    const ledge: EntityDef = { id: "ledge", components: { transform: { x: 150, y: 400 }, body: { type: "static", width: 200, height: 20 } } };
+    // Off the edge (x 250) after about 0.6s; the jump comes two steps later.
+    const world = run(rapier(ledge, hero(100, 372)), 1, `right:${(0.62 + 2 / 60).toFixed(3)}s, right+jump:0.3s`);
+    assert.equal(world.events.filter((e) => e.type === "jump").length, 1);
+  });
+
   test("jumps as high as under arcade physics", () => {
     const top = (scene: SceneDef) => Math.min(...path(scene, "wait:0.2s, jump:0.6s", 1.2).ys);
     const arcade = top({ entities: [ground, hero(200, 482)] });
@@ -507,7 +533,7 @@ describe("determinism", () => {
   });
 });
 
-const GOLDEN = "9f16be6a4594029d";
+const GOLDEN = "bb4b5bceb6324664";
 
 describe("validation", () => {
   test("rapier-only fields under arcade physics are flagged", () => {

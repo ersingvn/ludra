@@ -109,6 +109,8 @@ Every scene picks its physics engine with `"world": { "physics": ... }`:
 - **`"arcade"`** (the default): boxes that never rotate, resolved one axis at a time. Tight and exactly predictable, which is what precise platformers, top-down games and breakout want.
 - **`"rapier"`**: a real physics engine. Choose it when physics *is* the game: stacking and toppling, rolling, swinging, ropes and chains, seesaws, vehicles, catapults, destruction, physics puzzles. It is deterministic too: every machine and the browser simulate the same frames, so tests stay valid.
 
+`npx @ludra/cli new my-game --template physics` starts from a working Rapier level: a crate pushed to climb a cliff, a rope bridge of jointed planks and a spiked pendulum, with tests for each.
+
 Under rapier:
 
 - **Shapes:** `body.shape` is `box`, `circle` (diameter = width), `capsule` (good for characters), `polygon` (the convex shape around `points`: wedges, rocks, ramps) or `polyline` (an open line through `points`: hills and curved ground; static or kinematic only). `points` are `[[x, y], ...]` offsets from the center; `width`/`height` stay the bounding box.
@@ -260,4 +262,4 @@ Sprites and effects are the floor. For real art, paint with code; read "Paint wi
   - Bloom, CRT scanlines, chromatic aberration, color grading, vignette, pixelation, water ripples: whatever the mood needs. Compile errors appear in the game and in `play --screenshot` with the line number.
 - `ludra check` runs every draw hook against a mock canvas, so typos and accidental game changes show up as `E_DRAW_HOOK` before the browser. Then look at real frames with `play --screenshot`: that is the only way to judge how it looks.
 
-See `scripts/` and `shaders/` in the `breakout` (everything drawn in code) and `topdown` (lighting over SVG sprites) templates.
+See `scripts/` and `shaders/` in the `breakout` (everything drawn in code) and `topdown` (lighting over SVG sprites) templates, and `physics` (a chain drawn from a pendulum's pivot).

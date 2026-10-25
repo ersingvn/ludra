@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
+  <!-- Tile: grass-topped dirt, repeats across the ground. -->
+  <rect width="40" height="40" fill="#6b4f3a"/>
+  <rect y="22" width="40" height="18" fill="#5c4332"/>
+  <circle cx="8" cy="20" r="2" fill="#80624a"/>
+  <circle cx="28" cy="30" r="2.5" fill="#80624a"/>
+  <circle cx="34" cy="16" r="1.5" fill="#4d3829"/>
+  <circle cx="16" cy="34" r="1.5" fill="#4d3829"/>
+  <rect width="40" height="9" fill="#5fbf6a"/>
+  <rect y="7" width="40" height="3" fill="#43944d"/>
+  <path d="M3 9 l 2 -6 l 2 6 M14 9 l 1.5 -5 l 1.5 5 M24 9 l 2 -7 l 2 7 M33 9 l 1.5 -4 l 1.5 4" fill="#7ed98a"/>
+</svg>

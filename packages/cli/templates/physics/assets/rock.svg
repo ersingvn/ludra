@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
+  <!-- Tile: packed earth and stones, repeats under the grass. -->
+  <rect width="40" height="40" fill="#5c4332"/>
+  <path d="M0 13 Q 10 10 20 13 T 40 13 M0 31 Q 12 28 22 31 T 40 31" stroke="#533c2d" stroke-width="3" fill="none"/>
+  <ellipse cx="9" cy="6" rx="4" ry="2.5" fill="#735742"/>
+  <ellipse cx="29" cy="22" rx="5" ry="3" fill="#735742"/>
+  <ellipse cx="29" cy="21" rx="3" ry="1.2" fill="#86684f"/>
+  <ellipse cx="14" cy="36" rx="3" ry="2" fill="#735742"/>
+  <circle cx="35" cy="5" r="1.5" fill="#4a3427"/>
+  <circle cx="20" cy="24" r="1.2" fill="#4a3427"/>
+  <circle cx="4" cy="22" r="1.4" fill="#4a3427"/>
+</svg>

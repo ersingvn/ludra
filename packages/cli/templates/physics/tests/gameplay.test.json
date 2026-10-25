@@ -1,0 +1,67 @@
+{
+  "tests": [
+    {
+      "name": "everything settles: the player and crate rest, the bridge hangs",
+      "duration": "3s",
+      "assert": [
+        "player.grounded == true",
+        "crate.grounded == true",
+        "crate.x == 460",
+        "plank-3.y > 345",
+        "plank-3.y < 380",
+        "deaths == 0"
+      ]
+    },
+    {
+      "name": "the player pushes the crate",
+      "inputs": "right:3s",
+      "assert": [
+        "crate.x > 560 at 3s",
+        "player.x > 500 at 3s"
+      ]
+    },
+    {
+      "name": "the cliff is too high to jump without the crate",
+      "inputs": "right:1.2s, right+jump:0.45s, right:1.0s, right+jump:0.45s, right:0.4s, wait:0.1s, right+jump:0.45s, right:0.5s",
+      "assert": [
+        "player.x < 760",
+        "player.y > 470",
+        "events.checkpoint == 0"
+      ]
+    },
+    {
+      "name": "the crate pushed against the cliff is a step up to the lantern",
+      "inputs": "right:4.4s, wait:0.1s, left:0.2s, wait:0.1s, right+jump:0.45s, right:0.1s, wait:0.1s, right+jump:0.45s, right:0.4s",
+      "duration": "6.5s",
+      "assert": [
+        "crate.x > 725",
+        "coin-1.exists == false",
+        "events.checkpoint == 1",
+        "player.y < 330",
+        "player.grounded == true"
+      ]
+    },
+    {
+      "name": "the pendulum knocks the player off the bridge, back to the lantern",
+      "inputs": "right:4.4s, wait:0.1s, left:0.2s, wait:0.1s, right+jump:0.45s, right:0.1s, wait:0.1s, right+jump:0.45s, right:1.1s, wait:1s, right:1.2s",
+      "duration": "9.5s",
+      "assert": [
+        "deaths == 1",
+        "events.die == 1",
+        "lives == 2",
+        "player.x < 1000",
+        "player.grounded == true"
+      ]
+    },
+    {
+      "name": "Crate & Chasm can be completed without dying",
+      "inputs": "right:4.4s, wait:0.1s, left:0.2s, wait:0.1s, right+jump:0.45s, right:0.1s, wait:0.1s, right+jump:0.45s, right:1.1s, wait:0.4s, right:3.5s",
+      "duration": "12s",
+      "assert": [
+        "won == true",
+        "deaths == 0",
+        "score == 3"
+      ]
+    }
+  ]
+}

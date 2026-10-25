@@ -305,9 +305,10 @@ Start from the template closest to your idea and reshape it:
 npx @ludra/cli new my-game                       # platformer: run, jump, stomp
 npx @ludra/cli new my-game --template topdown    # seen from above: gems, hedges, slimes
 npx @ludra/cli new my-game --template breakout   # paddle, bouncing ball, bricks
+npx @ludra/cli new my-game --template physics    # real physics: a crate to push, a rope bridge, a pendulum
 ```
 
-Each template ships with tests that prove it can be won without dying, and its own look: the platformer in SVG sprites, the breakout drawn entirely in code, the grove lit by code over SVG sprites. The breakout route is 28 seconds long, so the skill teaches agents to write a small autopilot that plays the level and prints the input, instead of guessing.
+Each template ships with tests that prove it can be won without dying, and its own look: the platformer in SVG sprites, the breakout drawn entirely in code, the grove lit by code over SVG sprites, Crate & Chasm on Rapier with joints you can see in `--debug`. The breakout route is 28 seconds long, so the skill teaches agents to write a small autopilot that plays the level and prints the input, instead of guessing.
 
 ### Scripts: any game logic, still testable
 

@@ -55,6 +55,11 @@ const MAX_FALL_SPEED = 1400;
 const CONTROLLER_OFFSET = 0.5;
 /** Players stay on the ground when walking down slopes and off small bumps up to this far, in px. */
 const SNAP_TO_GROUND = 6;
+/**
+ * A standing player that loses contact (it lands a hair above the ground, or walks off a ledge)
+ * still counts as grounded for this many steps: no flickering, and a moment to jump.
+ */
+const COYOTE_STEPS = 3;
 
 /** A Ludra entity, its Rapier body and collider, and the transform last written to it. */
 interface Link {
@@ -73,6 +78,8 @@ interface Link {
   dy: number;
   /** Gameplay moved the entity itself since the last step (a respawn). */
   teleported: boolean;
+  /** Steps since a player last touched the ground. */
+  airborne: number;
   /** The joints this entity's `joint` component made, in order, once both ends exist. */
   joints: (ImpulseJoint | undefined)[];
   /** For joints to a point in the world: the fixed bodies holding those points. */
@@ -149,7 +156,7 @@ export class RapierPhysics implements PhysicsEngine {
         .setActiveCollisionTypes(RAPIER.ActiveCollisionTypes.ALL),
       body,
     );
-    const link: Link = { entity, body, collider, x: t.x, y: t.y, rotation: t.rotation, angle: body.rotation(), dx: 0, dy: 0, teleported: false, joints: [], anchors: [] };
+    const link: Link = { entity, body, collider, x: t.x, y: t.y, rotation: t.rotation, angle: body.rotation(), dx: 0, dy: 0, teleported: false, airborne: Infinity, joints: [], anchors: [] };
     if (player) link.controller = this.createController(entity);
     entity.joints?.forEach((_, index) => this.pendingJoints.push({ entity, index }));
     this.links.set(entity, link);
@@ -357,11 +364,12 @@ export class RapierPhysics implements PhysicsEngine {
       body.setNextKinematicTranslation(toRapier(t.x, t.y));
       b.grounded = false;
       b.standingOn = undefined;
+      link.airborne = Infinity;
       return;
     }
-    // Gravity only while airborne (or jumping off): pressing a standing player into the ground
-    // makes round-bottomed ones slide and lose speed. Snapping keeps it down on slopes.
-    if (falls) b.vy = wasGrounded && b.vy >= 0 ? 0 : Math.min(b.vy + host.gravity * b.gravityScale * FIXED_DT, MAX_FALL_SPEED);
+    // Gravity only while not touching the ground (or jumping off): pressing a standing player into
+    // the ground makes round-bottomed ones slide and lose speed. Snapping keeps it down on slopes.
+    if (falls) b.vy = link.airborne === 0 && b.vy >= 0 ? 0 : Math.min(b.vy + host.gravity * b.gravityScale * FIXED_DT, MAX_FALL_SPEED);
     const ownX = b.vx * FIXED_DT;
     const ownY = b.vy * FIXED_DT;
     // Ride along with a moving platform (Rapier's controller doesn't carry a standing character).
@@ -377,7 +385,9 @@ export class RapierPhysics implements PhysicsEngine {
     body.setNextKinematicTranslation(toRapier(t.x, t.y));
 
     // Ground: what's under the player now, if it fell or walked onto something.
-    b.grounded = falls && controller.computedGrounded();
+    const touching = falls && controller.computedGrounded();
+    link.airborne = touching ? 0 : link.airborne + 1;
+    b.grounded = touching || (falls && wasGrounded && b.vy >= 0 && link.airborne <= COYOTE_STEPS);
     const previous = b.standingOn;
     b.standingOn = undefined;
     if (b.grounded) {
@@ -389,9 +399,14 @@ export class RapierPhysics implements PhysicsEngine {
       // Snapping down a slope reports no collision: it still stands where it stood.
       b.standingOn ??= previous;
     }
-    if (b.grounded && b.vy > 0) b.vy = 0;
-    // Bumped its head: stop rising.
-    if (ownY < 0 && moved.y - carryY > ownY + 1e-3) b.vy = 0;
+    if (touching && b.vy > 0) b.vy = 0;
+    // Bumped its head: stop rising. Only a ceiling counts (normals point at the player, y-up),
+    // not a wall it slides up, which shaves a hair off the rise.
+    if (ownY < 0 && moved.y - carryY > ownY + 1e-3) {
+      for (let i = 0; i < controller.numComputedCollisions(); i++) {
+        if (controller.computedCollision(i)!.normal1.y < -GROUND_NORMAL) b.vy = 0;
+      }
+    }
     if (b.grounded && !wasGrounded) host.emit({ type: "land", entity: e.id, ...feet(e) });
   }
 
