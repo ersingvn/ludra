@@ -1,6 +1,7 @@
 import { COMPONENT_NAMES, COMPONENTS, isComponentName, isFrameList, PARTICLE_FIELDS, type ComponentName, type FieldSpec } from "./components.ts";
 import { AUDIO_EXTENSIONS, EFFECT_FIELDS, FONT_EXTENSIONS, IMAGE_EXTENSIONS, SOUND_PRESETS } from "./effects.ts";
 import { isKnownSound, validateMusic, validateSounds } from "./sound.ts";
+import { expandTilemaps } from "./tilemap.ts";
 import { EVENT_TYPES, type Diagnostic, type SceneDef } from "./types.ts";
 
 export interface ValidationResult {
@@ -35,8 +36,8 @@ export function validateScene(input: unknown): ValidationResult {
     error("E_SCENE_NOT_OBJECT", "$", "A scene must be a JSON object.", 'Start from { "entities": [] }.');
     return result();
   }
-  // Prefabs become plain entities first, so everything below sees the final components.
-  const raw = expandPrefabs(input, error);
+  // Tilemaps and prefabs become plain entities first, so everything below sees the final components.
+  const raw = expandPrefabs(expandTilemaps(input, error), error);
   scene = raw;
 
   if (raw.world !== undefined) {
@@ -126,11 +127,11 @@ export function validateScene(input: unknown): ValidationResult {
         );
         continue;
       }
-      if (name === "joint" && Array.isArray(value)) {
-        // Several joints on one body: a bridge's last plank, a car's wheels.
+      if ((name === "joint" || name === "tween") && Array.isArray(value)) {
+        // Several joints on one body (a bridge's last plank, a car's wheels), several tweens on one thing.
         value.forEach((item: unknown, i: number) => {
-          if (isObject(item)) validateFields(COMPONENTS.joint.fields, item, `${componentPath}[${i}]`, "joint", ` on entity ${label}`, error, warn);
-          else error("E_COMPONENT_NOT_OBJECT", `${componentPath}[${i}]`, `Each joint on entity ${label} must be an object.`, 'Use "joint": [{ "type": "revolute" }, ...].');
+          if (isObject(item)) validateFields(COMPONENTS[name].fields, item, `${componentPath}[${i}]`, name, ` on entity ${label}`, error, warn);
+          else error("E_COMPONENT_NOT_OBJECT", `${componentPath}[${i}]`, `Each ${name} on entity ${label} must be an object.`, `Use "${name}": [{ ... }, { ... }].`);
         });
         continue;
       }
@@ -250,6 +251,26 @@ export function validateScene(input: unknown): ValidationResult {
         }
       }
       if (typeof joint.to === "string" && joint.to !== "") jointTargets.push({ path: `${jointPath}.to`, label, to: joint.to });
+    });
+    const tweens = Array.isArray(components.tween) ? components.tween : components.tween !== undefined ? [components.tween] : [];
+    tweens.forEach((tween: unknown, i: number) => {
+      if (!isObject(tween)) return;
+      const tweenPath = Array.isArray(components.tween) ? `${path}.components.tween[${i}]` : `${path}.components.tween`;
+      const property = tween.property ?? "y";
+      if (tween.to === undefined && tween.by === undefined) {
+        error("E_TWEEN_TARGET", tweenPath, `The tween on entity ${label} has no "to" or "by", so it has nowhere to go.`, 'Add "to": <value> for a fixed target, or "by": <change> to move relative to where it starts (e.g. "by": -120).');
+      }
+      if ((property === "scale" || property === "opacity") && !("sprite" in components)) {
+        error("E_TWEEN_NEEDS_SPRITE", `${tweenPath}.property`, `A tween of ${String(property)} on entity ${label} needs a sprite to change.`, 'Add a "sprite", or tween x, y or rotation.');
+      }
+      if ((property === "x" || property === "y") && body && bodyType === "static" && body.sensor !== true) {
+        warn(
+          "W_TWEEN_STATIC_BODY",
+          `${tweenPath}.property`,
+          `Entity ${label} has a static body, so its tween teleports it each frame: players standing on it aren't carried.`,
+          'Use "type": "kinematic" for platforms, doors and lifts that move.',
+        );
+      }
     });
     // Free shapes need their points.
     if (body && (body.shape === "polygon" || body.shape === "polyline")) {
@@ -523,6 +544,8 @@ function checkField(spec: FieldSpec, value: unknown): string | undefined {
       return typeof value === "string" && isFrameList(value) ? undefined : `must be a frame list like "0", "1-4" or "0,2-3", got ${describe(value)}.`;
     case "object":
       return isObject(value) ? undefined : `must be an object like { "speed": 80 }, got ${describe(value)}.`;
+    case "strings":
+      return Array.isArray(value) && value.every((s) => typeof s === "string") ? undefined : `must be a list of strings, got ${describe(value)}.`;
     case "points":
       return Array.isArray(value) && value.every((p) => Array.isArray(p) && p.length === 2 && p.every((n) => typeof n === "number" && Number.isFinite(n)))
         ? undefined

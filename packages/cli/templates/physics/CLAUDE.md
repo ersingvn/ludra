@@ -41,5 +41,6 @@ Never call a change done until `ludra check`, `ludra test` and `ludra review` ar
 - A level is done when a test proves `won == true` with `deaths == 0`.
 - Scripts can reach physics directly: `self.applyImpulse`, `self.applyForce`, `world.raycast`, and `world.physics.raw` for the whole Rapier API. See `npx @ludra/cli components script`.
 - The scene has its own `"sounds"` (used by `effects`) and `"music"` (tracks of notes). Change them with the game's mood; `npx @ludra/cli components sounds` shows every field. `scripts/ambience.ts` is a `sound` hook: wind, the pendulum's hiss and the crate's scrape follow the physics through the real Web Audio API.
+- Bigger levels: a `tilemap` draws a level as rows of characters, `cameraZone` frames rooms and vistas, and `tween` eases lifts, doors and pickups. See `npx @ludra/cli components tilemap` (and `cameraZone`, `tween`).
 - Art and effects never change gameplay. Make it playable first, then dress it. Write new art as SVG in `assets/`.
 - For behavior no component provides, write a script and attach it with a `script` component. Use `world.random()`, never `Math.random()`.

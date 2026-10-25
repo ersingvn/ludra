@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
+  <!-- Tile: castle masonry, two courses of offset blocks. -->
+  <rect width="40" height="40" fill="#3a3550"/>
+  <rect x="1" y="1" width="23" height="18" rx="2" fill="#5a5478"/>
+  <rect x="26" y="1" width="13" height="18" rx="2" fill="#544e70"/>
+  <rect x="1" y="21" width="11" height="18" rx="2" fill="#4f4a6b"/>
+  <rect x="14" y="21" width="25" height="18" rx="2" fill="#5a5478"/>
+  <rect x="1" y="1" width="23" height="3" rx="1.5" fill="#726b94"/>
+  <rect x="26" y="1" width="13" height="3" rx="1.5" fill="#6a6389"/>
+  <rect x="14" y="21" width="25" height="3" rx="1.5" fill="#726b94"/>
+  <rect x="1" y="21" width="11" height="3" rx="1.5" fill="#655f86"/>
+  <circle cx="8" cy="12" r="1.2" fill="#46405f"/>
+  <circle cx="30" cy="31" r="1.5" fill="#46405f"/>
+  <path d="M17 9 l3 2 l2 -1" stroke="#46405f" stroke-width="0.8" fill="none"/>
+</svg>

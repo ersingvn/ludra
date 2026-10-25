@@ -148,6 +148,24 @@ Lessons that save time:
 - **Prefabs**: `prefabs/<name>.prefab.json` holds `{ "components": { ... } }`. An entity uses one with `"prefab": "slime"` and only the components that differ: `"components": { "transform": { "x": 400, "y": 487 }, "patrol": { "speed": 120 } }` (merged field by field; `null` removes a component). Scripts spawn them: `world.spawn({ prefab: "bullet", components: { transform: { x, y } } })`. Use prefabs for anything placed more than once, so a change to the slime changes every slime.
 - **Scenes**: more scenes live in `scenes/`. A goal's `"next": "scenes/level-2.scene.json"` moves on after the win screen; `world.goto("scenes/level-1.scene.json")` moves on from anything (a title screen, a door). Score, deaths and lives carry over; R restarts the current scene, and after game over the whole run. Each scene is checked by `check` and tested on its own (`"scene"` in a test); `world.exit` tells draw hooks whether a win leads on.
 
+## Worlds: tilemaps, camera zones, tweens
+
+- **Tilemap**: draw a level as text. `"tilemap": { "tileSize": 40, "rows": ["#....c...#", "##########"], "legend": { ... } }` on an entity whose transform is the map's top-left corner.
+  - A legend entry is a tile: `{ "image": "assets/stone.svg" }` (solid by default), with `"sensor": true` and `"components": { "hazard": {} }` for spikes, `"solid": false` for decoration. Or a prefab name: `"c": "coin"` places a coin centered in each `c` cell. `" "` and `"."` are empty.
+  - Neighboring cells of the same tile merge into one body (wide rows first, then identical rows stacked), so walls and floors are a few colliders. Every cell becomes an ordinary entity named `<id>-<row>-<col>`: tests, `play --watch` and scripts can use them.
+  - Mix freely: build the structure with a tilemap and place moving parts, checkpoints and the goal as entities. Multiple tilemaps (a background layer with `"solid": false`, a foreground) are fine.
+- **Camera zones**: `"cameraZone": { "width", "height", "mode", "zoom", "blend", "priority" }` on an entity (no body).
+  - While the followed entity is inside, `"room"` keeps the view inside the area (rooms, floors, an arena), `"fixed"` holds the view on its center (a boss fight, a vista), and `zoom` changes the zoom (0.5 shows twice as much).
+  - Changes ease over `blend` seconds; overlapping zones go by `priority`. Zones are presentation only and show in `--debug` screenshots as violet frames.
+- **Tweens**: `"tween": { "property": "y", "by": -120, "duration": 1, "ease": "quadOut", "repeat": "once", "delay": 0, "on": "" }`, or a list.
+  - Properties: `x`, `y`, `rotation`, and `scale`/`opacity` (needs a sprite). `to` is a fixed target, `by` is relative.
+  - Eases: `linear`, `sineInOut` (glide), `quadIn`, `quadOut`, `quadInOut`, `cubicInOut`, `backOut` (snap with overshoot), `elasticOut`, `bounceOut`. `repeat`: `once`, `loop`, `pingpong`; `delay` waits before every pass, so a pingpong lift rests at each end.
+  - `on` starts it when an event fires (`"checkpoint"`, or a name a script emits). Scripts call `self.tween({ property: "y", by: -120, duration: 0.6, ease: "quadOut" })`.
+  - Tweens run in the simulation, so tests see them (`"gate.y == 200"`). Tweened kinematic bodies move by velocity and carry riders; give moving solids a kinematic body.
+  - Use them for lifts that pause, doors and gates, bobbing pickups, swinging signs, pop-in scale on spawn, fades.
+
+See `examples/clockwork-keep` for all three together, with a test for each moving part.
+
 ## Gameplay building blocks
 
 - **Hazard** (spikes, lava): sensor body + `hazard`. Touching it kills the player, who respawns at its start position. Collected items stay collected.

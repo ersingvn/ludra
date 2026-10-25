@@ -8,7 +8,9 @@ export type FieldSpec =
   /** Any JSON object. */
   | { type: "object"; default?: Record<string, unknown>; description: string }
   /** A list of [x, y] points in px. */
-  | { type: "points"; default?: [number, number][]; description: string };
+  | { type: "points"; default?: [number, number][]; description: string }
+  /** A list of strings (tilemap rows). */
+  | { type: "strings"; default?: string[]; description: string };
 
 export interface ComponentSpec {
   description: string;
@@ -32,6 +34,9 @@ export const COMPONENT_NAMES = [
   "emitter",
   "script",
   "camera",
+  "cameraZone",
+  "tilemap",
+  "tween",
 ] as const;
 export type ComponentName = (typeof COMPONENT_NAMES)[number];
 
@@ -117,6 +122,8 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       width: { type: "number", min: 0, default: 0, description: "Draw width in pixels. 0 = use the body width." },
       height: { type: "number", min: 0, default: 0, description: "Draw height in pixels. 0 = use the body height." },
       layer: { type: "number", default: 0, description: "Higher layers are drawn on top." },
+      scale: { type: "number", min: 0, default: 1, description: "Draw size multiplier (a tween can pulse or pop it). Never changes the body." },
+      opacity: { type: "number", min: 0, default: 1, description: "0 = invisible, 1 = solid. A tween can fade it." },
     },
   },
   platformer: {
@@ -244,6 +251,53 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       zoom: { type: "number", min: 0.1, default: 1, description: "Camera zoom factor." },
     },
   },
+  cameraZone: {
+    description:
+      "An area that takes over the camera while the followed entity is inside it: \"room\" keeps the view inside the area (Metroid-style rooms, an arena that locks), \"fixed\" holds the view on the area's center (a vista, a boss fight), and \"zoom\" changes the zoom. Entering and leaving blend smoothly. Presentation only: it never changes the game.",
+    requires: ["transform"],
+    fields: {
+      width: { type: "number", min: 1, description: "Area width in px, centered on the transform." },
+      height: { type: "number", min: 1, description: "Area height in px, centered on the transform." },
+      mode: { type: "enum", values: ["room", "fixed"], default: "room", description: "room = the view stays inside the area and still follows; fixed = the view holds the area's center." },
+      zoom: { type: "number", min: 0, default: 0, description: "Zoom while inside. 0 = keep the camera's zoom. Below 1 shows more (a wide vista), above 1 closes in." },
+      blend: { type: "number", min: 0, default: 0.5, description: "Seconds to ease the camera in and out of the zone." },
+      priority: { type: "number", default: 0, description: "When zones overlap, the highest priority wins (then the last one listed)." },
+    },
+  },
+  tilemap: {
+    description:
+      'A grid level written as rows of characters, one per cell. Each character is looked up in the legend: a tile ({ "image", "color", "solid", "sensor", "layer", "components", "merge" }) or a prefab name to place in that cell. " " and "." are empty. Neighboring tiles of the same character merge into one body, so a 200-cell wall is one collider. The tilemap\'s transform is its top-left corner. It becomes ordinary entities named <id>-<row>-<col>, so tests, play --watch and scripts can use them.',
+    requires: ["transform"],
+    fields: {
+      tileSize: { type: "number", min: 1, default: 40, description: "Cell size in px." },
+      rows: { type: "strings", description: 'One string per row, one character per cell, e.g. ["#..c..#", "#######"].' },
+      legend: {
+        type: "object",
+        description:
+          'What each character is: { "#": { "image": "assets/brick.svg" }, "^": { "image": "assets/spikes.svg", "sensor": true, "components": { "hazard": {} } }, "c": "coin" } (a prefab).',
+      },
+    },
+  },
+  tween: {
+    description:
+      'Animates a value over time with easing: a door that slides open, a platform that glides and pauses, a coin that bobs, a sign that fades in. x/y move a kinematic or dynamic body by velocity, so riders are carried like on a patrol. Runs in the simulation (deterministic, testable). Give a list for several: "tween": [{ ... }, { ... }]. Scripts start tweens with self.tween({ ... }).',
+    requires: ["transform"],
+    fields: {
+      property: { type: "enum", values: ["x", "y", "rotation", "scale", "opacity"], default: "y", description: "What to animate. scale and opacity need a sprite." },
+      to: { type: "number", default: 0, description: "Target value. Ignored when by is set." },
+      by: { type: "number", default: 0, description: "Change relative to the start value (e.g. -120 = up 120 px). Used when not 0." },
+      duration: { type: "number", min: 0.01, description: "Seconds for one pass." },
+      delay: { type: "number", min: 0, default: 0, description: "Seconds to wait first (and between passes when it repeats)." },
+      ease: {
+        type: "enum",
+        values: ["linear", "sineInOut", "quadIn", "quadOut", "quadInOut", "cubicInOut", "backOut", "elasticOut", "bounceOut"],
+        default: "sineInOut",
+        description: "The curve: sineInOut glides, quadOut/backOut snap into place, elasticOut and bounceOut wobble and land.",
+      },
+      repeat: { type: "enum", values: ["once", "loop", "pingpong"], default: "once", description: "once, loop (jump back and go again) or pingpong (there and back forever)." },
+      on: { type: "string", default: "", description: 'Start when this event fires (a built-in one like "checkpoint", or a name a script emits). Empty = start with the scene.' },
+    },
+  },
 };
 
 export interface Transform {
@@ -286,6 +340,8 @@ export interface Sprite {
   width: number;
   height: number;
   layer: number;
+  scale: number;
+  opacity: number;
 }
 
 export interface ParticleSpec {

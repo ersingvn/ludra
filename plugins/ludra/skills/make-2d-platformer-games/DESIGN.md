@@ -39,6 +39,8 @@ Then customize. Change `params` (speed, range, delay), restyle the art, and comb
 
 **Telegraph danger.** The player should see a threat before it can hurt them: enemies visible from a distance, turrets that fire on a rhythm, platforms that shake before they fall. No hazards that appear without warning.
 
+**Frame each space.** A camera zone per room or floor shows exactly the space the player is in, never the next puzzle's solution; a fixed or zoomed-out zone turns a big moment (a boss, the goal, a view from the top) into a shot. Motion with easing reads as built, not scripted: a lift that eases and pauses at each floor, a gate that rises when a lantern is lit (`"on": "checkpoint"`), coins that bob.
+
 **Readable paths.** The way forward should be obvious. Use coins as breadcrumbs to suggest a route or a jump arc. Optional secrets are fine; mandatory hidden paths are not.
 
 **Respect the numbers.** With the defaults, a jump rises ~128px and reaches ~180px. Design jumps at **≤ 80%** of that (rises ≤ 100px, gaps ≤ 140px), so a human with imperfect timing still makes them.

@@ -391,6 +391,9 @@ For everything else, a script's `sound` hook gets the real Web Audio API, the wa
 | `emitter` | Streams particles continuously: sparkles, fire, smoke |
 | `script` | Custom behavior in TypeScript: `start`, `update` and `touch` hooks with `params` |
 | `camera` | The browser camera follows this entity through worlds wider than the window |
+| `cameraZone` | An area that takes over the camera: a room the view stays inside, a fixed shot, a zoom; changes ease smoothly |
+| `tilemap` | A level drawn as rows of characters: tiles merge into big colliders, letters place prefabs |
+| `tween` | Eases x, y, rotation, scale or opacity: lifts that pause at each floor, gates that open on an event, bobbing coins |
 
 Falling out of the bottom of the world also counts as a death. Scene-level `effects` add particles, sound and shake to game events. Run `ludra components effects` for every option.
 
@@ -419,7 +422,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how it fits together.
 - ~~**v0.6: blocks and taste.** `ludra blocks` / `ludra add`, a library of tested gameplay blocks, and a design guide in the skill.~~ Done.
 - ~~**v0.7: genres.** A top-down controller, bounce physics, and templates for top-down adventures and breakout-style games.~~ Done.
 - ~~**v0.8: game structure and quality.** `ludra review`, multiple scenes and level transitions, prefabs, lives and checkpoints.~~ Done.
-- **v0.9: physics, sound and worlds.** Rapier as one physics engine for 2D now and 3D later, a game's own synthesized sounds and music with the full Web Audio API in scripts, tilemaps, camera zones, tweened animation.
+- **v0.9: physics, sound and worlds.** Rapier as one physics engine for 2D now and 3D later, a game's own synthesized sounds and music with the full Web Audio API in scripts, tilemaps, camera zones, tweened animation. See [`examples/clockwork-keep`](examples/clockwork-keep).
 - **v0.10: 3D foundations.** 3D transforms and bodies, a Three.js renderer with lights and shadows, cameras, a character controller, and a first 3D template, all through the same check/play/test/review loop and real screenshots.
 - **v0.11: 3D content.** glTF models, free (CC0) model packs as blocks, skeletal animation, procedural geometry and terrain.
 - **v0.12: shipping.** A single-file web build ready for itch.io, touch and gamepad controls, performance budgets in `review`.

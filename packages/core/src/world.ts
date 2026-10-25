@@ -28,6 +28,8 @@ import {
   type SpawnDef,
 } from "./script.ts";
 import { createPhysics } from "./engines.ts";
+import type { CameraZone } from "./camera.ts";
+import { advanceTween, createTween, startTween, type Tween, type TweenState } from "./tween.ts";
 import { at, feet, type PhysicsEngine, type PhysicsHost } from "./physics.ts";
 import { FIXED_DT } from "./time.ts";
 import { EVENT_TYPES, type Action, type Diagnostic, type EntityDef, type SceneDef } from "./types.ts";
@@ -81,6 +83,9 @@ export interface Entity {
   joints?: Joint[];
   emitter?: Emitter;
   camera?: Camera;
+  cameraZone?: CameraZone;
+  /** Tweens declared on the entity or started by its scripts. */
+  tweens?: TweenState[];
 }
 
 /** `x`/`y` is where it happened, e.g. the coin's position for "collect" or the feet for "land". */
@@ -186,6 +191,8 @@ export class World {
   readonly physics: PhysicsEngine;
   private readonly physicsHost: PhysicsHost;
   private previousInput: ReadonlySet<Action> = new Set();
+  /** World events the tweens have already looked at, to start those waiting for one. */
+  private tweenEvents = 0;
   private readonly scripts: ScriptModules | undefined;
   private seed: number;
   private spawnCount = 0;
@@ -255,6 +262,7 @@ export class World {
     this.updateScripts(input, pressed);
     if (this.over) return;
     this.updatePatrols();
+    this.updateTweens();
     this.physics.step(this.physicsHost);
     this.updateTouches();
     if (this.over) return;
@@ -480,6 +488,15 @@ export class World {
       applyImpulse(x: number, y: number, at?: { x: number; y: number }) {
         world.guard("applyImpulse");
         if (e.body) world.physics.applyImpulse(e, x, y, at);
+      },
+      tween(def: Parameters<ScriptEntity["tween"]>[0]) {
+        world.guard("tween");
+        const { diagnostics } = validateScene({ entities: [{ id: e.id, components: { transform: { x: 0, y: 0 }, ...(e.sprite ? { sprite: {} } : {}), tween: def as Record<string, unknown> } }] });
+        const problem = diagnostics.find((d) => d.severity === "error");
+        if (problem) throw world.misuse(`self.tween: ${problem.message}${problem.fix ? ` ${problem.fix}` : ""}`);
+        const spec = resolveComponent<Tween>("tween", { ...def, on: "" });
+        // A new tween of the same property replaces the old one.
+        e.tweens = [...(e.tweens ?? []).filter((t) => t.property !== spec.property), createTween(spec, readTweened(e, spec.property))];
       },
       applyForce(x: number, y: number, at?: { x: number; y: number }) {
         world.guard("applyForce");
@@ -727,6 +744,41 @@ export class World {
     }
   }
 
+  /**
+   * Eases tweened values. Moving bodies get the velocity that lands them on this step's
+   * value, so the physics engine moves them (and carries riders); everything else is set.
+   */
+  private updateTweens(): void {
+    // Tweens waiting for an event start when it fires.
+    const fresh = this.events.slice(this.tweenEvents);
+    this.tweenEvents = this.events.length;
+    const fired = new Set(fresh.map((e) => (e.type === "custom" ? e.name : e.type)));
+    for (const e of this.entities) {
+      if (!e.tweens) continue;
+      for (const tween of e.tweens) {
+        if (!tween.active && !tween.done && tween.on !== "" && fired.has(tween.on)) startTween(tween, readTweened(e, tween.property));
+        const settling = tween.done && tween.settle;
+        const value = advanceTween(tween, FIXED_DT);
+        const b = e.body;
+        const moved = (tween.property === "x" || tween.property === "y") && b && b.type !== "static";
+        if (value === undefined) {
+          // A body that just arrived stops there.
+          if (settling && moved) {
+            if (tween.property === "x") b.vx = 0;
+            else b.vy = 0;
+          }
+          tween.settle = false;
+          continue;
+        }
+        tween.settle = tween.done;
+        if (moved) {
+          if (tween.property === "x") b.vx = (value - e.transform.x) / FIXED_DT;
+          else b.vy = (value - e.transform.y) / FIXED_DT;
+        } else writeTweened(e, tween.property, value);
+      }
+    }
+  }
+
   /** Points each patrolling body toward the end of its path it is heading for. */
   private updatePatrols(): void {
     for (const e of this.entities) {
@@ -859,7 +911,24 @@ function createEntity(def: EntityDef): Entity {
   if (c.joint) entity.joints = (Array.isArray(c.joint) ? c.joint : [c.joint]).map((j) => resolveComponent<Joint>("joint", j as Record<string, unknown>));
   if (c.emitter) entity.emitter = resolveComponent<Emitter>("emitter", c.emitter);
   if (c.camera) entity.camera = resolveComponent<Camera>("camera", c.camera);
+  if (c.cameraZone) entity.cameraZone = resolveComponent<CameraZone>("cameraZone", c.cameraZone);
+  if (c.tween) {
+    entity.tweens = (Array.isArray(c.tween) ? c.tween : [c.tween]).map((t) => {
+      const spec = resolveComponent<Tween>("tween", t as Record<string, unknown>);
+      return createTween(spec, readTweened(entity, spec.property));
+    });
+  }
   return entity;
+}
+
+function readTweened(e: Entity, property: Tween["property"]): number {
+  if (property === "x" || property === "y" || property === "rotation") return e.transform[property];
+  return e.sprite?.[property] ?? 1;
+}
+
+function writeTweened(e: Entity, property: Tween["property"], value: number): void {
+  if (property === "x" || property === "y" || property === "rotation") e.transform[property] = value;
+  else if (e.sprite) e.sprite[property] = Math.max(0, value);
 }
 
 function isPlayer(e: Entity): boolean {

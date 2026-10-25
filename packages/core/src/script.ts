@@ -1,4 +1,5 @@
 import type { Action, Diagnostic } from "./types.ts";
+import type { Ease } from "./tween.ts";
 import { closestName } from "./validate.ts";
 
 /**
@@ -24,6 +25,12 @@ export interface ScriptEntity {
    * world (rapier) it also spins the body. For a jump pad, a kick, an explosion.
    */
   applyImpulse(x: number, y: number, at?: { x: number; y: number }): void;
+  /**
+   * Eases a value over time: { property: "x" | "y" | "rotation" | "scale" | "opacity", to or by,
+   * duration, ease?, delay?, repeat? }. Same fields as the tween component; starts now and
+   * replaces a running tween of the same property. A door: self.tween({ property: "y", by: -120, duration: 0.6, ease: "quadOut" }).
+   */
+  tween(def: { property: "x" | "y" | "rotation" | "scale" | "opacity"; to?: number; by?: number; duration: number; delay?: number; ease?: Ease; repeat?: "once" | "loop" | "pingpong" }): void;
   /** Pushes the body steadily: call it every frame (thrusters, wind, magnets). */
   applyForce(x: number, y: number, at?: { x: number; y: number }): void;
   readonly width: number;
@@ -251,6 +258,7 @@ export const SCRIPT_API_REFERENCE = `A script file default-exports hooks. Only "
 
 ctx.self      the entity: id, x, y, vx, vy, rotation, angularVelocity (read/write); grounded, mass, width, height, exists (read);
               applyImpulse(x, y, at?)  strike it (velocity += impulse / mass)    applyForce(x, y, at?)  push every frame;
+              tween({ property, to | by, duration, ease?, delay?, repeat? })  ease x, y, rotation, scale or opacity;
               state (object kept between frames, testable as "<id>.state.<key>");
               has("component"), touches(otherOrId)
 ctx.world     time, frame, width, height, deaths, won, lost, exit (read); score, lives (read/write)

@@ -36,6 +36,7 @@ Never call a change done until `ludra check`, `ludra test` and `ludra review` ar
 - A level is done when a test proves `won == true` with `deaths == 0`. Long routes are easiest to find by writing a small autopilot that steers the paddle under the ball, then pasting its input (frame counts like `"left:24f"`) into the test.
 - For a game that is about physics (stacking, ropes, hinges, rolling, vehicles), set `"physics": "rapier"` in `"world"`: rotation, round and free shapes, friction, mass and joints. See the skill's physics section and `npx @ludra/cli components body` / `joint`.
 - The scene has its own `"sounds"` (used by `effects`) and `"music"` (tracks of notes). Change them with the game's mood; `npx @ludra/cli components sounds` shows every field. A script's `sound` hook gets the real Web Audio API for sound that follows the game.
+- Bigger levels: a `tilemap` draws a level as rows of characters, `cameraZone` frames rooms and vistas, and `tween` eases lifts, doors and pickups. See `npx @ludra/cli components tilemap` (and `cameraZone`, `tween`).
 - Art and effects never change gameplay. Make it playable first, then dress it.
 
 ## Looks

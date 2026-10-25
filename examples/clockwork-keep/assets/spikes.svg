@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
+  <!-- Tile: a pit of iron spikes filling the cell, tips glinting red. -->
+  <rect y="30" width="40" height="10" fill="#2a2438"/>
+  <g fill="#c9cfe0">
+    <path d="M0 40 L5 6 L10 40 Z"/><path d="M10 40 L15 4 L20 40 Z"/>
+    <path d="M20 40 L25 6 L30 40 Z"/><path d="M30 40 L35 4 L40 40 Z"/>
+  </g>
+  <g fill="#8a91a8">
+    <path d="M5 6 L10 40 L7 40 Z"/><path d="M15 4 L20 40 L17 40 Z"/>
+    <path d="M25 6 L30 40 L27 40 Z"/><path d="M35 4 L40 40 L37 40 Z"/>
+  </g>
+  <g fill="#ff5d73">
+    <path d="M5 6 L6.2 13 L3.8 13 Z"/><path d="M15 4 L16.2 11 L13.8 11 Z"/>
+    <path d="M25 6 L26.2 13 L23.8 13 Z"/><path d="M35 4 L36.2 11 L33.8 11 Z"/>
+  </g>
+</svg>

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="80" viewBox="0 0 48 80">
+  <!-- Spritesheet: 2 frames of 24x80, a waving goal flag. -->
+  <g>
+    <rect x="3" y="4" width="3" height="76" rx="1.5" fill="#cfd8ff"/>
+    <circle cx="4.5" cy="4" r="3" fill="#ffd166"/>
+    <path d="M6 8 C 12 5, 16 11, 24 8 L 24 26 C 16 29, 12 23, 6 26 Z" fill="#4cc9f0"/>
+    <path d="M6 18 C 12 15, 16 21, 24 18 L 24 26 C 16 29, 12 23, 6 26 Z" fill="#3aa6c8"/>
+  </g>
+  <g transform="translate(24 0)">
+    <rect x="3" y="4" width="3" height="76" rx="1.5" fill="#cfd8ff"/>
+    <circle cx="4.5" cy="4" r="3" fill="#ffd166"/>
+    <path d="M6 8 C 12 11, 16 5, 24 9 L 24 27 C 16 23, 12 29, 6 26 Z" fill="#4cc9f0"/>
+    <path d="M6 18 C 12 21, 16 15, 24 19 L 24 27 C 16 23, 12 29, 6 26 Z" fill="#3aa6c8"/>
+  </g>
+</svg>

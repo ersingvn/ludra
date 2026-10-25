@@ -1,0 +1,5 @@
+{
+  "name": "Clockwork Keep",
+  "entry": "scenes/main.scene.json",
+  "window": { "width": 960, "height": 540 }
+}

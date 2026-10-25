@@ -43,6 +43,12 @@ Scripts can have `draw` (world space, ordered with sprites by `sprite.layer`) an
 
 Scene `fonts` load before the game starts (Google Fonts CSS or FontFace, capped at 4 s). With `postfx`, `prepare()` compiles the shader (`postfx.ts`) on a WebGL canvas that replaces the page's canvas; the game keeps drawing into the original, now offscreen, canvas, and each frame is uploaded as a texture and drawn through the shader. Shader errors keep the 2D canvas visible and show the compiler message with the shader file's own line numbers (`#line 1` after the engine's header).
 
+### Camera and tweens
+
+The camera (`camera.ts`) is a pure function of the entities, `cameraGoal`, plus a `CameraRig` that eases between goals when the zone changes. The `View` advances the rig once per simulation step, so a screenshot of a given frame always frames the same view. Camera zones never touch the `World`.
+
+Tweens (`tween.ts`) are simulation state on the entity: `World.updateTweens` runs after patrols and before physics. It starts tweens whose `on` event fired since the last step, then eases each one. A moving `x`/`y` on a non-static body becomes the velocity that lands it on this step's value (so physics moves it and riders are carried, like a patrol), followed by one step at rest when it finishes; everything else is written directly. Each pass waits out `delay`, then runs `duration`; the time that overshoots a pass carries into the next.
+
 ### Sound
 
 `audio.ts` holds the `SoundPlayer`. Its graph is master gain (mute) → a compressor → the speakers, with two inputs: a per-scene bus and the music. `setScene` replaces the bus on every scene start and restart (the old one fades out, taking any script nodes with it), and keeps music playing when the next scene has the same music (compared as JSON), otherwise crossfades. A sound name resolves to the scene's own `sounds` first, then a preset, then a file. Sound definitions (`sound.ts`) are tone and noise layers with envelopes; noise comes from one shared 2 s buffer started at a random offset. Music tracks are parsed by `parseNotes` (shared with validation, so `ludra check` reports a bad token with its position) and scheduled 0.25 s ahead each frame, each track looping on its own.
@@ -51,7 +57,7 @@ The `sound` hook runs in `startGame`'s frame loop after the simulation steps, on
 
 ### Game structure
 
-`validateScene` expands prefabs first: an entity with `"prefab"` gets the prefab's components with its own merged over them (`mergeComponents`, one level deep, `null` removes), so everything after it, and the `World`, only sees plain entities. The expanded scene keeps its `prefabs` map, so `world.spawn({ prefab })` works at runtime. The CLI adds `prefabs/*.prefab.json` to every scene it reads.
+`validateScene` expands tilemaps first (`tilemap.ts`): each `tilemap` component is removed and the cells it describes are appended after the scene's own entities (so error paths into the file stay right), as merged static rectangles (horizontal runs, then identical runs stacked) or prefab placements. Then it expands prefabs, including the ones tilemaps placed: an entity with `"prefab"` gets the prefab's components with its own merged over them (`mergeComponents`, one level deep, `null` removes), so everything after it, and the `World`, only sees plain entities. The expanded scene keeps its `prefabs` map, so `world.spawn({ prefab })` works at runtime. The CLI adds `prefabs/*.prefab.json` to every scene it reads.
 
 `World.over` (won, lost, or `exit` set) stops the simulation. Deaths cost `lives` when the scene has them; the last one sets `lost` and fires `gameover` without respawning. A checkpoint moves the player's `spawn` once per player. A goal's `next` and `world.goto` set `exit`: headless runs simply end there (each scene is tested on its own), while `startGame` with a `loadScene` option shows the win screen or fades, loads the next scene and builds a new `World` with `carry` (score, deaths, lives).
 

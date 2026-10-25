@@ -1,4 +1,5 @@
 import { SoundPlayer } from "./audio.ts";
+import { CameraRig } from "./camera.ts";
 import { parseFrames, type Sprite } from "./components.ts";
 import { collectAssetPaths } from "./effects.ts";
 import { InputScript } from "./input.ts";
@@ -486,6 +487,10 @@ class View {
   debug = false;
   private shake = 0;
   private handledEvents = 0;
+  /** Follows the player and blends between camera zones, one simulation step at a time. */
+  private readonly camera = new CameraRig();
+  /** The canvas size, known once the first frame is drawn. */
+  private size: { width: number; height: number } | undefined;
   private readonly scene: SceneDef;
   private readonly images: Map<string, HTMLImageElement>;
 
@@ -501,6 +506,7 @@ class View {
   }
 
   reset(): void {
+    this.camera.reset();
     this.particles.clear();
     this.facing.clear();
     this.emitTimers.clear();
@@ -511,8 +517,9 @@ class View {
     this.handledEvents = 0;
   }
 
-  /** Runs once per simulation step: turns new events into effects and advances particles. */
+  /** Runs once per simulation step: turns new events into effects, moves the camera and advances particles. */
   step(world: World, playSound: (sound: string) => void): void {
+    if (this.size) this.camera.update(world.entities, world, this.size, FIXED_DT);
     for (const event of world.events.slice(this.handledEvents)) {
       const effect = this.scene.effects?.[event.type === "custom" ? event.name : event.type];
       if (!effect) continue;
@@ -545,12 +552,12 @@ class View {
     ctx.fillStyle = world.background;
     ctx.fillRect(0, 0, viewWidth, viewHeight);
 
-    const target = world.entities.find((e) => e.camera) ?? world.entities.find((e) => e.platformer || e.topdown);
-    const zoom = target?.camera?.zoom ?? 1;
-    const visibleWidth = viewWidth / zoom;
-    const visibleHeight = viewHeight / zoom;
-    let cameraX = target ? clamp(target.transform.x - visibleWidth / 2, 0, Math.max(0, world.width - visibleWidth)) : 0;
-    let cameraY = target ? clamp(target.transform.y - visibleHeight / 2, 0, Math.max(0, world.height - visibleHeight)) : 0;
+    // The camera moves with the simulation step (see step); the first frame places it at once.
+    this.size = { width: viewWidth, height: viewHeight };
+    const camera = this.camera.view ?? this.camera.update(world.entities, world, this.size, 0);
+    const zoom = camera.zoom;
+    let cameraX = camera.x;
+    let cameraY = camera.y;
     if (this.shake > 0) {
       cameraX += (this.particles.random() - 0.5) * 2 * this.shake;
       cameraY += (this.particles.random() - 0.5) * 2 * this.shake;
@@ -563,7 +570,18 @@ class View {
     const layer = (e: Entity) => e.sprite?.layer ?? 0;
     const visible = world.entities.filter((e) => e.sprite || e.script?.module.draw).sort((a, b) => layer(a) - layer(b));
     for (const e of visible) {
-      if (e.sprite) this.drawSprite(ctx, e, world.time);
+      if (e.sprite && e.sprite.opacity > 0) {
+        ctx.save();
+        ctx.globalAlpha *= Math.min(1, e.sprite.opacity);
+        if (e.sprite.scale !== 1) {
+          // Scale around the entity's center (a pop, a pulse), never its body.
+          ctx.translate(e.transform.x, e.transform.y);
+          ctx.scale(e.sprite.scale, e.sprite.scale);
+          ctx.translate(-e.transform.x, -e.transform.y);
+        }
+        this.drawSprite(ctx, e, world.time);
+        ctx.restore();
+      }
       if (e.script?.module.draw) this.drawHook(ctx, world, e, "draw", viewInfo);
     }
     this.particles.draw(ctx);
@@ -700,6 +718,19 @@ class View {
     ctx.lineWidth = line;
     ctx.font = `${11 / zoom}px ui-monospace, monospace`;
     ctx.textAlign = "center";
+    // Camera zones: a violet dashed frame with the mode in a corner.
+    for (const e of world.entities) {
+      const z = e.cameraZone;
+      if (!z) continue;
+      ctx.setLineDash([10 / zoom, 6 / zoom]);
+      ctx.strokeStyle = "#b10dc9";
+      ctx.strokeRect(e.transform.x - z.width / 2, e.transform.y - z.height / 2, z.width, z.height);
+      ctx.setLineDash([]);
+      ctx.fillStyle = "#b10dc9";
+      ctx.textAlign = "left";
+      ctx.fillText(`${e.id} (${z.mode}${z.zoom ? ` ×${z.zoom}` : ""})`, e.transform.x - z.width / 2 + 6 / zoom, e.transform.y - z.height / 2 + 14 / zoom);
+      ctx.textAlign = "center";
+    }
     for (const e of world.entities) {
       const b = e.body;
       if (!b) continue;
