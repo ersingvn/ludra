@@ -23,6 +23,7 @@ import {
   ScriptError,
   type DrawContext,
   type SoundContext,
+  type RenderContext,
   type Script,
   type ScriptContext,
   type ScriptEntity,
@@ -436,8 +437,25 @@ export class World {
     }
   }
 
+  /**
+   * Runs an entity's `render` hook (3D). Called by the 3D renderer, never by the simulation.
+   * Like draw hooks, `self` and `world` are read-only for the duration.
+   */
+  callRenderHook(entity: Entity, extras: Omit<RenderContext, "self" | "world" | "params">): void {
+    const script = entity.script;
+    const fn = script?.module.render;
+    if (!script || !fn || entity.removed) return;
+    const ctx: RenderContext = { ...extras, self: this.handle(entity), world: this.api(), params: script.params };
+    this.drawing = true;
+    try {
+      this.run(entity, "render", () => fn.call(script.module, ctx));
+    } finally {
+      this.drawing = false;
+    }
+  }
+
   /** True when any live entity's script has the given hook. */
-  hasHook(hook: "draw" | "drawUI" | "sound"): boolean {
+  hasHook(hook: "draw" | "drawUI" | "sound" | "render"): boolean {
     return this.entities.some((e) => !e.removed && typeof e.script?.module[hook] === "function");
   }
 
@@ -458,7 +476,7 @@ export class World {
   /** Draw hooks only paint, so the browser can't drift from what tests verified. */
   private guard(what: string): void {
     if (this.drawing) {
-      throw this.misuse(`${what} changes the game, which a ${this.current?.hook === "sound" ? "sound" : "draw"} hook can't do. Change the game in update or touch, and keep presentation memory in ctx.local.`);
+      throw this.misuse(`${what} changes the game, which a ${this.current?.hook === "sound" || this.current?.hook === "render" ? this.current.hook : "draw"} hook can't do. Change the game in update or touch, and keep presentation memory in ctx.local.`);
     }
   }
 
@@ -532,6 +550,29 @@ export class World {
         world.guard("Setting rotation");
         e.transform.rotation = value;
       },
+      get rotationX() {
+        return e.transform.rotationX;
+      },
+      set rotationX(value: number) {
+        world.guard("Setting rotationX");
+        e.transform.rotationX = value;
+      },
+      get rotationY() {
+        return e.transform.rotationY;
+      },
+      set rotationY(value: number) {
+        world.guard("Setting rotationY");
+        e.transform.rotationY = value;
+      },
+      get spin() {
+        return e.body && world.physics.spin ? world.physics.spin(e) : { x: 0, y: 0, z: e.body ? world.physics.angularVelocity(e) : 0 };
+      },
+      set spin(value: { x: number; y: number; z: number }) {
+        world.guard("Setting spin");
+        if (!e.body) return;
+        if (world.physics.setSpin) world.physics.setSpin(e, { x: value.x ?? 0, y: value.y ?? 0, z: value.z ?? 0 });
+        else world.physics.setAngularVelocity(e, value.z ?? 0);
+      },
       get angularVelocity() {
         return e.body ? world.physics.angularVelocity(e) : 0;
       },
@@ -542,9 +583,12 @@ export class World {
       get mass() {
         return e.body ? world.physics.mass(e) : 0;
       },
-      applyImpulse(x: number, y: number, at?: { x: number; y: number }) {
+      applyImpulse(x: number | { x?: number; y?: number; z?: number }, y?: number | { x: number; y: number; z?: number }, at?: { x: number; y: number; z?: number }) {
         world.guard("applyImpulse");
-        if (e.body) world.physics.applyImpulse(e, x, y, at);
+        // 3D style: a vector, then optionally where it strikes.
+        const v = typeof x === "object" ? { x: x.x ?? 0, y: x.y ?? 0, z: x.z ?? 0 } : { x, y: y as number, z: 0 };
+        const point = typeof x === "object" ? (y as { x: number; y: number; z?: number } | undefined) : at;
+        if (e.body) world.physics.applyImpulse(e, v.x, v.y, point, v.z);
       },
       tween(def: Parameters<ScriptEntity["tween"]>[0]) {
         world.guard("tween");
@@ -555,10 +599,12 @@ export class World {
         // A new tween of the same property replaces the old one.
         e.tweens = [...(e.tweens ?? []).filter((t) => t.property !== spec.property), createTween(spec, readTweened(e, spec.property))];
       },
-      applyForce(x: number, y: number, at?: { x: number; y: number }) {
+      applyForce(x: number | { x?: number; y?: number; z?: number }, y?: number | { x: number; y: number; z?: number }, at?: { x: number; y: number; z?: number }) {
         world.guard("applyForce");
+        const v = typeof x === "object" ? { x: x.x ?? 0, y: x.y ?? 0, z: x.z ?? 0 } : { x, y: y as number, z: 0 };
+        const point = typeof x === "object" ? (y as { x: number; y: number; z?: number } | undefined) : at;
         // A force acts over the frame: the impulse it delivers in one step.
-        if (e.body) world.physics.applyImpulse(e, x * FIXED_DT, y * FIXED_DT, at);
+        if (e.body) world.physics.applyImpulse(e, v.x * FIXED_DT, v.y * FIXED_DT, point, v.z * FIXED_DT);
       },
       get width() {
         return e.body?.width ?? e.sprite?.width ?? 0;
@@ -686,7 +732,7 @@ export class World {
           throw world.misuse(`"${name}" is a built-in event and can't be emitted by scripts. Pick another name, e.g. "${name}-custom".`);
         }
         const by = world.current?.entity;
-        world.emit({ type: "custom", name, entity: by?.id ?? "script", data, x: by?.transform.x ?? 0, y: by?.transform.y ?? 0 });
+        world.emit({ type: "custom", name, entity: by?.id ?? "script", data, x: by?.transform.x ?? 0, y: by?.transform.y ?? 0, ...(world.dimensions === 3 ? { z: by?.transform.z ?? 0 } : {}) });
       },
       raycast: (from, to, options = {}) => {
         const ignore = [options.ignore ?? []].flat().map((target) => world.resolve(target)).filter((e): e is Entity => !!e);
@@ -866,11 +912,12 @@ export class World {
         const settling = tween.done && tween.settle;
         const value = advanceTween(tween, FIXED_DT);
         const b = e.body;
-        const moved = (tween.property === "x" || tween.property === "y") && b && b.type !== "static";
+        const moved = (tween.property === "x" || tween.property === "y" || tween.property === "z") && b && b.type !== "static";
         if (value === undefined) {
           // A body that just arrived stops there.
           if (settling && moved) {
             if (tween.property === "x") b.vx = 0;
+            else if (tween.property === "z") b.vz = 0;
             else b.vy = 0;
           }
           tween.settle = false;
@@ -879,6 +926,7 @@ export class World {
         tween.settle = tween.done;
         if (moved) {
           if (tween.property === "x") b.vx = (value - e.transform.x) / FIXED_DT;
+          else if (tween.property === "z") b.vz = (value - e.transform.z) / FIXED_DT;
           else b.vy = (value - e.transform.y) / FIXED_DT;
         } else writeTweened(e, tween.property, value);
       }
@@ -1061,12 +1109,12 @@ function resolveTransform(raw: Record<string, unknown> | undefined): Transform {
 }
 
 function readTweened(e: Entity, property: Tween["property"]): number {
-  if (property === "x" || property === "y" || property === "rotation") return e.transform[property];
+  if (property !== "scale" && property !== "opacity") return e.transform[property];
   return e.sprite?.[property] ?? 1;
 }
 
 function writeTweened(e: Entity, property: Tween["property"], value: number): void {
-  if (property === "x" || property === "y" || property === "rotation") e.transform[property] = value;
+  if (property !== "scale" && property !== "opacity") e.transform[property] = value;
   else if (e.sprite) e.sprite[property] = Math.max(0, value);
 }
 

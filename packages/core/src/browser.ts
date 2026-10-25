@@ -48,6 +48,8 @@ export interface Renderer3D {
   /** The scene restarted: snap the camera back, forget per-entity state. */
   reset(world: World): void;
   dispose(): void;
+  /** Waits for anything still loading (render hooks' addons), so a screenshot shows the finished frame. */
+  settle?(): Promise<void>;
 }
 
 export type Renderer3DFactory = (scene: SceneDef, options: { width: number; height: number; assetBase: string }) => Promise<Renderer3D>;
@@ -447,6 +449,11 @@ export async function captureFrames(canvas: HTMLCanvasElement, scene: SceneDef, 
 
   for (let frame = 0; ; frame++) {
     if (wanted.has(frame)) {
+      if (view.renderer?.settle) {
+        // Let render hooks start their loads, wait for them, then draw the real frame.
+        view.renderer.render(world);
+        await view.renderer.settle();
+      }
       view.draw(screen.ctx, world, false, false);
       screen.present(world.time);
       captured.push({ frame, time: frame * FIXED_DT, png: screen.output.toDataURL("image/png") });

@@ -252,6 +252,19 @@ describe("rapier physics through the CLI", () => {
     assert.equal(plain!.subarray(1, 4).toString(), "PNG");
     assert.ok(plain!.length > 20000, `a real 3D frame, not a blank one (${plain!.length} bytes)`);
     assert.notDeepEqual(plain, overlay, "the debug view draws colliders over the frame");
+
+    // A render hook builds with the real three.js: its object shows up in the frame.
+    mkdirSync(join(dir, "scripts"), { recursive: true });
+    writeFileSync(
+      join(dir, "scripts", "knot.ts"),
+      `export default { render({ THREE, object, local }) { if (!local.knot) { local.knot = new THREE.Mesh(new THREE.TorusKnotGeometry(1.2, 0.35, 96, 16), new THREE.MeshBasicMaterial({ color: "#ff00ff" })); object.add(local.knot); } } };
+`,
+    );
+    scene.entities.push({ id: "knot", components: { transform: { x: 0, y: 2, z: -2 }, script: { src: "scripts/knot.ts" } } });
+    writeFileSync(scenePath, JSON.stringify(scene));
+    const hooked = ludra("play", dir, "--duration", "1s", "--screenshot", "1s", "--out", "shots-hook", "--json");
+    assert.equal(hooked.code, 0, hooked.out);
+    assert.notDeepEqual(readFileSync(join(dir, "shots-hook", "t-1.00s.png")), plain, "the render hook's knot is in the frame");
   });
 
   test("screenshots of a rapier scene load Rapier in the browser, with and without --debug", { skip: findBrowser() ? false : "no Chrome, Edge or Chromium installed" }, () => {

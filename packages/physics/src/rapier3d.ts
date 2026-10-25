@@ -55,6 +55,8 @@ interface Link {
   rz: number;
   /** The rotation last exchanged, as Rapier's quaternion: unchanged means no Euler round trip. */
   q: Quat;
+  /** The velocity last read from Rapier: gameplay changing it is written back, anything else (raw API calls) is left alone. */
+  v: Vec3;
   controller?: KinematicCharacterController;
   /** How far a kinematic mover moved in the last step, so players standing on it ride along. */
   d: Vec3;
@@ -126,6 +128,11 @@ function rotate(q: Quat, v: Vec3): Vec3 {
   return { x: p.x, y: p.y, z: p.z };
 }
 
+/** A quaternion as Rapier stores it (32-bit floats), so an unchanged rotation compares equal. */
+function stored(q: Quat): Quat {
+  return { x: Math.fround(q.x), y: Math.fround(q.y), z: Math.fround(q.z), w: Math.fround(q.w) };
+}
+
 const sameQuat = (a: Quat, b: Quat) => a.x === b.x && a.y === b.y && a.z === b.z && a.w === b.w;
 
 /**
@@ -185,7 +192,8 @@ export class Rapier3DPhysics implements PhysicsEngine {
       rx: t.rotationX,
       ry: t.rotationY,
       rz: t.rotation,
-      q,
+      q: stored(q),
+      v: { x: b.vx, y: b.vy, z: b.vz },
       d: { x: 0, y: 0, z: 0 },
       teleported: false,
       airborne: Infinity,
@@ -305,7 +313,7 @@ export class Rapier3DPhysics implements PhysicsEngine {
       const t = e.transform;
       const moved = t.x !== link.x || t.y !== link.y || t.z !== link.z;
       const turned = t.rotationX !== link.rx || t.rotationY !== link.ry || t.rotation !== link.rz;
-      if (turned) link.q = quaternionFromDegrees(t.rotationX, t.rotationY, t.rotation);
+      if (turned) link.q = stored(quaternionFromDegrees(t.rotationX, t.rotationY, t.rotation));
       // Players turn to face where they walk: that's not a teleport.
       link.teleported = moved || (turned && !link.controller);
       if (link.controller) {
@@ -317,7 +325,8 @@ export class Rapier3DPhysics implements PhysicsEngine {
         body.setRotation(link.q, true);
       }
       if (b.type === "dynamic") {
-        body.setLinvel({ x: b.vx, y: b.vy, z: b.vz }, true);
+        // Only when gameplay changed it: a velocity set through world.physics.raw stays.
+        if (b.vx !== link.v.x || b.vy !== link.v.y || b.vz !== link.v.z) body.setLinvel({ x: b.vx, y: b.vy, z: b.vz }, true);
       } else if (b.type === "kinematic") {
         const before = { x: t.x, y: t.y, z: t.z };
         t.x += b.vx * FIXED_DT;
@@ -344,7 +353,8 @@ export class Rapier3DPhysics implements PhysicsEngine {
         t.z = p.z;
         const q = body.rotation();
         // Only a body that really turned goes through quaternion → degrees, so set rotations stay exact.
-        if (!sameQuat(q, link.q) && !link.controller) {
+        // Only dynamic bodies are turned by physics; kinematic ones turn as gameplay says, exactly.
+        if (b.type === "dynamic" && !sameQuat(q, link.q) && !link.controller) {
           const r = degreesFromQuaternion(q);
           t.rotationX = r.x;
           t.rotationY = r.y;
@@ -353,6 +363,7 @@ export class Rapier3DPhysics implements PhysicsEngine {
         }
         if (b.type === "dynamic" && !link.controller) {
           const v = body.linvel();
+          link.v = { x: v.x, y: v.y, z: v.z };
           b.vx = v.x;
           b.vy = v.y;
           b.vz = v.z;
@@ -519,6 +530,16 @@ export class Rapier3DPhysics implements PhysicsEngine {
     if (!link || e.body?.type !== "dynamic" || link.controller) return;
     const w = link.body.angvel();
     link.body.setAngvel({ x: w.x, y: w.y, z: value * DEGREES }, true);
+  }
+
+  spin(e: Entity): { x: number; y: number; z: number } {
+    const w = this.links.get(e)?.body.angvel();
+    return w ? { x: w.x / DEGREES, y: w.y / DEGREES, z: w.z / DEGREES } : { x: 0, y: 0, z: 0 };
+  }
+
+  setSpin(e: Entity, value: { x: number; y: number; z: number }): void {
+    const link = this.links.get(e);
+    if (link && e.body?.type === "dynamic" && !link.controller) link.body.setAngvel({ x: value.x * DEGREES, y: value.y * DEGREES, z: value.z * DEGREES }, true);
   }
 
   raycast(_host: PhysicsHost, from: { x: number; y: number; z?: number }, to: { x: number; y: number; z?: number }, options: RayOptions = {}): RayHit | undefined {

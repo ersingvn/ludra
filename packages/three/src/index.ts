@@ -1,6 +1,18 @@
 import * as THREE from "three";
 import { ConvexGeometry } from "three/addons/geometries/ConvexGeometry.js";
-import { FIXED_DT, type Body, type Camera3D, type Entity, type EnvironmentDef, type Light as LightSpec, type Mesh as MeshSpec, type SceneDef } from "@ludra/core";
+import {
+  FIXED_DT,
+  type Body,
+  type Camera3D,
+  type DrawEvent,
+  type Entity,
+  type EnvironmentDef,
+  type GameEvent,
+  type Light as LightSpec,
+  type Mesh as MeshSpec,
+  type RenderContext,
+  type SceneDef,
+} from "@ludra/core";
 import type { Renderer3D, Renderer3DFactory } from "@ludra/core/browser";
 
 /**
@@ -9,9 +21,12 @@ import type { Renderer3D, Renderer3DFactory } from "@ludra/core/browser";
  * never change what tests verified.
  */
 
-/** The World as the renderer needs it (the real World has more). */
+/** The World as the renderer needs it: what to draw, its events, and its render hooks. */
 interface WorldView {
   readonly entities: readonly Entity[];
+  readonly events?: readonly GameEvent[];
+  readonly time?: number;
+  callRenderHook?(entity: Entity, extras: Omit<RenderContext, "self" | "world" | "params">): void;
 }
 
 const DEG = Math.PI / 180;
@@ -53,6 +68,13 @@ export class ThreeRenderer implements Renderer3D {
   private readonly debugGroup = new THREE.Group();
   private readonly defaultLights = new THREE.Group();
   private rig: Rig | undefined;
+  /** Each render-hook entity's own group, and its ctx.local. */
+  private readonly hookGroups = new Map<Entity, THREE.Group>();
+  private readonly hookLocals = new Map<Entity, Record<string, unknown>>();
+  /** A render hook's own way of drawing the frame (an EffectComposer), if one set it. */
+  private customRender: (() => void) | undefined;
+  /** Addons render hooks are still loading. */
+  private readonly pending = new Set<Promise<unknown>>();
 
   private readonly def: SceneDef;
   private readonly assetBase: string;
@@ -127,6 +149,11 @@ export class ThreeRenderer implements Renderer3D {
 
   reset(world: WorldView): void {
     this.rig = undefined;
+    // Things render hooks built belong to the old run.
+    for (const group of this.hookGroups.values()) group.removeFromParent();
+    this.hookGroups.clear();
+    this.hookLocals.clear();
+    this.customRender = undefined;
     this.updateRig(world, 0);
   }
 
@@ -136,7 +163,64 @@ export class ThreeRenderer implements Renderer3D {
     const rig = this.rig!;
     this.camera.position.copy(rig.position);
     this.camera.lookAt(rig.look);
-    this.renderer.render(this.scene, this.camera);
+    this.runRenderHooks(world);
+    if (this.customRender) this.customRender();
+    else this.renderer.render(this.scene, this.camera);
+  }
+
+  /** Waits for every addon render hooks asked for, and for what their callbacks start in turn. */
+  async settle(): Promise<void> {
+    for (let round = 0; round < 5 && this.pending.size > 0; round++) {
+      await Promise.allSettled([...this.pending]);
+      // Let .then callbacks run (they often load the next thing or set a custom render).
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  }
+
+  private track<T>(promise: Promise<T>): Promise<T> {
+    this.pending.add(promise);
+    void promise.finally(() => this.pending.delete(promise)).catch(() => {});
+    return promise;
+  }
+
+  /** Scripts' render hooks: the real three.js, this entity's group, the scene, camera and renderer. */
+  private runRenderHooks(world: WorldView): void {
+    const live = new Set(world.entities);
+    for (const [entity, group] of this.hookGroups) {
+      if (live.has(entity)) continue;
+      group.removeFromParent();
+      this.hookGroups.delete(entity);
+      this.hookLocals.delete(entity);
+    }
+    if (!world.callRenderHook) return;
+    for (const e of world.entities) {
+      if (!e.script?.module.render) continue;
+      let group = this.hookGroups.get(e);
+      if (!group) {
+        group = new THREE.Group();
+        group.name = `${e.id}:render`;
+        this.hookGroups.set(e, group);
+        this.hookLocals.set(e, {});
+        this.scene.add(group);
+      }
+      placeObject(group, e);
+      world.callRenderHook(e, {
+        THREE,
+        scene: this.scene,
+        camera: this.camera,
+        renderer: this.renderer,
+        object: group,
+        time: world.time ?? 0,
+        local: this.hookLocals.get(e)!,
+        view: { width: this.canvas.width, height: this.canvas.height },
+        recent: (name, seconds = 0.5) => recentEvents(world, name, seconds),
+        addon: (path) => this.track(import(`three/addons/${path}`)),
+        setRender: (fn) => {
+          this.customRender = fn;
+        },
+        random: Math.random,
+      });
+    }
   }
 
   dispose(): void {
@@ -340,6 +424,22 @@ export class ThreeRenderer implements Renderer3D {
     (axes.material as THREE.Material).depthTest = false;
     this.debugGroup.add(axes);
   }
+}
+
+/** Events in the last `seconds`, as hooks see them. */
+function recentEvents(world: WorldView, name: string | undefined, seconds: number): DrawEvent[] {
+  const events = world.events ?? [];
+  const since = (world.time ?? 0) - seconds;
+  const result: DrawEvent[] = [];
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i]!;
+    if (event.time < since) break;
+    const eventName = event.type === "custom" ? event.name : event.type;
+    if (name !== undefined && eventName !== name) continue;
+    const { type: _type, frame: _frame, time, x, y, entity, ...details } = event as GameEvent & { data?: unknown };
+    result.push({ name: eventName, time, x, y, entity, data: event.type === "custom" ? event.data : details });
+  }
+  return result.reverse();
 }
 
 const DEFAULT_CAMERA: Camera3D = { mode: "follow", target: "", fov: 55, distance: 9, height: 4, yaw: 0, orbitSpeed: 20, lookAt: {}, smoothing: 0.12 };

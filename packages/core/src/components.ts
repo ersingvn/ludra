@@ -387,7 +387,12 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       'Animates a value over time with easing: a door that slides open, a platform that glides and pauses, a coin that bobs, a sign that fades in. x/y move a kinematic or dynamic body by velocity, so riders are carried like on a patrol. Runs in the simulation (deterministic, testable). Give a list for several: "tween": [{ ... }, { ... }]. Scripts start tweens with self.tween({ ... }).',
     requires: ["transform"],
     fields: {
-      property: { type: "enum", values: ["x", "y", "rotation", "scale", "opacity"], default: "y", description: "What to animate. scale and opacity need a sprite." },
+      property: {
+        type: "enum",
+        values: ["x", "y", "z", "rotation", "rotationX", "rotationY", "scale", "opacity"],
+        default: "y",
+        description: "What to animate. z, rotationX and rotationY are 3D. scale and opacity need a sprite.",
+      },
       to: { type: "number", default: 0, description: "Target value. Ignored when by is set." },
       by: { type: "number", default: 0, description: "Change relative to the start value (e.g. -120 = up 120 px). Used when not 0." },
       duration: { type: "number", min: 0.01, description: "Seconds for one pass." },

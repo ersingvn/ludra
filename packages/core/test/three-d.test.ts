@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { collectAssetPaths, evaluateAssertion, parseAssertion, PhysicsUnavailableError, validateScene, World, type PhysicsEngine, type SceneDef } from "../src/index.ts";
+import { checkDrawHooks, collectAssetPaths, evaluateAssertion, parseAssertion, PhysicsUnavailableError, validateScene, World, type PhysicsEngine, type SceneDef } from "../src/index.ts";
 
 const codes = (scene: unknown) =>
   validateScene(scene)
@@ -80,6 +80,30 @@ describe("3D scenes", () => {
   test("a 3D world needs Rapier 3D, and says how to load it", () => {
     const { scene } = validateScene(world3d([]));
     assert.throws(() => new World(scene!), (err: unknown) => err instanceof PhysicsUnavailableError && /loadRapier3DPhysics\(\)/.test((err as Error).message));
+  });
+});
+
+describe("the render hook", () => {
+  const scene = () => validateScene(world3d([{ id: "fx", components: { transform: { x: 0, y: 1, z: 0 }, script: { src: "s.ts" } } }])).scene!;
+
+  test("is a known hook, and ludra check runs it with three.js stand-ins (new works)", () => {
+    const fine = checkDrawHooks(scene(), new Map([["s.ts", {
+      render: ({ THREE, object, local, time }) => {
+        if (!local.mesh) {
+          local.mesh = new THREE.Mesh(new THREE.TorusKnotGeometry(1, 0.3), new THREE.MeshStandardMaterial({ color: "#f0a" }));
+          object.add(local.mesh);
+        }
+        (local.mesh as { rotation: { y: number } }).rotation.y = time;
+      },
+    }]]), { physics: still });
+    assert.deepEqual(fine, []);
+    const broken = checkDrawHooks(scene(), new Map([["s.ts", { render: ({ local }) => (local.mesh as { rotation: { y: number } }).rotation.y++ }]]), { physics: still });
+    assert.deepEqual(broken.map((d) => `${d.code} ${d.path}`), ["E_RENDER_HOOK s.ts → render"]);
+  });
+
+  test("can't change the game", () => {
+    const world = new World(scene(), { physics: still, scripts: new Map([["s.ts", { render: ({ self }) => void (self.y = 5) }]]) });
+    assert.throws(() => world.callRenderHook(world.get("fx")!, {} as never), /Setting y changes the game, which a render hook can't do/);
   });
 });
 

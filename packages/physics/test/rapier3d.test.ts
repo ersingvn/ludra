@@ -298,3 +298,72 @@ describe("rapier 3D determinism", () => {
     assert.equal(golden(), GOLDEN);
   });
 });
+
+describe("3D scripts", () => {
+  before(() => loadRapier3DPhysics());
+
+  const scripted = (id: string, components: Record<string, unknown>, src: string): EntityDef => ({ id, components: { ...components, script: { src } } });
+
+  test("impulses and forces are { x, y, z } vectors; striking off-center spins the body", () => {
+    const crate = (id: string, x: number) => scripted(id, { transform: { x, y: 0.5, z: 0 }, body: { type: "dynamic", width: 1, height: 1, friction: 0 } }, `scripts/${id}.ts`);
+    const scripts = new Map<string, Script>([
+      ["scripts/kick.ts", { start: ({ self }) => self.applyImpulse({ z: -4 * self.mass }) }],
+      ["scripts/flip.ts", { start: ({ self }) => self.applyImpulse({ y: 6 * self.mass }, { x: self.x + 0.5, y: self.y, z: self.z }) }],
+      ["scripts/push.ts", { update: ({ self }) => self.applyForce({ x: 12 * self.mass }) }],
+    ]);
+    const world = run(scene([crate("kick", -4), crate("flip", 0), crate("push", 4)]), 1, "", scripts);
+    assert.ok(world.get("kick")!.transform.z < -2, `kicked along -z: ${world.get("kick")!.transform.z}`);
+    assert.ok(Math.abs(world.get("flip")!.transform.rotation) > 30, `struck off-center, it spun: ${world.get("flip")!.transform.rotation}`);
+    assert.ok(world.get("push")!.transform.x > 5, `pushed steadily along +x: ${world.get("push")!.transform.x}`);
+  });
+
+  test("scripts read and set spin and 3D rotations, and raycast in 3D", () => {
+    const top: EntityDef = scripted("top", { transform: { x: 0, y: 3, z: 0 }, body: { type: "dynamic", width: 1, height: 1, gravityScale: 0 } }, "scripts/top.ts");
+    let seen: { spin?: { y: number }; hit?: { entity: { id: string }; z?: number; normal: { y: number } } } = {};
+    const scripts = new Map<string, Script>([
+      [
+        "scripts/top.ts",
+        {
+          start: ({ self }) => {
+            self.spin = { x: 0, y: 180, z: 0 };
+            self.rotationX = 0;
+          },
+          update: ({ self, world }) => {
+            seen = { spin: self.spin, hit: world.raycast({ x: self.x, y: self.y - 0.6, z: self.z }, { x: self.x, y: -2, z: self.z }) };
+          },
+        },
+      ],
+    ]);
+    const world = run(scene([top]), 0.5, "", scripts);
+    assert.ok(Math.abs(seen.spin!.y - 180) < 1, `spinning 180°/s around y: ${JSON.stringify(seen.spin)}`);
+    assert.ok(Math.abs(Math.abs(world.get("top")!.transform.rotationY) - 90) < 3, `a quarter turn in half a second: ${world.get("top")!.transform.rotationY}`);
+    assert.equal(seen.hit!.entity.id, "floor");
+    assert.ok(seen.hit!.z === 0 && seen.hit!.normal.y > 0.99, JSON.stringify(seen.hit));
+  });
+
+  test("scripts reach the whole Rapier 3D API through world.physics.raw", () => {
+    let gravity: { y: number } | undefined;
+    const scripts = new Map<string, Script>([
+      [
+        "scripts/raw.ts",
+        {
+          start: ({ self, world }) => {
+            const raw = world.physics.raw as { world: { gravity: { y: number } }; body(e: unknown): { setLinvel(v: object, wake: boolean): void } };
+            gravity = raw.world.gravity;
+            raw.body(self).setLinvel({ x: 0, y: 0, z: -3 }, true);
+          },
+        },
+      ],
+    ]);
+    const world = run(scene([scripted("ball", { transform: { x: 0, y: 0.5, z: 0 }, body: { type: "dynamic", width: 1, height: 1, shape: "sphere" } }, "scripts/raw.ts")]), 0.2, "", scripts);
+    assert.ok(Math.abs(gravity!.y - -9.81) < 1e-5);
+    assert.ok(world.get("ball")!.transform.z < -0.3, "a raw velocity moved it");
+  });
+
+  test("tweens move bodies along z and turn them around y", () => {
+    const door: EntityDef = { id: "door", components: { transform: { x: 0, y: 1, z: 0 }, body: { type: "kinematic", width: 2, height: 2, depth: 0.2 }, tween: [{ property: "z", by: -3, duration: 1 }, { property: "rotationY", to: 90, duration: 1 }] } };
+    const world = run(scene([door]), 1.2);
+    const t = world.get("door")!.transform;
+    assert.ok(Math.abs(t.z - -3) < 1e-6 && Math.abs(t.rotationY - 90) < 1e-6, JSON.stringify(t));
+  });
+});

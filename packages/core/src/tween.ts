@@ -2,7 +2,7 @@
 
 export const EASES = ["linear", "sineInOut", "quadIn", "quadOut", "quadInOut", "cubicInOut", "backOut", "elasticOut", "bounceOut"] as const;
 export type Ease = (typeof EASES)[number];
-export type TweenProperty = "x" | "y" | "rotation" | "scale" | "opacity";
+export type TweenProperty = "x" | "y" | "z" | "rotation" | "rotationX" | "rotationY" | "scale" | "opacity";
 
 export interface Tween {
   property: TweenProperty;
