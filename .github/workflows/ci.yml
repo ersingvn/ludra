@@ -1,7 +1,10 @@
 name: CI
 
+# Pull requests are checked as they are; main is checked again after each merge.
+# Branch pushes don't run it twice, and version tags are covered by the Release workflow.
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:

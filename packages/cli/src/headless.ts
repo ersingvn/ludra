@@ -130,8 +130,20 @@ export async function captureScreenshots(project: Project, request: ScreenshotRe
       });
     }
     server.close();
-    // The browser can hold its profile for a moment after exiting on Windows.
-    rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    removeProfile(profile);
+  }
+}
+
+/**
+ * The browser can keep its profile busy for a moment after exiting: files held open
+ * on Windows, helper processes still writing on macOS (ENOTEMPTY). Retry, and if it
+ * still won't go, leave it to the OS's temp cleanup rather than fail a capture that worked.
+ */
+function removeProfile(profile: string): void {
+  try {
+    rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
+  } catch (err) {
+    console.warn(`Could not remove the temporary browser profile ${profile}: ${(err as Error).message}`);
   }
 }
 
