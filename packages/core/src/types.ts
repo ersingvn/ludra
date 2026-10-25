@@ -38,6 +38,11 @@ export interface WorldSettings {
   seed?: number;
   /** Lives before game over. Leave out for unlimited retries. */
   lives?: number;
+  /**
+   * "arcade" (default): axis-aligned boxes, tight and predictable, the classic platformer feel.
+   * "rapier": a real physics engine (rotation, circles and capsules, friction, mass, stacking).
+   */
+  physics?: "arcade" | "rapier";
 }
 
 /** A reusable entity template: `prefabs/<name>.prefab.json` or the scene's `prefabs` map. */

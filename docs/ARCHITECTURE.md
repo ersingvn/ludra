@@ -79,7 +79,13 @@ Bodies are moved by a `PhysicsEngine` (`physics.ts`): it is told about every cre
 
 ### Arcade (default, `arcade.ts`)
 
-Axis-aligned boxes. Dynamic bodies integrate gravity, then move and resolve along x, then along y, against static and kinematic solids. Top-down movers skip gravity, and a kinematic top-down body (a paddle) is pushed out of static walls; other kinematic movers pass through. `body.bounce` reflects the velocity on the axis that hit (`-v · bounce`) and emits a `bounce` event; rebounds slower than 40 px/s stop instead, so bouncing things come to rest. This is simple on purpose: predictable, easy to explain to an agent, and tight enough for classic platformers. Rapier (rotation, shapes, joints) is being added as a second engine behind the same interface.
+Axis-aligned boxes. Dynamic bodies integrate gravity, then move and resolve along x, then along y, against static and kinematic solids. Top-down movers skip gravity, and a kinematic top-down body (a paddle) is pushed out of static walls; other kinematic movers pass through. `body.bounce` reflects the velocity on the axis that hit (`-v · bounce`) and emits a `bounce` event; rebounds slower than 40 px/s stop instead, so bouncing things come to rest. This is simple on purpose: predictable, easy to explain to an agent, and tight enough for classic platformers.
+
+### Rapier (`@ludra/physics`)
+
+A scene opts in with `"world": { "physics": "rapier" }`. Engines are found by name in a registry (`engines.ts`, shared through `globalThis` so a second copy of the module still sees it); core only knows arcade, and `loadRapierPhysics()` from `@ludra/physics` loads Rapier's WebAssembly and registers "rapier". The CLI does that in `loadGame` when a scene asks for it, so arcade games never load Rapier.
+
+`@ludra/physics` wraps Rapier's **deterministic** 2D build (`@dimforge/rapier2d-deterministic-compat`, pinned to an exact version): the same scene gives bit-identical frames on every OS, Node version and browser, which a golden-hash test checks on every CI machine. The "compat" build embeds the WebAssembly in one file, so it loads without a bundler. Rapier works in pixels directly (`lengthUnit` = 50 px per meter tunes its tolerances). Each step hands gameplay's changes to Rapier (a moved transform is a teleport, dynamic velocities are written, kinematic bodies move by velocity and patrol limits), steps, and reads positions, accumulated rotation (not wrapped to ±180°) and velocities back. A body is grounded when a non-sensor contact pushes it upward; sensors use Rapier's intersection test. Restitution combines with "max", so `bounce` means the same as in arcade.
 
 ## Development
 

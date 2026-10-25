@@ -182,6 +182,8 @@ export interface Game {
 export async function loadGame(project: Project, scenePath?: string): Promise<{ game?: Game; diagnostics: Diagnostic[]; label: string }> {
   const { scene, diagnostics, label } = readScene(project, scenePath);
   if (!scene) return { diagnostics, label };
+  // Rapier is WebAssembly loaded on demand, so arcade games never pay for it.
+  if (scene.world?.physics === "rapier") await (await import("@ludra/physics")).loadRapierPhysics();
 
   const scripts = new Map<string, Script>();
   for (const src of scriptPaths(project, scene)) {

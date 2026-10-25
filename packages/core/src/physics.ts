@@ -1,4 +1,4 @@
-import type { Entity, GameEvent } from "./world.ts";
+import type { Entity, GameEvent, PatrolState } from "./world.ts";
 
 /** Collision events a physics engine reports while it moves bodies. */
 export type PhysicsEvent = Extract<GameEvent, { type: "land" } | { type: "bounce" }> extends infer E
@@ -42,6 +42,25 @@ export interface PhysicsEngine {
   step(host: PhysicsHost): void;
   /** True when two bodies overlap. A positive `margin` grows both, so touching counts too. */
   overlaps(a: Entity, b: Entity, margin?: number): boolean;
+}
+
+/** Keeps a patrolling body between its start and `distance` along its axis. */
+export function clampToPatrol(e: Entity, patrol: PatrolState): void {
+  if (patrol.axis === "x") e.transform.x = Math.min(patrol.originX + patrol.distance, Math.max(patrol.originX, e.transform.x));
+  else e.transform.y = Math.min(patrol.originY + patrol.distance, Math.max(patrol.originY, e.transform.y));
+}
+
+/** Keeps a body's box inside the world. */
+export function clampToWorld(e: Entity, host: Pick<PhysicsHost, "width" | "height">): void {
+  const halfWidth = (e.body?.width ?? 0) / 2;
+  const halfHeight = (e.body?.height ?? 0) / 2;
+  e.transform.x = Math.min(host.width - halfWidth, Math.max(halfWidth, e.transform.x));
+  e.transform.y = Math.min(host.height - halfHeight, Math.max(halfHeight, e.transform.y));
+}
+
+/** Where an entity is, for events: its center. */
+export function at(e: Entity): { x: number; y: number } {
+  return { x: e.transform.x, y: e.transform.y };
 }
 
 /** The bottom center of an entity's body: where it stands. */

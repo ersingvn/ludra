@@ -25,8 +25,8 @@ import {
   type ScriptWorld,
   type SpawnDef,
 } from "./script.ts";
-import { ArcadePhysics } from "./arcade.ts";
-import { feet, type PhysicsEngine, type PhysicsHost } from "./physics.ts";
+import { createPhysics } from "./engines.ts";
+import { at, feet, type PhysicsEngine, type PhysicsHost } from "./physics.ts";
 import { FIXED_DT } from "./time.ts";
 import { EVENT_TYPES, type Action, type Diagnostic, type EntityDef, type SceneDef } from "./types.ts";
 import { mergeComponents, validateScene } from "./validate.ts";
@@ -103,6 +103,8 @@ export interface EntitySnapshot {
   vx: number;
   vy: number;
   grounded: boolean;
+  /** Degrees, clockwise. Present only when the entity is rotated (rapier physics). */
+  rotation?: number;
   /** Present when a script stored data on the entity. */
   state?: Record<string, unknown>;
 }
@@ -110,7 +112,7 @@ export interface EntitySnapshot {
 export interface WorldOptions {
   /** Loaded script modules, keyed by the `src` path used in the scene. */
   scripts?: ScriptModules;
-  /** The physics engine that moves bodies. Defaults to Ludra's arcade physics. */
+  /** The physics engine that moves bodies. Defaults to the one the scene names (`world.physics`), arcade if none. */
   physics?: PhysicsEngine;
   /** Values carried over from the previous scene, so a run keeps its score and lives. */
   carry?: { score?: number; deaths?: number; lives?: number };
@@ -202,7 +204,7 @@ export class World {
     this.score = options.carry?.score ?? 0;
     this.deaths = options.carry?.deaths ?? 0;
     this.lives = options.carry?.lives ?? scene.world?.lives;
-    this.physics = options.physics ?? new ArcadePhysics();
+    this.physics = options.physics ?? createPhysics(scene.world?.physics ?? "arcade", { width: this.width, height: this.height, gravity: this.gravity });
     const world = this;
     this.physicsHost = {
       get entities() {
@@ -269,6 +271,7 @@ export class World {
         vy: e.body?.vy ?? 0,
         grounded: e.body?.grounded ?? false,
       };
+      if (e.transform.rotation !== 0) entities[e.id]!.rotation = e.transform.rotation;
       // A JSON copy, so later frames can't change an earlier snapshot.
       if (Object.keys(e.state).length > 0) entities[e.id]!.state = JSON.parse(JSON.stringify(e.state));
     }
@@ -687,7 +690,7 @@ export class World {
       if (!collector) continue;
       this.remove(item);
       this.score += item.collectible!.score;
-      this.emit({ type: "collect", entity: collector.id, item: item.id, score: item.collectible!.score, ...item.transform });
+      this.emit({ type: "collect", entity: collector.id, item: item.id, score: item.collectible!.score, ...at(item) });
     }
   }
 
@@ -704,7 +707,7 @@ export class World {
           this.remove(hazard);
           b.vy = -player.platformer!.jumpSpeed * STOMP_BOUNCE;
           this.score += hazard.hazard!.score;
-          this.emit({ type: "stomp", entity: player.id, enemy: hazard.id, score: hazard.hazard!.score, ...hazard.transform });
+          this.emit({ type: "stomp", entity: player.id, enemy: hazard.id, score: hazard.hazard!.score, ...at(hazard) });
           continue;
         }
         this.kill(player, hazard.id);
@@ -720,7 +723,7 @@ export class World {
       if (!player) continue;
       this.won = true;
       if (goal.goal!.next) this.exit = goal.goal!.next;
-      this.emit({ type: "win", entity: player.id, goal: goal.id, ...goal.transform });
+      this.emit({ type: "win", entity: player.id, goal: goal.id, ...at(goal) });
       return;
     }
   }
@@ -734,7 +737,7 @@ export class World {
         this.reached.add(key);
         const bottom = checkpoint.transform.y + checkpoint.body!.height / 2;
         player.spawn = { x: checkpoint.transform.x, y: player.platformer ? bottom - player.body!.height / 2 : checkpoint.transform.y };
-        this.emit({ type: "checkpoint", entity: player.id, checkpoint: checkpoint.id, ...checkpoint.transform });
+        this.emit({ type: "checkpoint", entity: player.id, checkpoint: checkpoint.id, ...at(checkpoint) });
       }
     }
   }
@@ -750,7 +753,7 @@ export class World {
   private kill(player: Entity, cause: string): void {
     const b = player.body!;
     this.deaths++;
-    this.emit({ type: "die", entity: player.id, cause, ...player.transform });
+    this.emit({ type: "die", entity: player.id, cause, ...at(player) });
     if (this.lives !== undefined) {
       this.lives--;
       // Out of lives: the player stays where it fell and the game is over.
@@ -773,7 +776,7 @@ export class World {
 
 function createEntity(def: EntityDef): Entity {
   const c = def.components;
-  const transform = c.transform ? resolveComponent<Transform>("transform", c.transform) : { x: 0, y: 0 };
+  const transform = c.transform ? resolveComponent<Transform>("transform", c.transform) : { x: 0, y: 0, rotation: 0 };
   const entity: Entity = { id: def.id, state: {}, transform };
   if (c.body) entity.body = { ...resolveComponent<Body>("body", c.body), grounded: false };
   if (c.sprite) entity.sprite = resolveComponent<Sprite>("sprite", c.sprite);

@@ -94,7 +94,7 @@ describe("checkpoints", () => {
     let respawnedAt: { x: number; y: number } | undefined;
     for (let i = 0; i < 120 && !respawnedAt; i++) {
       world.step(new Set(["right"]));
-      if (world.deaths === 1) respawnedAt = { ...world.get("hero")!.transform };
+      if (world.deaths === 1) respawnedAt = { x: world.get("hero")!.transform.x, y: world.get("hero")!.transform.y };
     }
     assert.deepEqual(respawnedAt, { x: 200, y: 500 - 18 });
     assert.equal(world.events.filter((e) => e.type === "checkpoint").length, 1, "fires once, even when touched again");

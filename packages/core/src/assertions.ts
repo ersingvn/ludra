@@ -7,7 +7,7 @@ import { World, type GameEvent, type WorldOptions, type WorldSnapshot } from "./
 const OPERATORS = ["<=", ">=", "==", "!=", "<", ">"] as const;
 type Operator = (typeof OPERATORS)[number];
 
-const ENTITY_FIELDS = ["x", "y", "vx", "vy", "grounded", "exists"] as const;
+const ENTITY_FIELDS = ["x", "y", "vx", "vy", "grounded", "exists", "rotation"] as const;
 type EntityField = (typeof ENTITY_FIELDS)[number];
 
 const WORLD_FIELDS = ["score", "deaths", "won", "lost", "lives"] as const;
@@ -132,6 +132,7 @@ export function evaluateAssertion(assertion: Assertion, snapshot: WorldSnapshot,
       const entity = snapshot.entities[subject.id];
       label = `${subject.id}.${subject.field}`;
       if (subject.field === "exists") actual = entity !== undefined;
+      else if (subject.field === "rotation" && entity) actual = entity.rotation ?? 0;
       else if (entity) actual = entity[subject.field];
       else {
         return {

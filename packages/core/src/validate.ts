@@ -54,6 +54,10 @@ export function validateScene(input: unknown): ValidationResult {
       if (raw.world.background !== undefined && typeof raw.world.background !== "string") {
         error("E_INVALID_WORLD", "world.background", `world.background must be a CSS color string, got ${describe(raw.world.background)}.`);
       }
+      const physics = raw.world.physics;
+      if (physics !== undefined && physics !== "arcade" && physics !== "rapier") {
+        error("E_INVALID_WORLD", "world.physics", `world.physics must be "arcade" or "rapier", got ${describe(physics)}.`, '"arcade" (default) for tight box physics, "rapier" for rotation, round shapes and real collisions.');
+      }
       const lives = raw.world.lives;
       if (lives !== undefined && (typeof lives !== "number" || !Number.isInteger(lives) || lives < 1)) {
         error("E_INVALID_WORLD", "world.lives", `world.lives must be a whole number of at least 1, got ${describe(lives)}.`, "Leave it out for unlimited retries.");
@@ -72,6 +76,7 @@ export function validateScene(input: unknown): ValidationResult {
 
   const ids = new Map<string, number>();
   let hasPlayer = false;
+  const usesRapier = isObject(raw.world) && raw.world.physics === "rapier";
   let hasDynamic = false;
   const worldGravity = isObject(raw.world) && typeof raw.world.gravity === "number" ? raw.world.gravity : 1800;
   let hasSolid = false;
@@ -161,6 +166,22 @@ export function validateScene(input: unknown): ValidationResult {
 
     const body = isObject(components.body) ? components.body : undefined;
     const bodyType = body?.type ?? "static";
+    // Fields only rapier understands do nothing under arcade physics: say so instead of silently ignoring them.
+    if (!usesRapier) {
+      const transform = isObject(components.transform) ? components.transform : undefined;
+      const rapierOnly = [
+        ...(transform && transform.rotation !== undefined && transform.rotation !== 0 ? ["transform.rotation"] : []),
+        ...RAPIER_BODY_FIELDS.filter((field) => body && body[field] !== undefined && !(field === "shape" && body.shape === "box")).map((field) => `body.${field}`),
+      ];
+      if (rapierOnly.length > 0) {
+        warn(
+          "W_RAPIER_ONLY",
+          `${path}.components`,
+          `Entity ${label} sets ${rapierOnly.join(", ")}, which only rapier physics uses. Under arcade physics it is a box that never rotates.`,
+          'Add "physics": "rapier" to "world", or remove the field.',
+        );
+      }
+    }
     if ("topdown" in components && body && bodyType === "static") {
       error(
         "E_TOPDOWN_NEEDS_MOVING_BODY",
@@ -239,6 +260,9 @@ export function validateScene(input: unknown): ValidationResult {
 
   return result();
 }
+
+/** Body fields that only rapier physics reads. */
+const RAPIER_BODY_FIELDS = ["shape", "friction", "density", "fixedRotation", "bullet"] as const;
 
 /** Components that only work on sensor bodies, and what goes wrong otherwise. */
 const SENSOR_COMPONENTS: [ComponentName, string][] = [

@@ -8,6 +8,7 @@ export * from "./script.ts";
 export * from "./world.ts";
 export * from "./physics.ts";
 export { ArcadePhysics } from "./arcade.ts";
+export * from "./engines.ts";
 export * from "./simulate.ts";
 export * from "./assertions.ts";
 export * from "./ascii.ts";

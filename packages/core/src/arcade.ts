@@ -1,6 +1,6 @@
-import { feet, type PhysicsEngine, type PhysicsHost } from "./physics.ts";
+import { at, clampToPatrol, clampToWorld, feet, type PhysicsEngine, type PhysicsHost } from "./physics.ts";
 import { FIXED_DT } from "./time.ts";
-import type { Entity, PatrolState } from "./world.ts";
+import type { Entity } from "./world.ts";
 
 const MAX_FALL_SPEED = 1400;
 /** Rebounds slower than this stop instead, so bouncing bodies come to rest. */
@@ -97,20 +97,8 @@ export class ArcadePhysics implements PhysicsEngine {
 function rebound(e: Entity, solid: Entity, velocity: number, host: PhysicsHost): number {
   const bounce = e.body!.bounce;
   if (bounce <= 0 || Math.abs(velocity) * bounce < MIN_BOUNCE_SPEED) return 0;
-  host.emit({ type: "bounce", entity: e.id, other: solid.id, ...e.transform });
+  host.emit({ type: "bounce", entity: e.id, other: solid.id, ...at(e) });
   return -velocity * bounce;
-}
-
-function clampToWorld(e: Entity, host: PhysicsHost): void {
-  const halfWidth = (e.body?.width ?? 0) / 2;
-  const halfHeight = (e.body?.height ?? 0) / 2;
-  e.transform.x = Math.min(host.width - halfWidth, Math.max(halfWidth, e.transform.x));
-  e.transform.y = Math.min(host.height - halfHeight, Math.max(halfHeight, e.transform.y));
-}
-
-function clampToPatrol(e: Entity, patrol: PatrolState): void {
-  if (patrol.axis === "x") e.transform.x = Math.min(patrol.originX + patrol.distance, Math.max(patrol.originX, e.transform.x));
-  else e.transform.y = Math.min(patrol.originY + patrol.distance, Math.max(patrol.originY, e.transform.y));
 }
 
 /**

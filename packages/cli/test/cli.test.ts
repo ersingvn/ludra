@@ -166,3 +166,39 @@ describe("multiple scenes", () => {
     }
   });
 });
+
+describe("rapier physics through the CLI", () => {
+  test("a scene with \"physics\": \"rapier\" loads Rapier on its own for check, play and test", () => {
+    const dir = join(workDir, "tumble");
+    mkdirSync(join(dir, "scenes"), { recursive: true });
+    mkdirSync(join(dir, "tests"), { recursive: true });
+    writeFileSync(join(dir, "ludra.json"), JSON.stringify({ name: "Tumble" }));
+    const body = (width: number, height: number, extra = {}) => ({ type: "dynamic", width, height, ...extra });
+    writeFileSync(
+      join(dir, "scenes", "main.scene.json"),
+      JSON.stringify({
+        world: { physics: "rapier" },
+        entities: [
+          { id: "ground", components: { transform: { x: 480, y: 520 }, body: { type: "static", width: 960, height: 40 } } },
+          { id: "ramp", components: { transform: { x: 250, y: 300, rotation: 20 }, body: { type: "static", width: 360, height: 16 } } },
+          { id: "ball", components: { transform: { x: 110, y: 200 }, body: body(36, 36, { shape: "circle", density: 4 }) } },
+          ...[480, 439, 398].map((y, i) => ({ id: `crate-${i + 1}`, components: { transform: { x: 700, y }, body: body(40, 40) } })),
+        ],
+      }),
+    );
+    writeFileSync(
+      join(dir, "tests", "physics.test.json"),
+      JSON.stringify({
+        tests: [
+          { name: "the ball rolls and spins", duration: "1.5s", assert: ["ball.x > 400", "ball.rotation > 180"] },
+          { name: "the tower falls", duration: "4s", assert: ["crate-3.y > 440", "crate-3.rotation != 0"] },
+        ],
+      }),
+    );
+    assert.equal(ludra("check", dir).code, 0);
+    const played = JSON.parse(ludra("play", dir, "--duration", "1s", "--json").out);
+    assert.ok(played.final.entities.ball.rotation > 0, "rotation is in play's output");
+    const { code, out } = ludra("test", dir);
+    assert.equal(code, 0, out);
+  });
+});

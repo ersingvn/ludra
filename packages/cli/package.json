@@ -35,7 +35,8 @@
     "blocks"
   ],
   "dependencies": {
-    "@ludra/core": "0.8.0"
+    "@ludra/core": "0.8.0",
+    "@ludra/physics": "0.8.0"
   },
   "keywords": [
     "game-engine",

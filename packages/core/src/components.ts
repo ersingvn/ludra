@@ -55,11 +55,12 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
     fields: {
       x: { type: "number", description: "Center x in pixels." },
       y: { type: "number", description: "Center y in pixels." },
+      rotation: { type: "number", default: 0, description: "Rotation in degrees, clockwise. Rapier physics only: arcade bodies never rotate." },
     },
   },
   body: {
     description:
-      "Axis-aligned box collider. static = never moves (ground, walls). dynamic = falls with gravity and collides with static/kinematic bodies. kinematic = moves at a constant velocity, ignores gravity.",
+      "Collider. static = never moves (ground, walls). dynamic = falls with gravity and collides with other bodies. kinematic = moves at a constant velocity, ignores gravity. With arcade physics (the default) every body is an axis-aligned box; with \"physics\": \"rapier\" bodies can be circles or capsules, rotate, and have friction and mass.",
     requires: ["transform"],
     fields: {
       type: { type: "enum", values: ["static", "dynamic", "kinematic"], default: "static", description: "How the body moves." },
@@ -75,6 +76,16 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       },
       vx: { type: "number", default: 0, description: "Initial horizontal velocity in px/s." },
       vy: { type: "number", default: 0, description: "Initial vertical velocity in px/s." },
+      shape: {
+        type: "enum",
+        values: ["box", "circle", "capsule"],
+        default: "box",
+        description: "Rapier only. circle: diameter = width. capsule: a rounded box, upright when taller than wide (characters).",
+      },
+      friction: { type: "number", min: 0, default: 0.5, description: "Rapier only. 0 = ice, 1 = rubber." },
+      density: { type: "number", min: 0, default: 1, description: "Rapier only. Mass per area: heavier bodies push lighter ones." },
+      fixedRotation: { type: "boolean", default: false, description: "Rapier only. Keeps a dynamic body upright (crates that slide but never tip). Players are always upright." },
+      bullet: { type: "boolean", default: false, description: "Rapier only. Continuous collision detection, so fast bodies (bullets, balls) can't pass through thin walls." },
     },
   },
   sprite: {
@@ -198,6 +209,8 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
 export interface Transform {
   x: number;
   y: number;
+  /** Degrees, clockwise. Only rapier physics rotates bodies. */
+  rotation: number;
 }
 
 export interface Body {
@@ -209,6 +222,11 @@ export interface Body {
   bounce: number;
   vx: number;
   vy: number;
+  shape: "box" | "circle" | "capsule";
+  friction: number;
+  density: number;
+  fixedRotation: boolean;
+  bullet: boolean;
 }
 
 export interface Sprite {

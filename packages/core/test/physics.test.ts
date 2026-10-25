@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { ArcadePhysics, InputScript, simulate, World, type Entity, type PhysicsEngine, type PhysicsHost, type SceneDef } from "../src/index.ts";
+import { ArcadePhysics, InputScript, PhysicsUnavailableError, simulate, World, type Entity, type PhysicsEngine, type PhysicsHost, type SceneDef } from "../src/index.ts";
 
 const scene: SceneDef = {
   entities: [
@@ -28,6 +28,13 @@ class Recording extends ArcadePhysics implements PhysicsEngine {
 describe("physics engines", () => {
   test("arcade is the default engine", () => {
     assert.equal(new World(scene).physics.name, "arcade");
+  });
+
+  test("a rapier scene explains how to load rapier when it isn't loaded", () => {
+    // Core never loads @ludra/physics, so "rapier" isn't registered in this process.
+    assert.throws(() => new World({ ...scene, world: { physics: "rapier" } }), (err: Error) =>
+      err instanceof PhysicsUnavailableError && /await loadRapierPhysics\(\) from @ludra\/physics/.test(err.message),
+    );
   });
 
   test("the world tells its engine about every entity, steps it, and asks it about overlaps", () => {
