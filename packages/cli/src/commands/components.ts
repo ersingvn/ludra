@@ -8,6 +8,7 @@ import {
   PARTICLE_FIELDS,
   SCRIPT_API_REFERENCE,
   SOUND_PRESETS,
+  SOUND_REFERENCE,
   type FieldSpec,
 } from "@ludra/core";
 import { pad, paint } from "../format.ts";
@@ -19,8 +20,13 @@ const EFFECTS_EXAMPLE = `"effects": {
   }`;
 
 export function components(name: string | undefined, options: { json?: boolean }): number {
+  if (name === "sounds" || name === "music") {
+    if (options.json) console.log(JSON.stringify({ sounds: SOUND_REFERENCE }, null, 2));
+    else console.log(`${paint("bold", "sounds and music")} (scene level, plus the script sound hook)\n\n${SOUND_REFERENCE.replace(/^/gm, "  ")}`);
+    return 0;
+  }
   if (name !== undefined && name !== "effects" && !isComponentName(name)) {
-    throw new CliError(`Unknown component "${name}". Components: ${COMPONENT_NAMES.join(", ")}, plus "effects" for scene effects.`);
+    throw new CliError(`Unknown component "${name}". Components: ${COMPONENT_NAMES.join(", ")}, plus "effects" for scene effects and "sounds" for sounds and music.`);
   }
   const names = name === undefined ? COMPONENT_NAMES : isComponentName(name) ? [name] : [];
   const showEffects = name === undefined || name === "effects";
@@ -45,7 +51,7 @@ export function components(name: string | undefined, options: { json?: boolean }
   if (showEffects) {
     console.log(`${paint("bold", "effects")} (scene level, not a component) — ${EFFECTS_DESCRIPTION}`);
     console.log(paint("dim", `  events: ${EVENT_TYPES.join(", ")}`));
-    console.log(paint("dim", `  sound presets: ${SOUND_PRESETS.join(", ")}`));
+    console.log(paint("dim", `  sound presets: ${SOUND_PRESETS.join(", ")} (generic: give the game its own "sounds", see ludra components sounds)`));
     printFields(EFFECT_FIELDS);
     console.log(`  ${pad("particles", 13)} ${pad("object", 34)} ${pad("optional", 18)} ${paint("dim", "A burst at the event position, with these fields:")}`);
     printFields(PARTICLE_FIELDS, "    ");

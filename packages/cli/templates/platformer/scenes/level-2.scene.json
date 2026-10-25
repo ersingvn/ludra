@@ -20,7 +20,7 @@
   },
   "effects": {
     "jump": {
-      "sound": "jump",
+      "sound": "hop",
       "particles": {
         "count": 6,
         "color": "#cfd8ff",
@@ -33,7 +33,7 @@
       }
     },
     "land": {
-      "sound": "thud",
+      "sound": "soft-step",
       "particles": {
         "count": 5,
         "color": "#cfd8ff",
@@ -46,7 +46,7 @@
       }
     },
     "collect": {
-      "sound": "coin",
+      "sound": "chime",
       "particles": {
         "count": 14,
         "color": "#ffd166",
@@ -57,7 +57,7 @@
       }
     },
     "stomp": {
-      "sound": "hit",
+      "sound": "squish",
       "shake": 5,
       "particles": {
         "count": 18,
@@ -68,7 +68,7 @@
       }
     },
     "die": {
-      "sound": "explosion",
+      "sound": "tumble",
       "shake": 10,
       "particles": {
         "count": 30,
@@ -79,7 +79,7 @@
       }
     },
     "win": {
-      "sound": "powerup",
+      "sound": "homecoming",
       "shake": 3,
       "particles": {
         "count": 60,
@@ -91,7 +91,7 @@
       }
     },
     "checkpoint": {
-      "sound": "powerup",
+      "sound": "lantern",
       "particles": {
         "count": 24,
         "color": "#ffd166",
@@ -102,9 +102,248 @@
       }
     },
     "gameover": {
-      "sound": "explosion",
+      "sound": "lights-out",
       "shake": 12
     }
+  },
+  "sounds": {
+    "hop": {
+      "tones": [
+        {
+          "wave": "triangle",
+          "from": 330,
+          "to": 620,
+          "duration": 0.12,
+          "volume": 0.216
+        }
+      ],
+      "noise": [
+        {
+          "filter": "highpass",
+          "from": 4000,
+          "duration": 0.05,
+          "volume": 0.054
+        }
+      ],
+      "vary": 0.06
+    },
+    "soft-step": {
+      "tones": [
+        {
+          "wave": "sine",
+          "from": 120,
+          "to": 60,
+          "duration": 0.08,
+          "volume": 0.216
+        }
+      ],
+      "noise": [
+        {
+          "from": 700,
+          "to": 150,
+          "duration": 0.08,
+          "volume": 0.18
+        }
+      ],
+      "vary": 0.15
+    },
+    "chime": {
+      "tones": [
+        {
+          "wave": "sine",
+          "from": 1568,
+          "duration": 0.25,
+          "volume": 0.144
+        },
+        {
+          "wave": "sine",
+          "from": 2093,
+          "start": 0.06,
+          "duration": 0.4,
+          "volume": 0.126
+        },
+        {
+          "wave": "triangle",
+          "from": 3136,
+          "start": 0.06,
+          "duration": 0.15,
+          "volume": 0.036
+        }
+      ],
+      "vary": 0.03
+    },
+    "squish": {
+      "tones": [
+        {
+          "wave": "sine",
+          "from": 320,
+          "to": 90,
+          "duration": 0.16,
+          "volume": 0.27
+        }
+      ],
+      "noise": [
+        {
+          "filter": "bandpass",
+          "from": 900,
+          "to": 200,
+          "duration": 0.15,
+          "volume": 0.288
+        }
+      ],
+      "vary": 0.1
+    },
+    "tumble": {
+      "tones": [
+        {
+          "wave": "triangle",
+          "from": 520,
+          "to": 110,
+          "duration": 0.5,
+          "volume": 0.216
+        }
+      ],
+      "noise": [
+        {
+          "from": 900,
+          "to": 100,
+          "duration": 0.35,
+          "volume": 0.18
+        }
+      ]
+    },
+    "lantern": {
+      "tones": [
+        {
+          "wave": "sine",
+          "from": 784,
+          "duration": 0.6,
+          "volume": 0.126,
+          "attack": 0.04
+        },
+        {
+          "wave": "sine",
+          "from": 1175,
+          "start": 0.08,
+          "duration": 0.7,
+          "volume": 0.09,
+          "attack": 0.04
+        }
+      ],
+      "noise": [
+        {
+          "filter": "highpass",
+          "from": 6000,
+          "duration": 0.4,
+          "volume": 0.027,
+          "attack": 0.1
+        }
+      ]
+    },
+    "homecoming": {
+      "tones": [
+        {
+          "wave": "triangle",
+          "from": 392,
+          "start": 0,
+          "duration": 0.18,
+          "volume": 0.216
+        },
+        {
+          "wave": "triangle",
+          "from": 494,
+          "start": 0.1,
+          "duration": 0.18,
+          "volume": 0.216
+        },
+        {
+          "wave": "triangle",
+          "from": 587,
+          "start": 0.2,
+          "duration": 0.18,
+          "volume": 0.216
+        },
+        {
+          "wave": "triangle",
+          "from": 784,
+          "start": 0.32,
+          "duration": 0.7,
+          "volume": 0.216
+        },
+        {
+          "wave": "sine",
+          "from": 196,
+          "duration": 1,
+          "volume": 0.144,
+          "attack": 0.02
+        }
+      ]
+    },
+    "lights-out": {
+      "tones": [
+        {
+          "wave": "triangle",
+          "from": 392,
+          "duration": 0.4,
+          "volume": 0.18
+        },
+        {
+          "wave": "triangle",
+          "from": 330,
+          "start": 0.35,
+          "duration": 0.4,
+          "volume": 0.18
+        },
+        {
+          "wave": "triangle",
+          "from": 262,
+          "start": 0.7,
+          "duration": 1,
+          "volume": 0.18
+        }
+      ]
+    }
+  },
+  "music": {
+    "tempo": 92,
+    "steps": 2,
+    "volume": 1,
+    "tracks": [
+      {
+        "wave": "triangle",
+        "volume": 0.225,
+        "decay": 0.7,
+        "notes": "E5 ~ D5 B4 ~ G4 A4 B4 | ~ ~ A4 G4 F#4 ~ ~ - | E5 ~ D5 B4 ~ D5 E5 G5 | F#5 ~ E5 D5 B4 ~ ~ -"
+      },
+      {
+        "wave": "sine",
+        "volume": 0.4,
+        "decay": 0.8,
+        "notes": "E2 ~ ~ E2 ~ ~ E3 ~ | C2 ~ ~ C2 ~ ~ C3 ~ | G2 ~ ~ G2 ~ ~ G3 ~ | B1 ~ ~ B1 ~ ~ B2 ~"
+      },
+      {
+        "wave": "square",
+        "volume": 0.055,
+        "decay": 1,
+        "attack": 0.3,
+        "filter": 1000,
+        "notes": "E3+G3+B3 ~ ~ ~ ~ ~ ~ ~ | C3+E3+G3 ~ ~ ~ ~ ~ ~ ~ | G3+B3+D4 ~ ~ ~ ~ ~ ~ ~ | B2+D#3+F#3 ~ ~ ~ ~ ~ ~ ~"
+      },
+      {
+        "wave": "noise",
+        "volume": 0.3,
+        "decay": 0.5,
+        "filter": 120,
+        "notes": "X - - - x - - -"
+      },
+      {
+        "wave": "noise",
+        "volume": 0.05,
+        "decay": 0.15,
+        "filter": 9000,
+        "notes": "- - x - - - x -"
+      }
+    ]
   },
   "entities": [
     {

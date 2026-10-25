@@ -1,3 +1,5 @@
+import type { MusicDef, SoundDef } from "./sound.ts";
+
 export type Action = "left" | "right" | "up" | "down" | "jump" | "action";
 
 export const ACTIONS: readonly Action[] = ["left", "right", "up", "down", "jump", "action"];
@@ -67,6 +69,13 @@ export interface SceneDef {
   fonts?: Record<string, string>;
   /** A GLSL fragment shader applied to every rendered frame. Presentation only. */
   postfx?: PostFxDef;
+  /**
+   * The game's own sounds by name: synthesized from tone and noise layers, or an audio file.
+   * Effects and scripts (`ctx.play`) use them like presets. See `ludra components sounds`.
+   */
+  sounds?: Record<string, SoundDef | string>;
+  /** Music that loops while the scene plays: an audio file, or tracks of notes. */
+  music?: string | MusicDef;
   /**
    * Entity templates by name. Entities use one with `"prefab": "<name>"` and override
    * components; scripts spawn them with `world.spawn({ prefab: "<name>" })`. The CLI

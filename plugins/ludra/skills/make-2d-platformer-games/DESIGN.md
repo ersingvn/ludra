@@ -66,11 +66,11 @@ Every player action deserves feedback. Add `effects` for each event the level us
 
 | Moment | Feedback |
 | --- | --- |
-| jump, land | small dust puff (5-6 particles, short life), soft sound (`jump`, `thud`) |
-| collect | bright burst in the item's color, `coin` |
-| stomp | burst in the enemy's color, `hit`, shake 4-6 |
-| die | big red burst, `explosion`, shake 8-10 |
-| win | large burst in the goal's color, `powerup` |
+| jump, land | small dust puff (5-6 particles, short life), a soft sound in the ground's material |
+| collect | bright burst in the item's color, a bright sound that fits the item (a chime, a glint, a crystal ring) |
+| stomp | burst in the enemy's color, a squash, shake 4-6 |
+| die | big red burst, the sound of what killed you, shake 8-10 |
+| win | large burst in the goal's color, a short fanfare in the music's key |
 | custom (`door-open`, `teleport`...) | a burst in the object's color and a sound that matches it |
 
 - **Shake is seasoning.** Use it only for big moments (stomp, death, doors), never for every jump, and keep it ≤ 10.
@@ -147,7 +147,12 @@ When the game runs on rapier, physics is the material you design with. Treat it 
 
 ## 7. Sound
 
-Every player action and every important event gets a sound. Use presets that match: `jump`, `thud` for landing, `coin`, `hit` for stomps, `explosion` for deaths and big impacts, `powerup` for rewards and wins, `blip` for small UI-like events (turret shots, switches). Don't stack many loud sounds in one moment.
+Sound is half of how a game feels, and nothing limits it. Every player action and every important event gets a sound, and all of them come from the same world.
+
+- **Design the game's own sounds** in `"sounds"`. Presets are placeholders; a finished game doesn't use them. Start from the material and the mood: a wooden game thumps and creaks, a crystal cave rings, a neon arcade zaps. Give repeated sounds `vary` so they never sound copied.
+- **Write music for the mood.** A lullaby for a night meadow (slow, major, soft triangle melody), dorian adventure for a cliff at dusk, synthwave for neon (sixteenth arpeggios, pumping bass, four-on-the-floor). A melody that returns makes a level memorable. Wins and checkpoints sound best as short motifs in the music's key.
+- **Let the world make sound.** A `sound` hook can follow the game continuously: wind with height, an engine with speed, the hiss of a swinging hazard that warns before it arrives. That is anticipation through sound.
+- **Mix.** Effects sit on top, music under them, ambience under the music. Don't stack many loud sounds in one moment.
 
 ## 8. Ideas for mechanics
 
@@ -169,7 +174,7 @@ Most of these are one short script. Use them to make each game feel different:
 - [ ] A test proves it's completable with `deaths == 0`, and each mechanic has its own isolated test
 - [ ] Critical jumps work across a ≥ 0.2s window
 - [ ] Screenshots of the start, the hardest moment and the goal look right
-- [ ] Every event in the level has an effect and a sound
+- [ ] Every event in the level has an effect and a sound of the game's own, and the game has music that fits its mood
 - [ ] The palette is consistent and the player is the most visible thing on screen
 - [ ] Physics levels (rapier) stand still with no input, and their solution is proven by a test
 - [ ] It has a mood: a painted backdrop or lighting, its own `drawUI` interface and win screen, and a finishing shader; not flat sprites with the default HUD

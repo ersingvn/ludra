@@ -1,5 +1,6 @@
 import { COMPONENT_NAMES, COMPONENTS, isComponentName, isFrameList, PARTICLE_FIELDS, type ComponentName, type FieldSpec } from "./components.ts";
-import { AUDIO_EXTENSIONS, EFFECT_FIELDS, FONT_EXTENSIONS, IMAGE_EXTENSIONS, isSoundPreset, SOUND_PRESETS } from "./effects.ts";
+import { AUDIO_EXTENSIONS, EFFECT_FIELDS, FONT_EXTENSIONS, IMAGE_EXTENSIONS, SOUND_PRESETS } from "./effects.ts";
+import { isKnownSound, validateMusic, validateSounds } from "./sound.ts";
 import { EVENT_TYPES, type Diagnostic, type SceneDef } from "./types.ts";
 
 export interface ValidationResult {
@@ -65,7 +66,9 @@ export function validateScene(input: unknown): ValidationResult {
     }
   }
 
-  if (raw.effects !== undefined) validateEffects(raw.effects, error, warn);
+  if (raw.sounds !== undefined) validateSounds(raw.sounds, error);
+  if (raw.music !== undefined) validateMusic(raw.music, error);
+  if (raw.effects !== undefined) validateEffects(raw.effects, isObject(raw.sounds) ? raw.sounds : undefined, error, warn);
   if (raw.fonts !== undefined) validateFonts(raw.fonts, error);
   if (raw.postfx !== undefined) validatePostFx(raw.postfx, error);
 
@@ -451,7 +454,7 @@ function validatePostFx(postfx: unknown, error: Report): void {
   }
 }
 
-function validateEffects(effects: unknown, error: Report, warn: Report): void {
+function validateEffects(effects: unknown, sounds: Record<string, unknown> | undefined, error: Report, warn: Report): void {
   if (!isObject(effects)) {
     error("E_EFFECTS_NOT_OBJECT", "effects", '"effects" must map event names to effects.', 'Use "effects": { "collect": { "sound": "coin" } }.');
     return;
@@ -475,13 +478,14 @@ function validateEffects(effects: unknown, error: Report, warn: Report): void {
       continue;
     }
     validateFields(EFFECT_FIELDS, effect, path, `effects.${event}`, "", error, warn, ["particles"]);
-    if (typeof effect.sound === "string" && effect.sound !== "" && !isSoundPreset(effect.sound) && !hasExtension(effect.sound, AUDIO_EXTENSIONS)) {
-      const suggestion = closestName(effect.sound, SOUND_PRESETS);
+    if (typeof effect.sound === "string" && effect.sound !== "" && !isKnownSound(effect.sound, sounds)) {
+      const own = Object.keys(sounds ?? {});
+      const suggestion = closestName(effect.sound, [...own, ...SOUND_PRESETS]);
       error(
         "E_INVALID_SOUND",
         `${path}.sound`,
-        `"${effect.sound}" is neither a sound preset nor an audio file.`,
-        `${suggestion ? `Did you mean "${suggestion}"? ` : ""}Presets: ${SOUND_PRESETS.join(", ")}. Files must end in ${AUDIO_EXTENSIONS.join(", ")}.`,
+        `"${effect.sound}" is not one of the scene's "sounds", a preset or an audio file.`,
+        `${suggestion ? `Did you mean "${suggestion}"? ` : ""}${own.length ? `Scene sounds: ${own.join(", ")}. ` : ""}Presets: ${SOUND_PRESETS.join(", ")}. Files must end in ${AUDIO_EXTENSIONS.join(", ")}. Define your own in "sounds" (ludra components sounds).`,
       );
     }
     if (effect.particles !== undefined) {

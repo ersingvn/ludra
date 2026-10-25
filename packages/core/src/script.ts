@@ -176,6 +176,30 @@ export interface DrawContext {
 }
 
 /**
+ * What the `sound` hook receives: the real Web Audio API, so there are no limits on
+ * sound. Like draw hooks, it only presents: `self` and `world` are read-only.
+ */
+export interface SoundContext {
+  /** The real AudioContext: oscillators, filters, convolvers, buffers, `audio.currentTime`. */
+  audio: AudioContext;
+  /** Connect nodes here: the scene's bus. Muting and scene changes are handled for you. */
+  out: AudioNode;
+  self: ScriptEntity;
+  world: ScriptWorld;
+  params: Record<string, unknown>;
+  /** Simulation time in seconds. */
+  time: number;
+  /** Game events since this hook last ran, oldest first. */
+  events: DrawEvent[];
+  /** Plays a preset, one of the scene's own "sounds" or an audio file. `pitch` 2 is an octave up. */
+  play(name: string, options?: { volume?: number; pitch?: number }): void;
+  /** Per-entity memory for nodes and timers. Not game state. */
+  local: Record<string, unknown>;
+  /** A number in [0, 1) for variety. Never affects the game. */
+  random(): number;
+}
+
+/**
  * The default export of a script file. All hooks are optional.
  *
  * ```ts
@@ -203,9 +227,14 @@ export interface Script {
    * default HUD and "Level complete" screen are turned off: the game draws its own.
    */
   drawUI?(ctx: DrawContext): void;
+  /**
+   * Makes sound with the real Web Audio API, every rendered frame in the browser once the
+   * player has pressed a key (browsers block audio before that). Tests never call it.
+   */
+  sound?(ctx: SoundContext): void;
 }
 
-export const SCRIPT_HOOKS = ["start", "update", "touch", "draw", "drawUI"] as const;
+export const SCRIPT_HOOKS = ["start", "update", "touch", "draw", "drawUI", "sound"] as const;
 
 /** Printed by `ludra components script`. Keep in sync with the interfaces above. */
 export const SCRIPT_API_REFERENCE = `A script file default-exports hooks. Only "import type" is allowed: scripts run without a bundler.
@@ -217,6 +246,7 @@ export const SCRIPT_API_REFERENCE = `A script file default-exports hooks. Only "
     touch(ctx, other) {},    // when this entity starts touching another body (after physics)
     draw(ctx) {},            // paint this entity in world space (browser only, every rendered frame)
     drawUI(ctx) {},          // paint screen-space UI; replaces the default HUD and win screen
+    sound(ctx) {},           // make sound with the real Web Audio API (browser only, every rendered frame)
   } satisfies Script;
 
 ctx.self      the entity: id, x, y, vx, vy, rotation, angularVelocity (read/write); grounded, mass, width, height, exists (read);
@@ -250,6 +280,14 @@ ctx.recent(name?, seconds = 0.5)   recent events [{ name, time, x, y, entity, da
 ctx.image(path)   a loaded image (sprite images and string params ending in .svg/.png/... are preloaded)
 ctx.burst(x, y, particles?)  ctx.shake(px)  ctx.random()   presentation-only helpers
 self/world/params as in update, but read-only: changing the game in a draw hook is an error.
+
+Sound: the sound hook gets the real Web Audio API, so there are no limits on sound either.
+ctx.audio     the AudioContext (createOscillator, createBiquadFilter, createConvolver, currentTime...)
+ctx.out       connect your nodes here (the scene's bus; mute and scene changes are handled)
+ctx.events    game events since the last call: answer them with sound
+ctx.play(name, { volume?, pitch? })   a preset, one of the scene's "sounds", or an audio file
+ctx.local, ctx.time, ctx.random(), self/world/params read-only, as in draw hooks
+Run "ludra components sounds" for scene "sounds" (your own synthesized sounds) and "music" (tracks of notes).
 
 Scene-level presentation (all optional):
   "fonts": { "Orbitron": "google", "Pixel": "assets/pixel.woff2" }   load fonts for ctx.g.font

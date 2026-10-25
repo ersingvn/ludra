@@ -18,6 +18,7 @@ import {
   getScript,
   ScriptError,
   type DrawContext,
+  type SoundContext,
   type Script,
   type ScriptContext,
   type ScriptEntity,
@@ -367,8 +368,25 @@ export class World {
     }
   }
 
+  /**
+   * Runs an entity's `sound` hook. Called by the browser, never by the simulation.
+   * Like draw hooks, `self` and `world` are read-only for the duration.
+   */
+  callSoundHook(entity: Entity, extras: Omit<SoundContext, "self" | "world" | "params">): void {
+    const script = entity.script;
+    const fn = script?.module.sound;
+    if (!script || !fn || entity.removed) return;
+    const ctx: SoundContext = { ...extras, self: this.handle(entity), world: this.api(), params: script.params };
+    this.drawing = true;
+    try {
+      this.run(entity, "sound", () => fn.call(script.module, ctx));
+    } finally {
+      this.drawing = false;
+    }
+  }
+
   /** True when any live entity's script has the given hook. */
-  hasHook(hook: "draw" | "drawUI"): boolean {
+  hasHook(hook: "draw" | "drawUI" | "sound"): boolean {
     return this.entities.some((e) => !e.removed && typeof e.script?.module[hook] === "function");
   }
 
@@ -389,7 +407,7 @@ export class World {
   /** Draw hooks only paint, so the browser can't drift from what tests verified. */
   private guard(what: string): void {
     if (this.drawing) {
-      throw this.misuse(`${what} changes the game, which a draw hook can't do. Change the game in update or touch, and keep visual memory in ctx.local.`);
+      throw this.misuse(`${what} changes the game, which a ${this.current?.hook === "sound" ? "sound" : "draw"} hook can't do. Change the game in update or touch, and keep presentation memory in ctx.local.`);
     }
   }
 

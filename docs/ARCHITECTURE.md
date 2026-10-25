@@ -43,6 +43,12 @@ Scripts can have `draw` (world space, ordered with sprites by `sprite.layer`) an
 
 Scene `fonts` load before the game starts (Google Fonts CSS or FontFace, capped at 4 s). With `postfx`, `prepare()` compiles the shader (`postfx.ts`) on a WebGL canvas that replaces the page's canvas; the game keeps drawing into the original, now offscreen, canvas, and each frame is uploaded as a texture and drawn through the shader. Shader errors keep the 2D canvas visible and show the compiler message with the shader file's own line numbers (`#line 1` after the engine's header).
 
+### Sound
+
+`audio.ts` holds the `SoundPlayer`. Its graph is master gain (mute) → a compressor → the speakers, with two inputs: a per-scene bus and the music. `setScene` replaces the bus on every scene start and restart (the old one fades out, taking any script nodes with it), and keeps music playing when the next scene has the same music (compared as JSON), otherwise crossfades. A sound name resolves to the scene's own `sounds` first, then a preset, then a file. Sound definitions (`sound.ts`) are tone and noise layers with envelopes; noise comes from one shared 2 s buffer started at a random offset. Music tracks are parsed by `parseNotes` (shared with validation, so `ludra check` reports a bad token with its position) and scheduled 0.25 s ahead each frame, each track looping on its own.
+
+The `sound` hook runs in `startGame`'s frame loop after the simulation steps, once the audio context is unlocked, through `World.callSoundHook`: the same read-only guard as draw hooks, with `ctx.audio`, `ctx.out` (the scene bus) and the events since its last call. `checkDrawHooks` runs it too, against the same accept-anything Proxy standing in for the AudioContext. Audio never runs headless, so tests are unaffected.
+
 ### Game structure
 
 `validateScene` expands prefabs first: an entity with `"prefab"` gets the prefab's components with its own merged over them (`mergeComponents`, one level deep, `null` removes), so everything after it, and the `World`, only sees plain entities. The expanded scene keeps its `prefabs` map, so `world.spawn({ prefab })` works at runtime. The CLI adds `prefabs/*.prefab.json` to every scene it reads.

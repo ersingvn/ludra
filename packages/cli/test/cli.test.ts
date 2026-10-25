@@ -124,6 +124,7 @@ describe("ludra review", () => {
     writeFileSync(
       join(bare, "scenes", "main.scene.json"),
       JSON.stringify({
+        effects: { jump: { sound: "jump" }, land: { sound: "thud" } },
         entities: [
           { id: "player", components: { transform: { x: 100, y: 482 }, body: { type: "dynamic", width: 28, height: 36 }, platformer: {}, sprite: { color: "#fff" } } },
           { id: "ground", components: { transform: { x: 480, y: 520 }, body: { type: "static", width: 960, height: 40 }, sprite: { color: "#345" } } },
@@ -133,7 +134,7 @@ describe("ludra review", () => {
     const { code, out } = ludra("review", bare, "--json", "--strict");
     assert.equal(code, 1);
     const codes = (JSON.parse(out).findings as { code: string }[]).map((f) => f.code);
-    for (const expected of ["R_NO_TESTS", "R_DEFAULT_HUD", "R_FLAT_BACKDROP", "R_PLAIN_SHAPES", "R_NO_POSTFX", "R_UNNAMED_SCENE"]) {
+    for (const expected of ["R_NO_TESTS", "R_DEFAULT_HUD", "R_FLAT_BACKDROP", "R_PLAIN_SHAPES", "R_NO_POSTFX", "R_UNNAMED_SCENE", "R_STOCK_SOUNDS", "R_NO_MUSIC"]) {
       assert.ok(codes.includes(expected), `${expected} in ${codes.join(", ")}`);
     }
     assert.equal(ludra("review", bare).code, 0, "without --strict, review only advises");

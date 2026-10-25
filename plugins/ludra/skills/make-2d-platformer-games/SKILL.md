@@ -233,12 +233,28 @@ Scene-level `effects` map events (`jump`, `land`, `collect`, `stomp`, `die`, `wi
 }
 ```
 
-- Sounds are synthesized presets: `jump`, `coin`, `hit`, `explosion`, `powerup`, `blip`, `thud`. Use those unless the user supplies audio files (`.wav`, `.mp3`, `.ogg` paths also work).
+- `sound` names one of the scene's own `sounds` (see "Sound and music" below), a preset (`jump`, `coin`, `hit`, `explosion`, `powerup`, `blip`, `thud`) or an audio file (`.wav`, `.mp3`, `.ogg`). Presets are placeholders: the same beeps in every Ludra game.
 - Particles: `direction` is degrees (-90 = up, 90 = down), `spread` is the cone width, and negative `gravity` floats up.
 - An `emitter` component streams particles continuously (sparkles on a goal, torch fire, steam).
 - Feedback for every player action makes a game feel good: a small dust puff on jump and land, a burst plus sound on pickups, and shake plus a big burst on death.
 
 Run `npx @ludra/cli components effects` for every field.
+
+### Sound and music: no limits either
+
+A game sounds like its world. Design its own sounds and write its music; `ludra review` flags stock presets and a game without music.
+
+- **`"sounds"`** (scene level): named sounds synthesized from layers, used in `effects` and `ctx.play` like presets.
+  - A tone layer is an oscillator sweep: `wave` (sine, square, sawtooth, triangle), `from`/`to` Hz, `start`, `duration`, `volume`, `attack`. A noise layer is filtered noise: `filter` (lowpass, highpass, bandpass), `from`/`to` filter Hz, the same timing fields.
+  - `vary` (0..1) changes the pitch on every play, so footsteps and hits never sound copied.
+  - Think about material: wood is a low sine thump plus band-passed noise; glass and crystal are high sines with overtones; slime is a falling sine plus mid noise; magic is a rising arpeggio with a soft high-passed shimmer.
+- **`"music"`** (scene level): an audio file, or tracks of notes that loop.
+  - `tempo` (BPM), `steps` (tokens per beat), and tracks: `wave` (or `"noise"` for drums), `notes`, `volume`, `decay`, `filter`, `attack`.
+  - Notes: `"C4 E4 G4 ~ | A3 - C4+E4 ~"`: a note, a chord with `+`, `-` rest, `~` hold, `|` bar lines for reading. Noise tracks use `x`/`X`; a low `filter` (≤ 250) is a kick, a high one (≥ 3000) a hat.
+  - Write real music: pick a key and tempo for the mood, a bass line on the roots, a melody that returns, a soft pad, light drums. Keep it under the effects (track volumes around 0.1-0.4). Different scenes can have different music.
+- **`sound(ctx)`** in a script gets the real Web Audio API, every rendered frame in the browser: `ctx.audio` (the AudioContext), `ctx.out` (connect here), `ctx.events` (events since the last call), `ctx.play(name, { volume, pitch })`, `ctx.local` for your nodes. Use it for sound that follows the game: an engine that rises with speed, wind that grows with height, a scrape while a crate slides, adaptive music layers. Like draw hooks it is read-only, and `ludra check` runs it against a stand-in AudioContext (`E_SOUND_HOOK`). Create nodes with `ctx.audio.createX()`, not `new XNode()`.
+
+Run `npx @ludra/cli components sounds` for every field and an example of each. The `physics` template's `scripts/ambience.ts` is a full sound hook.
 
 ### Layout and color
 

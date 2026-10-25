@@ -7,7 +7,7 @@ A physics platformer built with Ludra, a game engine designed for AI agents: Cra
 - `ludra.json`: project config (name, entry scene, window size)
 - `scenes/main.scene.json`: the level. Entities are made of components; `effects` adds particles, sound and shake to game events.
 - `assets/`: SVG art. `rock.svg` and `ground.svg` tile; the cliffs are a rock body with a grass strip (drawing only) on top.
-- `scripts/`: `backdrop.ts` (sky and parallax hills), `lantern.ts` (lights a reached checkpoint), `chain.ts` (draws the pendulum's chain from `params.pivot`), `hud.ts` (hearts, points, title card, end screens). Run `npx @ludra/cli components script` for the API.
+- `scripts/`: `backdrop.ts` (sky and parallax hills), `lantern.ts` (lights a reached checkpoint), `chain.ts` (draws the pendulum's chain from `params.pivot`), `ambience.ts` (the place's sound), `hud.ts` (hearts, points, title card, end screens). Run `npx @ludra/cli components script` for the API.
 - `shaders/glow.frag`: the finishing shader (bloom, grade, vignette).
 - `tests/*.test.json`: gameplay tests, run headlessly.
 
@@ -40,5 +40,6 @@ Never call a change done until `ludra check`, `ludra test` and `ludra review` ar
 - The game has 3 lives (`world.lives`); the lantern is a `checkpoint` before the bridge.
 - A level is done when a test proves `won == true` with `deaths == 0`.
 - Scripts can reach physics directly: `self.applyImpulse`, `self.applyForce`, `world.raycast`, and `world.physics.raw` for the whole Rapier API. See `npx @ludra/cli components script`.
+- The scene has its own `"sounds"` (used by `effects`) and `"music"` (tracks of notes). Change them with the game's mood; `npx @ludra/cli components sounds` shows every field. `scripts/ambience.ts` is a `sound` hook: wind, the pendulum's hiss and the crate's scrape follow the physics through the real Web Audio API.
 - Art and effects never change gameplay. Make it playable first, then dress it. Write new art as SVG in `assets/`.
 - For behavior no component provides, write a script and attach it with a `script` component. Use `world.random()`, never `Math.random()`.

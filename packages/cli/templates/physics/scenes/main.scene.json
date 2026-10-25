@@ -21,7 +21,7 @@
   },
   "effects": {
     "jump": {
-      "sound": "jump",
+      "sound": "hop",
       "particles": {
         "count": 6,
         "color": "#cfd8ff",
@@ -34,7 +34,7 @@
       }
     },
     "land": {
-      "sound": "thud",
+      "sound": "boot-on-wood",
       "particles": {
         "count": 5,
         "color": "#cfd8ff",
@@ -47,7 +47,7 @@
       }
     },
     "collect": {
-      "sound": "coin",
+      "sound": "glint",
       "particles": {
         "count": 14,
         "color": "#ffd166",
@@ -58,7 +58,7 @@
       }
     },
     "stomp": {
-      "sound": "hit",
+      "sound": "thwack",
       "shake": 5,
       "particles": {
         "count": 18,
@@ -69,7 +69,7 @@
       }
     },
     "die": {
-      "sound": "explosion",
+      "sound": "spiked",
       "shake": 10,
       "particles": {
         "count": 30,
@@ -80,7 +80,7 @@
       }
     },
     "win": {
-      "sound": "powerup",
+      "sound": "made-it",
       "shake": 3,
       "particles": {
         "count": 60,
@@ -92,7 +92,7 @@
       }
     },
     "checkpoint": {
-      "sound": "powerup",
+      "sound": "lantern-lit",
       "particles": {
         "count": 24,
         "color": "#ffd166",
@@ -103,9 +103,281 @@
       }
     },
     "gameover": {
-      "sound": "explosion",
+      "sound": "no-more-tries",
       "shake": 12
     }
+  },
+  "sounds": {
+    "hop": {
+      "tones": [
+        {
+          "wave": "triangle",
+          "from": 280,
+          "to": 520,
+          "duration": 0.12,
+          "volume": 0.216
+        }
+      ],
+      "noise": [
+        {
+          "filter": "highpass",
+          "from": 3500,
+          "duration": 0.05,
+          "volume": 0.054
+        }
+      ],
+      "vary": 0.06
+    },
+    "boot-on-wood": {
+      "tones": [
+        {
+          "wave": "sine",
+          "from": 140,
+          "to": 70,
+          "duration": 0.09,
+          "volume": 0.27
+        }
+      ],
+      "noise": [
+        {
+          "filter": "bandpass",
+          "from": 420,
+          "to": 160,
+          "duration": 0.07,
+          "volume": 0.27
+        }
+      ],
+      "vary": 0.12
+    },
+    "glint": {
+      "tones": [
+        {
+          "wave": "triangle",
+          "from": 1319,
+          "duration": 0.08,
+          "volume": 0.144
+        },
+        {
+          "wave": "triangle",
+          "from": 1976,
+          "start": 0.07,
+          "duration": 0.35,
+          "volume": 0.144
+        },
+        {
+          "wave": "sine",
+          "from": 3951,
+          "start": 0.07,
+          "duration": 0.2,
+          "volume": 0.027
+        }
+      ],
+      "vary": 0.02
+    },
+    "thwack": {
+      "tones": [
+        {
+          "wave": "sine",
+          "from": 260,
+          "to": 80,
+          "duration": 0.15,
+          "volume": 0.27
+        }
+      ],
+      "noise": [
+        {
+          "filter": "bandpass",
+          "from": 1200,
+          "to": 300,
+          "duration": 0.12,
+          "volume": 0.27
+        }
+      ],
+      "vary": 0.1
+    },
+    "spiked": {
+      "tones": [
+        {
+          "wave": "sawtooth",
+          "from": 300,
+          "to": 55,
+          "duration": 0.4,
+          "volume": 0.162
+        }
+      ],
+      "noise": [
+        {
+          "filter": "highpass",
+          "from": 2500,
+          "to": 600,
+          "duration": 0.25,
+          "volume": 0.324
+        },
+        {
+          "from": 400,
+          "to": 60,
+          "start": 0.05,
+          "duration": 0.45,
+          "volume": 0.27
+        }
+      ]
+    },
+    "creak": {
+      "tones": [
+        {
+          "wave": "sawtooth",
+          "from": 95,
+          "to": 72,
+          "duration": 0.32,
+          "volume": 0.09,
+          "attack": 0.04
+        }
+      ],
+      "noise": [
+        {
+          "filter": "bandpass",
+          "from": 1300,
+          "to": 800,
+          "duration": 0.25,
+          "volume": 0.063,
+          "attack": 0.03
+        }
+      ],
+      "vary": 0.2
+    },
+    "lantern-lit": {
+      "tones": [
+        {
+          "wave": "sine",
+          "from": 587,
+          "duration": 0.6,
+          "volume": 0.126,
+          "attack": 0.04
+        },
+        {
+          "wave": "sine",
+          "from": 880,
+          "start": 0.08,
+          "duration": 0.7,
+          "volume": 0.09,
+          "attack": 0.04
+        }
+      ],
+      "noise": [
+        {
+          "filter": "bandpass",
+          "from": 2500,
+          "to": 5000,
+          "duration": 0.5,
+          "volume": 0.036,
+          "attack": 0.05
+        }
+      ]
+    },
+    "made-it": {
+      "tones": [
+        {
+          "wave": "triangle",
+          "from": 294,
+          "start": 0,
+          "duration": 0.18,
+          "volume": 0.216
+        },
+        {
+          "wave": "triangle",
+          "from": 349,
+          "start": 0.1,
+          "duration": 0.18,
+          "volume": 0.216
+        },
+        {
+          "wave": "triangle",
+          "from": 440,
+          "start": 0.2,
+          "duration": 0.18,
+          "volume": 0.216
+        },
+        {
+          "wave": "triangle",
+          "from": 587,
+          "start": 0.32,
+          "duration": 0.8,
+          "volume": 0.216
+        },
+        {
+          "wave": "sine",
+          "from": 147,
+          "duration": 1.1,
+          "volume": 0.162,
+          "attack": 0.02
+        }
+      ]
+    },
+    "no-more-tries": {
+      "tones": [
+        {
+          "wave": "triangle",
+          "from": 294,
+          "duration": 0.4,
+          "volume": 0.18
+        },
+        {
+          "wave": "triangle",
+          "from": 277,
+          "start": 0.35,
+          "duration": 0.4,
+          "volume": 0.18
+        },
+        {
+          "wave": "triangle",
+          "from": 220,
+          "start": 0.7,
+          "duration": 1.1,
+          "volume": 0.18
+        }
+      ]
+    }
+  },
+  "music": {
+    "tempo": 100,
+    "steps": 2,
+    "volume": 1,
+    "tracks": [
+      {
+        "wave": "triangle",
+        "volume": 0.25,
+        "decay": 0.45,
+        "notes": "D4 F4 A4 ~ G4 F4 E4 C4 | D4 ~ A3 ~ C4 D4 ~ - | D4 F4 A4 C5 B4 A4 G4 E4 | F4 ~ E4 ~ D4 ~ ~ -"
+      },
+      {
+        "wave": "sine",
+        "volume": 0.425,
+        "decay": 0.6,
+        "notes": "D2 ~ - D2 A2 ~ - A2 | C2 ~ - C2 G2 ~ - G2 | D2 ~ - D2 A2 ~ - A2 | Bb1 ~ - Bb1 A1 ~ - -"
+      },
+      {
+        "wave": "sawtooth",
+        "volume": 0.05,
+        "decay": 1,
+        "attack": 0.4,
+        "filter": 900,
+        "notes": "D3+F3+A3 ~ ~ ~ ~ ~ ~ ~ | C3+E3+G3 ~ ~ ~ ~ ~ ~ ~ | D3+F3+A3 ~ ~ ~ ~ ~ ~ ~ | Bb2+D3+F3 ~ ~ ~ A2+C#3+E3 ~ ~ ~"
+      },
+      {
+        "wave": "noise",
+        "volume": 0.325,
+        "decay": 0.5,
+        "filter": 110,
+        "notes": "X - - - x - x -"
+      },
+      {
+        "wave": "noise",
+        "volume": 0.055,
+        "decay": 0.12,
+        "filter": 8000,
+        "notes": "- - x - - - x x"
+      }
+    ]
   },
   "entities": [
     {
@@ -721,6 +993,18 @@
         },
         "goal": {
           "requireScore": 3
+        }
+      }
+    },
+    {
+      "id": "ambience",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": 0
+        },
+        "script": {
+          "src": "scripts/ambience.ts"
         }
       }
     },

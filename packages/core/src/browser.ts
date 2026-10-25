@@ -206,6 +206,9 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
   let exitSince: number | undefined;
   let loading = false;
   let debug = options.debug ?? false;
+  /** World events the sound hooks have already been given, and their per-entity memory. */
+  let soundEvents = 0;
+  const soundLocals = new Map<string, Record<string, unknown>>();
 
   const enter = async (next: SceneDef, carry: Carry | undefined) => {
     const { images, shader } = await loadScene(next, options, scripts);
@@ -214,6 +217,9 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
     startCarry = carry;
     view = new View(next, images);
     view.debug = debug;
+    sounds.setScene(next.sounds, next.music);
+    soundEvents = 0;
+    soundLocals.clear();
     sceneError = screen.use(next.postfx, shader);
     crash = sceneError;
     exitSince = undefined;
@@ -236,6 +242,9 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
     }
     world = new World(scene, { scripts, carry: startCarry });
     view.reset();
+    sounds.setScene(scene.sounds, scene.music);
+    soundEvents = 0;
+    soundLocals.clear();
     crash = sceneError;
     exitSince = undefined;
   };
@@ -301,6 +310,34 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
       view.step(world, (sound) => sounds.play(sound));
       accumulator -= FIXED_DT;
     }
+
+    // Sound hooks: the real Web Audio API, once the player has pressed a key.
+    const audio = sounds.audio;
+    const out = sounds.out;
+    if (audio && out && !crash && world.hasHook("sound")) {
+      const events = world.events.slice(soundEvents).map(hookEvent);
+      soundEvents = world.events.length;
+      try {
+        for (const e of [...world.entities]) {
+          if (!e.script?.module.sound) continue;
+          let local = soundLocals.get(e.id);
+          if (!local) soundLocals.set(e.id, (local = {}));
+          world.callSoundHook(e, {
+            audio,
+            out,
+            time: world.time,
+            events,
+            play: (name, playOptions) => sounds.play(name, playOptions),
+            local,
+            random: Math.random,
+          });
+        }
+      } catch (err) {
+        console.error("[ludra]", err);
+        crash = message(err);
+      }
+    }
+    sounds.tick();
 
     // Moving on: let the win screen show, or fade out for a world.goto, then load.
     let fade = 0;
@@ -766,14 +803,18 @@ function recentEvents(world: World, name: string | undefined, seconds: number): 
   for (let i = world.events.length - 1; i >= 0; i--) {
     const event = world.events[i]!;
     if (event.time < since) break;
-    const eventName = event.type === "custom" ? event.name : event.type;
-    if (name !== undefined && eventName !== name) continue;
-    // Custom events carry what the script passed; built-in ones their own details (item, enemy, checkpoint...).
-    const { type: _type, frame: _frame, time, x, y, entity, ...details } = event as GameEvent & { data?: unknown };
-    const data = event.type === "custom" ? event.data : details;
-    result.push({ name: eventName, time, x, y, entity, data });
+    if (name !== undefined && (event.type === "custom" ? event.name : event.type) !== name) continue;
+    result.push(hookEvent(event));
   }
   return result.reverse();
+}
+
+/** A game event as draw and sound hooks see it. */
+function hookEvent(event: GameEvent): DrawEvent {
+  // Custom events carry what the script passed; built-in ones their own details (item, enemy, checkpoint...).
+  const { type: _type, frame: _frame, time, x, y, entity, ...details } = event as GameEvent & { data?: unknown };
+  const data = event.type === "custom" ? event.data : details;
+  return { name: event.type === "custom" ? event.name : event.type, time, x, y, entity, data };
 }
 
 /** Frames off the ground before a platformer counts as falling (jumps show at once). */
