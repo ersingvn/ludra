@@ -87,6 +87,10 @@ A scene opts in with `"world": { "physics": "rapier" }`. Engines are found by na
 
 `@ludra/physics` wraps Rapier's **deterministic** 2D build (`@dimforge/rapier2d-deterministic-compat`, pinned to an exact version): the same scene gives bit-identical frames on every OS, Node version and browser, which a golden-hash test checks on every CI machine. The "compat" build embeds the WebAssembly in one file, so it loads without a bundler. Rapier works in pixels directly (`lengthUnit` = 50 px per meter tunes its tolerances). Each step hands gameplay's changes to Rapier (a moved transform is a teleport, dynamic velocities are written, kinematic bodies move by velocity and patrol limits), steps, and reads positions, accumulated rotation (not wrapped to ±180°) and velocities back. A body is grounded when a non-sensor contact pushes it upward; sensors use Rapier's intersection test. Restitution combines with "max", so `bounce` means the same as in arcade.
 
+Rapier runs with its natural +y up and every value crossing over is mirrored in y (positions, velocities, gravity, angles): its character controller only applies slope limits correctly that way (with a custom "up" of (0, -1) a player walks up any slope).
+
+Players (`platformer` or `topdown` with a moving body) are kinematic bodies moved by Rapier's character controller rather than by forces: they walk up slopes up to `platformer.maxSlope` and slide back from steeper ones, step onto ledges up to `stepHeight`, slide along walls instead of sticking, and push dynamic bodies in proportion to `push`. Gravity, jump speed and the fall-speed cap keep their arcade values, so jumps reach the same height. Three details came from testing: gravity isn't applied while a player stands (pressing into the ground makes round-bottomed players lose speed), players are lifted by the controller's gap when created or respawned (one placed exactly in contact can't keep its gap and sinks in), and players standing on a kinematic mover are carried by the mover's last displacement (the controller doesn't carry a standing character on its own).
+
 ## Development
 
 ```bash

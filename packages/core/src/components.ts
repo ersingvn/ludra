@@ -119,6 +119,9 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       coyoteTime: { type: "number", min: 0, default: 0.1, description: "Seconds after leaving a ledge during which a jump still works." },
       jumpBuffer: { type: "number", min: 0, default: 0.1, description: "Seconds a jump press is remembered before landing." },
       variableJump: { type: "boolean", default: true, description: "Releasing jump early cuts the jump short." },
+      maxSlope: { type: "number", min: 0, default: 50, description: "Rapier only. Steepest slope in degrees the player can walk up; steeper ones slide it back down." },
+      stepHeight: { type: "number", min: 0, default: 10, description: "Rapier only. Ledges up to this many px are stepped onto without jumping (stairs, bumps). 0 turns it off." },
+      push: { type: "number", min: 0, default: 1, description: "Rapier only. How hard the player pushes dynamic bodies, as a multiple of its own mass. 0 = can't push." },
     },
   },
   topdown: {
@@ -273,6 +276,9 @@ export interface Platformer {
   coyoteTime: number;
   jumpBuffer: number;
   variableJump: boolean;
+  maxSlope: number;
+  stepHeight: number;
+  push: number;
 }
 
 export interface Topdown {

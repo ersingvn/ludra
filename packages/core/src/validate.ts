@@ -172,6 +172,7 @@ export function validateScene(input: unknown): ValidationResult {
       const rapierOnly = [
         ...(transform && transform.rotation !== undefined && transform.rotation !== 0 ? ["transform.rotation"] : []),
         ...RAPIER_BODY_FIELDS.filter((field) => body && body[field] !== undefined && !(field === "shape" && body.shape === "box")).map((field) => `body.${field}`),
+        ...RAPIER_PLATFORMER_FIELDS.filter((field) => isObject(components.platformer) && components.platformer[field] !== undefined).map((field) => `platformer.${field}`),
       ];
       if (rapierOnly.length > 0) {
         warn(
@@ -263,6 +264,7 @@ export function validateScene(input: unknown): ValidationResult {
 
 /** Body fields that only rapier physics reads. */
 const RAPIER_BODY_FIELDS = ["shape", "friction", "density", "fixedRotation", "bullet"] as const;
+const RAPIER_PLATFORMER_FIELDS = ["maxSlope", "stepHeight", "push"] as const;
 
 /** Components that only work on sensor bodies, and what goes wrong otherwise. */
 const SENSOR_COMPONENTS: [ComponentName, string][] = [

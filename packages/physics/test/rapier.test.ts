@@ -132,10 +132,110 @@ describe("rapier physics", () => {
   });
 });
 
+describe("character controller", () => {
+  before(() => loadRapierPhysics());
+
+  const hero = (x: number, y: number, platformer: Record<string, unknown> = {}): EntityDef => ({
+    id: "hero",
+    components: { transform: { x, y }, body: { type: "dynamic", width: 28, height: 36 }, platformer },
+  });
+  const slope = (degrees: number): EntityDef => ({
+    id: "slope",
+    // A ramp rising to the right, its low end resting on the ground near x = 300.
+    components: { transform: { x: 450, y: 500 - Math.sin((degrees * Math.PI) / 180) * 150, rotation: -degrees }, body: { type: "static", width: 320, height: 12 } },
+  });
+  const path = (scene: SceneDef, inputs: string, seconds: number) => {
+    const xs: number[] = [];
+    const ys: number[] = [];
+    const world = new World(scene);
+    simulate(world, InputScript.parse(inputs), Math.round(seconds * 60), (w) => {
+      xs.push(w.get("hero")!.transform.x);
+      ys.push(w.get("hero")!.transform.y);
+    });
+    return { world, xs, ys };
+  };
+
+  test("walks up a gentle slope", () => {
+    const { world, ys } = path(rapier(hero(200, 482), slope(25)), "right:1.4s, wait:0.3s", 1.7);
+    assert.ok(Math.min(...ys) < 430, `climbed, highest y ${Math.min(...ys).toFixed(1)}`);
+    assert.equal(world.get("hero")!.body!.grounded, true);
+  });
+
+  test("can't walk up a slope steeper than maxSlope", () => {
+    const { ys } = path(rapier(hero(200, 482, { maxSlope: 30 }), slope(55)), "right:2s", 2);
+    assert.ok(Math.min(...ys) > 440, `stayed near the bottom, highest y ${Math.min(...ys).toFixed(1)}`);
+  });
+
+  test("standing still on a slope doesn't slide down it", () => {
+    const { xs, ys } = path(rapier(hero(200, 482), slope(25)), "right:0.9s, wait:2s", 2.9);
+    const settled = xs.length - 61;
+    assert.ok(Math.abs(xs.at(-1)! - xs[settled]!) < 0.5 && Math.abs(ys.at(-1)! - ys[settled]!) < 0.5, `stays put: moved ${(xs.at(-1)! - xs[settled]!).toFixed(2)}, ${(ys.at(-1)! - ys[settled]!).toFixed(2)} px in the last second`);
+  });
+
+  test("steps onto low ledges without jumping, but not onto high ones", () => {
+    const step = (height: number): EntityDef => ({ id: "step", components: { transform: { x: 400, y: 500 - height / 2 }, body: { type: "static", width: 200, height } } });
+    assert.ok(path(rapier(hero(200, 482), step(8)), "right:1.5s", 1.5).xs.at(-1)! > 400, "walked onto an 8 px step");
+    assert.ok(path(rapier(hero(200, 482), step(30)), "right:1.5s", 1.5).xs.at(-1)! < 300, "a 30 px ledge blocks it");
+    assert.ok(path(rapier(hero(200, 482, { stepHeight: 0 }), step(8)), "right:1.5s", 1.5).xs.at(-1)! < 300, "stepHeight 0 turns stepping off");
+  });
+
+  test("pushes crates, unless push is 0", () => {
+    const crate: EntityDef = { id: "crate", components: { transform: { x: 300, y: 480 }, body: { type: "dynamic", width: 40, height: 40 } } };
+    const pushed = path(rapier(hero(200, 482), crate), "right:2s", 2).world.get("crate")!.transform.x;
+    assert.ok(pushed > 340, `the crate was pushed to x ${pushed.toFixed(1)}`);
+    const stuck = path(rapier(hero(200, 482, { push: 0 }), crate), "right:2s", 2).world.get("crate")!.transform.x;
+    assert.ok(Math.abs(stuck - 300) < 1, `push 0 leaves it at x ${stuck.toFixed(1)}`);
+  });
+
+  test("doesn't stick to a wall it jumps into", () => {
+    const wall: EntityDef = { id: "tall-wall", components: { transform: { x: 300, y: 300 }, body: { type: "static", width: 40, height: 400 } } };
+    const { world, ys } = path(rapier(hero(240, 482), wall), "right+jump:0.4s, right:1s", 1.4);
+    assert.ok(Math.min(...ys) < 400, "jumped");
+    assert.equal(world.get("hero")!.body!.grounded, true, "slid back down to the ground while still pressing into the wall");
+  });
+
+  test("rides a moving platform", () => {
+    const lift: EntityDef = {
+      id: "lift",
+      components: { transform: { x: 300, y: 400 }, body: { type: "kinematic", width: 120, height: 20 }, patrol: { axis: "x", distance: 300, speed: 120 } },
+    };
+    // Once standing on the lift, the hero keeps the same offset from it wherever it goes.
+    const offsets: number[] = [];
+    const world = new World(rapier(hero(300, 360), lift));
+    simulate(world, InputScript.parse(""), 120, (w) => {
+      if (w.frame >= 30) offsets.push(w.get("hero")!.transform.x - w.get("lift")!.transform.x);
+    });
+    assert.equal(world.get("hero")!.body!.standingOn?.id, "lift");
+    assert.ok(world.get("lift")!.transform.x > 500, "the lift traveled");
+    assert.ok(Math.max(...offsets) - Math.min(...offsets) < 0.01, `rode along: offset from the lift varied by ${(Math.max(...offsets) - Math.min(...offsets)).toFixed(3)} px`);
+  });
+
+  test("bumping a ceiling stops the jump", () => {
+    const ceiling: EntityDef = { id: "ceiling", components: { transform: { x: 200, y: 420 }, body: { type: "static", width: 200, height: 20 } } };
+    const { ys } = path(rapier(hero(200, 482), ceiling), "jump:0.5s", 1);
+    assert.ok(Math.min(...ys) >= 430 + 18 - 1, `stopped under the ceiling, highest y ${Math.min(...ys).toFixed(1)}`);
+  });
+
+  test("jumps as high as under arcade physics", () => {
+    const top = (scene: SceneDef) => Math.min(...path(scene, "wait:0.2s, jump:0.6s", 1.2).ys);
+    const arcade = top({ entities: [ground, hero(200, 482)] });
+    const rapierTop = top(rapier(hero(200, 482)));
+    assert.ok(Math.abs(arcade - rapierTop) < 2, `arcade apex ${arcade.toFixed(1)}, rapier apex ${rapierTop.toFixed(1)}`);
+  });
+
+  test("top-down players stop at walls", () => {
+    const walker: EntityDef = { id: "hero", components: { transform: { x: 200, y: 300 }, body: { type: "dynamic", width: 24, height: 24 }, topdown: {} } };
+    const wall: EntityDef = { id: "block", components: { transform: { x: 300, y: 300 }, body: { type: "static", width: 40, height: 200 } } };
+    const scene: SceneDef = { world: { physics: "rapier", gravity: 0 }, entities: [walker, wall] };
+    const x = path(scene, "right:2s", 2).xs.at(-1)!;
+    assert.ok(x < 300 - 20 - 12 + 1 && x > 260, `stopped at the wall, x ${x.toFixed(1)}`);
+  });
+});
+
 describe("determinism", () => {
   before(() => loadRapierPhysics());
 
-  /** A busy scene: a pyramid of crates hit by a heavy ball, plus a slope and rolling balls. */
+  /** A busy scene: a pyramid of crates hit by a heavy ball, a slope, rolling balls and a player. */
   function pile(): SceneDef {
     const crates: EntityDef[] = [];
     for (let row = 0; row < 5; row++) {
@@ -149,6 +249,8 @@ describe("determinism", () => {
       { id: "ball-a", components: { transform: { x: 90, y: 200 }, body: { type: "dynamic", width: 30, height: 30, shape: "circle", bounce: 0.4 } } },
       { id: "ball-b", components: { transform: { x: 130, y: 150 }, body: { type: "dynamic", width: 24, height: 24, shape: "circle", bounce: 0.8 } } },
       { id: "wrecking", components: { transform: { x: 300, y: 420 }, body: { type: "dynamic", width: 60, height: 60, shape: "circle", density: 8, vx: 900, bullet: true } } },
+      // A character controller in the mix: it drops onto the slope and gets caught up in the pile.
+      { id: "hero", components: { transform: { x: 240, y: 100 }, body: { type: "dynamic", width: 28, height: 36, shape: "capsule" }, platformer: {} } },
     );
   }
 
@@ -170,7 +272,7 @@ describe("determinism", () => {
   });
 });
 
-const GOLDEN = "b166ff49b14c1322";
+const GOLDEN = "9f16be6a4594029d";
 
 describe("validation", () => {
   test("rapier-only fields under arcade physics are flagged", () => {
