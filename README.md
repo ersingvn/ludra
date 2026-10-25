@@ -25,7 +25,14 @@ claude > ludra new slime-valley
          Done. Run `ludra dev` to play it.
 ```
 
-> **Status:** early (v0.7). 2D games in several genres (platformers, top-down adventures, breakout), art drawn in code with lighting, custom interfaces and GLSL post-processing, a library of ready-made gameplay blocks, custom TypeScript scripts, enemies, hazards, moving platforms, goals, animated SVG sprites, particles and sound, plus the full agent toolchain including real rendered screenshots, work today. 3D is on the [roadmap](#roadmap).
+> **Status:** early (v0.8). 2D games in several genres (platformers, top-down adventures, breakout) with multiple levels, lives, checkpoints and prefabs, `ludra review` to catch unfinished work, art drawn in code with lighting, custom interfaces and GLSL post-processing, a library of ready-made gameplay blocks, custom TypeScript scripts, enemies, hazards, moving platforms, goals, animated SVG sprites, particles and sound, plus the full agent toolchain including real rendered screenshots, work today. 3D is on the [roadmap](#roadmap).
+
+## The idea
+
+Unity-level games, made by AI, that are actually good. Ludra rests on two promises:
+
+- **No ceiling on creativity.** The agent gets raw power, not a menu of presets: the full Canvas 2D API, GLSL shaders, any font, TypeScript for any mechanic, any genre. The engine never says "that's all you can do".
+- **No slop.** Power alone produces games that look generated: generic, untested, silent, flat. So Ludra gives the agent eyes (simulation, screenshots), proof (deterministic tests), taste (a design guide) and a reviewer that flags unfinished work. The few hard rules guard correctness, never creativity: the simulation is deterministic, drawing can't change the game, and a game isn't done until `check`, `test` and `review` are clean.
 
 ## Why an engine for agents?
 
@@ -38,6 +45,7 @@ When an AI writes a game with a normal engine, it is coding blind. It cannot see
 | To see what happens | `ludra play`: deterministic headless simulation with a timeline, events and an ASCII map of the frame |
 | To see what players see | `ludra play --screenshot 1s,end`: real rendered frames as PNGs that a multimodal agent can look at |
 | To prove a feature works | `ludra test`: scripted inputs plus assertions like `"score == 3"` or `"player.grounded == true at 1s"` |
+| To know when it's finished | `ludra review`: flags what makes a game feel like slop, from untested mechanics to the default HUD |
 | To know the API without guessing | `ludra components`: a reference generated from the engine itself |
 | To hand off to a human | `ludra dev`: the same simulation in the browser with keyboard controls and live reload |
 
@@ -175,6 +183,40 @@ gameplay.test.json
 
 Assertions can check `score`, `deaths`, `won`, event counts (`events.jump`, `events.stomp`, ...) and any entity's `x`, `y`, `vx`, `vy`, `grounded` or `exists`, at the end or `at 1.5s`.
 
+### `ludra review`: is it finished, or just working?
+
+`check` asks "is it valid?", `test` asks "does it work?". `review` asks "would anyone mistake this for a finished game?" It plays every test and reads the scenes and scripts, then flags the signs of slop:
+
+```
+$ ludra review
+Proof: is it shown to work?
+  ✗ [scenes/main.scene.json] scripts/chase.ts (on chaser) has no test that checks what it does.
+    → Add a test that isolates it and asserts its effect: "chaser.state.<key> == ..."
+Feel: does every moment answer the player?
+  ✗ [scenes/main.scene.json] These events happen in play but nothing answers them: collect, die.
+Looks: does it have a style of its own?
+  ✗ [scenes/main.scene.json] It uses the engine's default HUD and end screens.
+  ✗ [scenes/main.scene.json] Behind the game there is only a flat background color.
+  ○ [scenes/main.scene.json] No post-processing.
+
+4 issue(s), 1 idea(s). Fix the issues before calling the game done.
+```
+
+The skill treats issues like failing tests, and every template reviews clean (`--strict` makes issues fail CI).
+
+### Lives, checkpoints, prefabs and levels
+
+```json
+"world": { "lives": 3 },
+"entities": [
+  { "id": "slime-2", "prefab": "slime", "components": { "transform": { "x": 1290, "y": 487 }, "patrol": { "speed": 90 } } },
+  { "id": "lantern", "components": { "transform": { "x": 760, "y": 468 }, "body": { "type": "static", "width": 24, "height": 64, "sensor": true }, "checkpoint": {} } },
+  { "id": "flag", "components": { "goal": { "next": "scenes/level-2.scene.json" }, "...": "..." } }
+]
+```
+
+`slime` comes from `prefabs/slime.prefab.json`, shared by every scene: the entity lists only what differs. Losing every life ends the game (`lost`, `gameover`); a checkpoint moves the respawn point; a goal's `next` (or `world.goto` from a script, e.g. a title screen) moves on to another scene, carrying score and lives. Every scene is checked, and each test can pick its scene. The platformer template is two levels built this way.
+
 ### Blocks: tested pieces, combined with taste
 
 Like a video agent assembling scenes from a library of transitions and titles, a Ludra agent starts from **blocks**: ready-made, tested pieces of gameplay, each with its scripts, SVG art and effects.
@@ -292,7 +334,7 @@ Agents can't use a paint program, so Ludra's art pipeline is text too. Sprites a
 
 No audio files are needed: `jump`, `coin`, `hit`, `explosion`, `powerup`, `blip` and `thud` are synthesized in the browser. Presentation never touches the simulation, so polishing a game can't break its tests, and `ludra check` reports any missing image along with the files that do exist.
 
-## Components (v0.7)
+## Components (v0.8)
 
 | Component | What it does |
 | --- | --- |
@@ -304,7 +346,8 @@ No audio files are needed: `jump`, `coin`, `hit`, `explosion`, `powerup`, `blip`
 | `collectible` | Picked up by the player and adds to the score |
 | `patrol` | Moves a kinematic body back and forth: moving platforms (they carry the player) and walking enemies |
 | `hazard` | Kills the player on touch, who respawns at the start. `stompable` enemies die when landed on |
-| `goal` | Completes the level, optionally only after reaching `requireScore` |
+| `goal` | Completes the level, optionally only after reaching `requireScore`; `next` moves on to another scene |
+| `checkpoint` | Touching it moves the player's respawn point there |
 | `emitter` | Streams particles continuously: sparkles, fire, smoke |
 | `script` | Custom behavior in TypeScript: `start`, `update` and `touch` hooks with `params` |
 | `camera` | The browser camera follows this entity through worlds wider than the window |
@@ -335,10 +378,12 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how it fits together.
 - ~~**v0.5: scripting.** Custom game logic in TypeScript, deterministic and testable.~~ Done.
 - ~~**v0.6: blocks and taste.** `ludra blocks` / `ludra add`, a library of tested gameplay blocks, and a design guide in the skill.~~ Done.
 - ~~**v0.7: genres.** A top-down controller, bounce physics, and templates for top-down adventures and breakout-style games.~~ Done.
-- **v0.8: game structure.** Multiple scenes and level transitions, prefabs, text and UI, lives and checkpoints.
-- **v0.9: worlds.** Tilemaps, camera zones, parallax backgrounds, and a real physics engine (Rapier).
-- **v0.10: shipping.** Export to a single HTML file or a desktop app, touch controls for mobile.
-- **v1.0: 3D.** The same scene format and agent tools on a WebGL renderer with 3D physics.
+- ~~**v0.8: game structure and quality.** `ludra review`, multiple scenes and level transitions, prefabs, lives and checkpoints.~~ Done.
+- **v0.9: physics and worlds.** Rapier as one physics engine for 2D now and 3D later, tilemaps, camera zones, tweened animation.
+- **v0.10: 3D foundations.** 3D transforms and bodies, a Three.js renderer with lights and shadows, cameras, a character controller, and a first 3D template, all through the same check/play/test/review loop and real screenshots.
+- **v0.11: 3D content.** glTF models, free (CC0) model packs as blocks, skeletal animation, procedural geometry and terrain.
+- **v0.12: shipping.** A single-file web build ready for itch.io, touch and gamepad controls, performance budgets in `review`.
+- **v1.0.** 2D and 3D templates side by side, a `make-games` skill, complete docs: an engine where an AI makes games people want to play.
 
 ## Contributing
 

@@ -17,9 +17,10 @@ A top-down game built with Ludra, a game engine designed for AI agents.
 2. Run `npx @ludra/cli check` after every edit. Each problem names the JSON path and a fix.
 3. Run `npx @ludra/cli play --inputs "right:1s, up:0.5s" --ascii` to see what actually happens. Add `--screenshot 0.5s,end` to save real rendered frames to `screenshots/` and look at them.
 4. Write the behavior you want into `tests/*.test.json` and run `npx @ludra/cli test`.
-5. Run `npx @ludra/cli dev` so a human can play it in the browser.
+5. Run `npx @ludra/cli review` and fix every issue it lists: it catches what makes a game feel unfinished (untested mechanics, silent events, the default HUD, flat looks).
+6. Run `npx @ludra/cli dev` so a human can play it in the browser.
 
-Never call a change done until `ludra check` and `ludra test` both pass.
+Never call a change done until `ludra check`, `ludra test` and `ludra review` are all clean.
 
 ## Rules of thumb
 

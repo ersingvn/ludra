@@ -47,6 +47,8 @@ jobs:
             echo "::group::$game"
             npm run -s ludra -- check "$game"
             npm run -s ludra -- test "$game"
+            # Templates are what agents start from, so they must review clean.
+            case "$game" in packages/cli/templates/*) npm run -s ludra -- review --strict "$game" ;; esac
             echo "::endgroup::"
           done
 

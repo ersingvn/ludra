@@ -12,7 +12,7 @@ interface Params {
 /**
  * Rests on the paddle, launches, and keeps a constant speed (bounce: 1 does
  * the reflecting). Falling past the bottom costs a life: the paddle "dies"
- * and the ball goes back onto it.
+ * (a die event, or game over on the last ball) and the ball goes back onto it.
  */
 export default {
   start({ self, world, params }) {
@@ -39,7 +39,6 @@ export default {
     }
 
     if (self.y > world.height + 30) {
-      world.emit("ball-lost");
       world.kill(paddle);
       self.state.stuck = true;
       self.state.launchAt = world.time + launchDelay;

@@ -6,8 +6,8 @@ import { ParticleSystem } from "./particles.ts";
 import { PostFx } from "./postfx.ts";
 import type { DrawContext, DrawEvent, Script } from "./script.ts";
 import { FIXED_DT } from "./time.ts";
-import type { Action, SceneDef } from "./types.ts";
-import { World, type Entity } from "./world.ts";
+import type { Action, PostFxDef, SceneDef } from "./types.ts";
+import { World, type Entity, type GameEvent } from "./world.ts";
 
 const KEYMAP: Record<string, Action> = {
   ArrowLeft: "left",
@@ -36,6 +36,11 @@ export interface GameOptions {
   scriptBase?: string;
   /** Scripts to load. Defaults to those the scene references; include any that `world.spawn` uses. */
   scriptPaths?: readonly string[];
+  /**
+   * Loads another scene by path, for goals with `next` and `world.goto`. Without it the
+   * game stays on its first scene. Throw with a readable message if the scene is invalid.
+   */
+  loadScene?: (path: string) => Promise<SceneDef>;
 }
 
 /** Imports the game's script modules, keyed by their path in the scene. */
@@ -82,76 +87,153 @@ async function loadFonts(scene: SceneDef, assetBase: string): Promise<void> {
   await Promise.race([all, new Promise((resolve) => setTimeout(resolve, 4000))]);
 }
 
-interface Stage {
-  /** Where the game draws. With postfx this is an offscreen canvas. */
-  ctx: CanvasRenderingContext2D;
-  /** The canvas players see. */
-  output: HTMLCanvasElement;
-  images: Map<string, HTMLImageElement>;
-  scripts: Map<string, Script>;
-  /** Shows the drawn frame: runs the postfx shader, or does nothing without one. */
-  present(time: number): void;
-  /** Why postfx couldn't start (the game then runs without it and shows this message). */
-  error?: string;
+/** A scene's postfx shader source, or why it couldn't be fetched. */
+async function loadShader(scene: SceneDef, assetBase: string): Promise<string | Error | undefined> {
+  const path = scene.postfx?.shader;
+  if (!path) return undefined;
+  const response = await fetch(assetBase + path).catch((err: unknown) => err as Error);
+  if (response instanceof Error) return response;
+  return response.ok ? response.text() : new Error(`could not load ${path} (${response.status})`);
 }
 
 /**
- * Loads everything a scene needs and sets up its canvases. With `postfx`, `canvas`
- * becomes the offscreen source and a WebGL canvas takes its place in the page.
+ * The canvas players see. The game always draws into the 2D canvas; when a scene
+ * has `postfx`, a WebGL canvas running its shader takes the 2D canvas's place in
+ * the page, and goes away again for a scene without one.
  */
-async function prepare(canvas: HTMLCanvasElement, scene: SceneDef, options: GameOptions): Promise<Stage> {
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Canvas 2D context is not available.");
+class Screen {
+  readonly ctx: CanvasRenderingContext2D;
+  output: HTMLCanvasElement;
+  private readonly canvas: HTMLCanvasElement;
+  private fx: PostFx | undefined;
+
+  constructor(canvas: HTMLCanvasElement) {
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas 2D context is not available.");
+    this.ctx = ctx;
+    this.canvas = canvas;
+    this.output = canvas;
+  }
+
+  /** Switches to a scene's shader, or to none. Returns why the shader can't run, if it can't. */
+  use(postfx: PostFxDef | undefined, shader: string | Error | undefined): string | undefined {
+    let fx: PostFx | undefined;
+    let error: string | undefined;
+    if (postfx && shader !== undefined) {
+      try {
+        if (shader instanceof Error) throw shader;
+        fx = new PostFx(this.canvas.width, this.canvas.height, shader, postfx);
+      } catch (err) {
+        error = `postfx: ${message(err)}`;
+        console.error("[ludra]", err);
+      }
+    }
+    const target = fx?.canvas ?? this.canvas;
+    if (target !== this.output) {
+      target.id = this.canvas.id;
+      target.className = this.canvas.className;
+      target.style.cssText = this.canvas.style.cssText;
+      this.output.replaceWith(target);
+      this.output = target;
+    }
+    this.fx = fx;
+    return error;
+  }
+
+  /** Shows the frame the game just drew, through the shader if there is one. */
+  present(time: number): void {
+    this.fx?.render(this.canvas, time);
+  }
+}
+
+/** What a scene needs before it can be drawn. */
+async function loadScene(scene: SceneDef, options: GameOptions, scripts: Map<string, Script>) {
   const assetBase = options.assetBase ?? "";
-  const shaderPath = scene.postfx?.shader;
-  const [images, scripts, shader] = await Promise.all([
+  const [images, more, shader] = await Promise.all([
     loadImages(scene, assetBase),
     loadScripts(scene, options),
-    shaderPath
-      ? fetch(assetBase + shaderPath).then(async (r) => (r.ok ? r.text() : new Error(`could not load ${shaderPath} (${r.status})`)))
-      : undefined,
+    loadShader(scene, assetBase),
     loadFonts(scene, assetBase),
   ]);
-  const stage: Stage = { ctx, output: canvas, images, scripts, present: () => {} };
-  if (scene.postfx && shader !== undefined) {
-    try {
-      if (shader instanceof Error) throw shader;
-      const fx = new PostFx(canvas.width, canvas.height, shader, scene.postfx);
-      fx.canvas.id = canvas.id;
-      fx.canvas.className = canvas.className;
-      fx.canvas.style.cssText = canvas.style.cssText;
-      canvas.replaceWith(fx.canvas);
-      stage.output = fx.canvas;
-      stage.present = (time) => fx.render(canvas, time);
-    } catch (err) {
-      stage.error = `postfx: ${message(err)}`;
-      console.error("[ludra]", err);
-    }
-  }
-  return stage;
+  for (const [path, script] of more) scripts.set(path, script);
+  return { images, shader };
 }
 
 function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/** Seconds the win screen shows before the next scene, and the fade into a world.goto scene. */
+const WIN_PAUSE = 1.6;
+const GOTO_FADE = 0.35;
+
 /**
  * Runs a scene in a canvas with keyboard controls, images, particles and
  * sound. The simulation uses the same fixed step as headless runs, so what
  * tests verify is what players get; everything added here is presentation.
+ * With `options.loadScene`, won goals with `next` and `world.goto` move on
+ * to other scenes, keeping score, deaths and lives.
  * Resolves (after images load) to a function that stops the game.
  */
-export async function startGame(canvas: HTMLCanvasElement, scene: SceneDef, options: GameOptions = {}): Promise<() => void> {
-  const { ctx, images, scripts, present, error } = await prepare(canvas, scene, options);
+export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef, options: GameOptions = {}): Promise<() => void> {
+  const screen = new Screen(canvas);
+  const ctx = screen.ctx;
   const sounds = new SoundPlayer(options.assetBase ?? "");
-  const view = new View(scene, images);
+  const scripts = new Map<string, Script>();
 
-  let world = new World(scene, { scripts });
-  let crash: string | undefined = error;
+  type Carry = { score: number; deaths: number; lives: number | undefined };
+  let scene = firstScene;
+  let startCarry: Carry | undefined;
+  let view: View;
+  let world: World;
+  let crash: string | undefined;
+  let sceneError: string | undefined;
+  /** Real time when the world asked to move on, while waiting to load the next scene. */
+  let exitSince: number | undefined;
+  let loading = false;
+
+  const enter = async (next: SceneDef, carry: Carry | undefined) => {
+    const { images, shader } = await loadScene(next, options, scripts);
+    scene = next;
+    startCarry = carry;
+    view = new View(next, images);
+    sceneError = screen.use(next.postfx, shader);
+    crash = sceneError;
+    exitSince = undefined;
+    try {
+      world = new World(next, { scripts, carry });
+    } catch (err) {
+      crash = message(err);
+      world = new World({ ...next, entities: [] });
+    }
+  };
+  await enter(firstScene, undefined);
+
+  // Game over starts the whole game again; otherwise R restarts the current scene as it began.
   const restart = () => {
-    world = new World(scene, { scripts });
+    if (loading) return;
+    if (world.lost && scene !== firstScene) {
+      loading = true;
+      void enter(firstScene, undefined).finally(() => (loading = false));
+      return;
+    }
+    world = new World(scene, { scripts, carry: startCarry });
     view.reset();
-    crash = error;
+    crash = sceneError;
+    exitSince = undefined;
+  };
+
+  const moveOn = (path: string) => {
+    if (!options.loadScene) return;
+    loading = true;
+    const carry = { score: world.score, deaths: world.deaths, lives: world.lives };
+    options
+      .loadScene(path)
+      .then((next) => enter(next, carry))
+      .catch((err: unknown) => {
+        crash = `Could not load the next scene "${path}": ${message(err)}`;
+      })
+      .finally(() => (loading = false));
   };
 
   const held = new Set<Action>();
@@ -185,7 +267,7 @@ export async function startGame(canvas: HTMLCanvasElement, scene: SceneDef, opti
   const frame = (now: number) => {
     accumulator += Math.min(MAX_FRAME_TIME, (now - last) / 1000);
     last = now;
-    while (accumulator >= FIXED_DT && !crash) {
+    while (accumulator >= FIXED_DT && !crash && !loading) {
       try {
         world.step(tapped.size > 0 ? new Set([...held, ...tapped]) : held);
       } catch (err) {
@@ -197,15 +279,30 @@ export async function startGame(canvas: HTMLCanvasElement, scene: SceneDef, opti
       view.step(world, (sound) => sounds.play(sound));
       accumulator -= FIXED_DT;
     }
+
+    // Moving on: let the win screen show, or fade out for a world.goto, then load.
+    let fade = 0;
+    if (world.exit !== undefined && options.loadScene && !crash) {
+      exitSince ??= now;
+      const pause = world.won ? WIN_PAUSE : GOTO_FADE;
+      const elapsed = (now - exitSince) / 1000;
+      fade = Math.min(1, Math.max(0, (elapsed - (pause - GOTO_FADE)) / GOTO_FADE));
+      if (elapsed >= pause && !loading) moveOn(world.exit);
+    }
+
     try {
-      view.draw(ctx, world, sounds.muted);
+      view.draw(ctx, world, sounds.muted, options.loadScene !== undefined);
     } catch (err) {
       // A draw hook threw. Same treatment as a simulation error.
       if (!crash) console.error("[ludra]", err);
       crash ??= message(err);
     }
+    if (fade > 0 || loading) {
+      ctx.fillStyle = `rgba(0, 0, 0, ${loading ? 1 : fade})`;
+      ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    }
     if (crash) drawCrash(ctx, crash);
-    present(world.time);
+    screen.present(world.time);
     raf = requestAnimationFrame(frame);
   };
   raf = requestAnimationFrame(frame);
@@ -239,7 +336,10 @@ export interface CapturedFrame {
  * `ludra play --screenshot`.
  */
 export async function captureFrames(canvas: HTMLCanvasElement, scene: SceneDef, options: CaptureOptions): Promise<CapturedFrame[]> {
-  const { ctx, output, images, scripts, present, error } = await prepare(canvas, scene, options);
+  const screen = new Screen(canvas);
+  const scripts = new Map<string, Script>();
+  const { images, shader } = await loadScene(scene, options, scripts);
+  const error = screen.use(scene.postfx, shader);
   if (error) throw new Error(error);
   const view = new View(scene, images);
   const world = new World(scene, { scripts });
@@ -250,9 +350,9 @@ export async function captureFrames(canvas: HTMLCanvasElement, scene: SceneDef, 
 
   for (let frame = 0; ; frame++) {
     if (wanted.has(frame)) {
-      view.draw(ctx, world, false);
-      present(world.time);
-      captured.push({ frame, time: frame * FIXED_DT, png: output.toDataURL("image/png") });
+      view.draw(screen.ctx, world, false, false);
+      screen.present(world.time);
+      captured.push({ frame, time: frame * FIXED_DT, png: screen.output.toDataURL("image/png") });
     }
     if (frame >= last) break;
     world.step(script.at(frame));
@@ -322,9 +422,15 @@ class View {
   private readonly scene: SceneDef;
   private readonly images: Map<string, HTMLImageElement>;
 
+  /** Whether the scene can award points at all, so the default HUD can leave the score out. */
+  private readonly scoring: boolean;
+
   constructor(scene: SceneDef, images: Map<string, HTMLImageElement>) {
     this.scene = scene;
     this.images = images;
+    this.scoring = scene.entities.some(
+      (e) => e.components.collectible || (e.components.hazard && Number(e.components.hazard.score) > 0) || Number(e.components.goal?.requireScore) > 0,
+    );
   }
 
   reset(): void {
@@ -362,7 +468,8 @@ class View {
     this.shake = this.shake < 0.5 ? 0 : this.shake * SHAKE_DECAY;
   }
 
-  draw(ctx: CanvasRenderingContext2D, world: World, muted: boolean): void {
+  /** `continues`: the host loads next scenes, so a won scene with `next` says so instead of offering a replay. */
+  draw(ctx: CanvasRenderingContext2D, world: World, muted: boolean, continues: boolean): void {
     const { width: viewWidth, height: viewHeight } = ctx.canvas;
     ctx.imageSmoothingEnabled = false;
     ctx.fillStyle = world.background;
@@ -398,25 +505,32 @@ class View {
       return;
     }
 
+    // Only what this scene uses: no "Score 0" in a game without points.
+    const parts: string[] = [];
+    if (world.lives !== undefined) parts.push(`${"♥".repeat(Math.max(0, Math.min(world.lives, 10)))}${world.lives > 10 ? ` ${world.lives}` : ""}`);
+    if (this.scoring || world.score !== 0) parts.push(`Score ${world.score}`);
+    if (world.lives === undefined) parts.push(`Deaths ${world.deaths}`);
     ctx.textAlign = "left";
     ctx.font = "600 18px system-ui, sans-serif";
     ctx.fillStyle = "#ffffff";
-    ctx.fillText(`Score ${world.score}   Deaths ${world.deaths}`, 16, 30);
+    ctx.fillText(parts.join("   "), 16, 30);
     ctx.textAlign = "right";
     ctx.font = "500 13px system-ui, sans-serif";
     ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
     ctx.fillText(`M: sound ${muted ? "off" : "on"} · R: restart`, viewWidth - 16, 28);
 
-    if (world.won) {
+    if (world.won || world.lost) {
       ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
       ctx.fillRect(0, 0, viewWidth, viewHeight);
       ctx.fillStyle = "#ffffff";
       ctx.textAlign = "center";
       ctx.font = "700 44px system-ui, sans-serif";
-      ctx.fillText("Level complete!", viewWidth / 2, viewHeight / 2 - 10);
+      ctx.fillText(world.won ? "Level complete!" : "Game over", viewWidth / 2, viewHeight / 2 - 10);
       ctx.font = "500 18px system-ui, sans-serif";
-      const winTime = world.events.find((e) => e.type === "win")?.time ?? world.time;
-      ctx.fillText(`Score ${world.score} · ${winTime.toFixed(1)}s · Press R to play again`, viewWidth / 2, viewHeight / 2 + 30);
+      const endTime = world.events.find((e) => e.type === "win" || e.type === "gameover")?.time ?? world.time;
+      const next = world.won && world.exit !== undefined && continues ? "Get ready…" : `Press R to ${world.won ? "play again" : "try again"}`;
+      const score = this.scoring || world.score !== 0 ? `Score ${world.score} · ` : "";
+      ctx.fillText(`${score}${endTime.toFixed(1)}s · ${next}`, viewWidth / 2, viewHeight / 2 + 30);
     }
   }
 
@@ -524,7 +638,10 @@ function recentEvents(world: World, name: string | undefined, seconds: number): 
     if (event.time < since) break;
     const eventName = event.type === "custom" ? event.name : event.type;
     if (name !== undefined && eventName !== name) continue;
-    result.push({ name: eventName, time: event.time, x: event.x, y: event.y, entity: event.entity, data: event.type === "custom" ? event.data : undefined });
+    // Custom events carry what the script passed; built-in ones their own details (item, enemy, checkpoint...).
+    const { type: _type, frame: _frame, time, x, y, entity, ...details } = event as GameEvent & { data?: unknown };
+    const data = event.type === "custom" ? event.data : details;
+    result.push({ name: eventName, time, x, y, entity, data });
   }
   return result.reverse();
 }

@@ -30,7 +30,9 @@ export interface ScriptEntity {
 export interface SpawnDef {
   /** Generated when left out. */
   id?: string;
-  components: Record<string, Record<string, unknown>>;
+  /** Start from a prefab; `components` then only needs what differs (usually the transform). */
+  prefab?: string;
+  components?: Record<string, Record<string, unknown>>;
 }
 
 export interface ScriptWorld {
@@ -43,6 +45,12 @@ export interface ScriptWorld {
   readonly deaths: number;
   /** True once the level is complete. */
   readonly won: boolean;
+  /** Lives left, or undefined when the scene has unlimited retries. Writable: an extra life is `world.lives += 1`. */
+  lives: number | undefined;
+  /** True once the game is over (out of lives, or world.lose()). */
+  readonly lost: boolean;
+  /** The scene this one hands over to (a won goal's next, or world.goto), once it does. */
+  readonly exit: string | undefined;
   get(id: string): ScriptEntity | undefined;
   /** Every entity, or only those with the given component. */
   all(component?: string): ScriptEntity[];
@@ -54,6 +62,14 @@ export interface ScriptWorld {
   kill(entity: ScriptEntity | string): void;
   /** Completes the level, like reaching a goal. */
   win(): void;
+  /** Ends the game as lost (a time limit ran out, the base was destroyed...). Fires "gameover". */
+  lose(): void;
+  /**
+   * Moves on to another scene, e.g. world.goto("scenes/level-1.scene.json") from a title
+   * screen. The current scene stops; the browser loads the next one, keeping score,
+   * deaths and lives. Fires "goto" (tests can assert events.goto).
+   */
+  goto(scene: string): void;
   /** Fires a custom event that tests can count (`events.<name>`) and `effects` can react to. */
   emit(name: string, data?: unknown): void;
   /** A number in [0, 1). Seeded by `world.seed`, so runs stay deterministic. Never use Math.random. */
@@ -86,6 +102,7 @@ export interface DrawEvent {
   y: number;
   /** The entity that caused it. */
   entity: string;
+  /** Custom events: what the script passed to world.emit. Built-in ones: their details, e.g. { checkpoint: "lantern" } or { item: "coin-1", score: 1 }. */
   data?: unknown;
 }
 
@@ -167,11 +184,12 @@ export const SCRIPT_API_REFERENCE = `A script file default-exports hooks. Only "
 ctx.self      the entity: id, x, y, vx, vy (read/write); grounded, width, height, exists (read);
               state (object kept between frames, testable as "<id>.state.<key>");
               has("component"), touches(otherOrId)
-ctx.world     time, frame, width, height, deaths, won (read); score (read/write)
+ctx.world     time, frame, width, height, deaths, won, lost, exit (read); score, lives (read/write)
               get(id), all(component?), player()
-              spawn({ id?, components }) -> entity    destroy(entityOrId)
+              spawn({ id?, prefab?, components? }) -> entity    destroy(entityOrId)
               kill(entityOrId)  players respawn, others are destroyed
-              win()             completes the level
+              win()             completes the level        lose()   game over
+              goto(scenePath)   moves on to another scene (title -> level 1, a door to the next room)
               emit(name, data?) custom event: counted by "events.<name>" in tests, usable as an effects key
               random()          deterministic, seeded by world.seed. Never use Math.random or Date
 ctx.input     held(action), pressed(action)   actions: left right up down jump action

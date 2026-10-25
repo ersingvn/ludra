@@ -2,7 +2,7 @@ export type Action = "left" | "right" | "up" | "down" | "jump" | "action";
 
 export const ACTIONS: readonly Action[] = ["left", "right", "up", "down", "jump", "action"];
 
-export const EVENT_TYPES = ["jump", "land", "collect", "die", "stomp", "win", "bounce"] as const;
+export const EVENT_TYPES = ["jump", "land", "collect", "die", "stomp", "win", "bounce", "checkpoint", "gameover", "goto"] as const;
 export type GameEventType = (typeof EVENT_TYPES)[number];
 
 /** What happens visually and audibly when a game event fires. See `EFFECT_FIELDS`. */
@@ -22,6 +22,8 @@ export interface PostFxDef {
 /** An entity as written in a scene file. */
 export interface EntityDef {
   id: string;
+  /** Name of a prefab to start from. Gone after validation: its components are merged in. */
+  prefab?: string;
   components: Record<string, Record<string, unknown>>;
 }
 
@@ -34,6 +36,14 @@ export interface WorldSettings {
   background?: string;
   /** Seed for `world.random()` in scripts. Defaults to 1. */
   seed?: number;
+  /** Lives before game over. Leave out for unlimited retries. */
+  lives?: number;
+}
+
+/** A reusable entity template: `prefabs/<name>.prefab.json` or the scene's `prefabs` map. */
+export interface PrefabDef {
+  description?: string;
+  components: Record<string, Record<string, unknown>>;
 }
 
 /** A scene file (`*.scene.json`). */
@@ -52,6 +62,12 @@ export interface SceneDef {
   fonts?: Record<string, string>;
   /** A GLSL fragment shader applied to every rendered frame. Presentation only. */
   postfx?: PostFxDef;
+  /**
+   * Entity templates by name. Entities use one with `"prefab": "<name>"` and override
+   * components; scripts spawn them with `world.spawn({ prefab: "<name>" })`. The CLI
+   * adds every `prefabs/*.prefab.json` file here.
+   */
+  prefabs?: Record<string, PrefabDef>;
   entities: EntityDef[];
 }
 

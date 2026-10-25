@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
@@ -79,28 +79,90 @@ describe("ludra CLI", () => {
     const scenePath = join(game, "scenes", "main.scene.json");
     const original = readFileSync(scenePath, "utf8");
     const scene = JSON.parse(original);
-    scene.entities[0].components.sprite.image = "assets/hero.svg";
+    const player = scene.entities.findIndex((e: { id: string }) => e.id === "player");
+    scene.entities[player].components.sprite.image = "assets/hero.svg";
     writeFileSync(scenePath, JSON.stringify(scene));
 
     const { code, out } = ludra("check", game, "--json");
     writeFileSync(scenePath, original);
     assert.equal(code, 1);
     const missing = JSON.parse(out).diagnostics.find((d: { code: string }) => d.code === "E_ASSET_MISSING");
-    assert.equal(missing.path, "entities[0].components.sprite.image");
+    assert.equal(missing.path, `entities[${player}].components.sprite.image`);
     assert.match(missing.fix, /assets\/player\.svg/);
   });
 
   test("check fails with a fix for a broken scene", () => {
     const scenePath = join(game, "scenes", "main.scene.json");
-    const scene = JSON.parse(readFileSync(scenePath, "utf8"));
-    scene.entities[0].components.platfromer = scene.entities[0].components.platformer;
-    delete scene.entities[0].components.platformer;
+    const original = readFileSync(scenePath, "utf8");
+    const scene = JSON.parse(original);
+    const player = scene.entities.find((e: { id: string }) => e.id === "player");
+    player.components.platfromer = player.components.platformer;
+    delete player.components.platformer;
     writeFileSync(scenePath, JSON.stringify(scene));
 
     const { code, out } = ludra("check", game, "--json");
+    writeFileSync(scenePath, original);
     assert.equal(code, 1);
     const report = JSON.parse(out);
     assert.equal(report.diagnostics[0].code, "E_UNKNOWN_COMPONENT");
     assert.match(report.diagnostics[0].fix, /platformer/);
+  });
+});
+
+describe("ludra review", () => {
+  test("a new game has nothing that marks it as unfinished", () => {
+    const { code, out } = ludra("review", game, "--json", "--strict");
+    assert.equal(code, 0, out);
+    const report = JSON.parse(out);
+    assert.equal(report.issues, 0, out);
+  });
+
+  test("flags the signs of a slop game, and --strict fails on them", () => {
+    const bare = join(workDir, "bare");
+    mkdirSync(join(bare, "scenes"), { recursive: true });
+    writeFileSync(join(bare, "ludra.json"), JSON.stringify({ name: "Bare" }));
+    writeFileSync(
+      join(bare, "scenes", "main.scene.json"),
+      JSON.stringify({
+        entities: [
+          { id: "player", components: { transform: { x: 100, y: 482 }, body: { type: "dynamic", width: 28, height: 36 }, platformer: {}, sprite: { color: "#fff" } } },
+          { id: "ground", components: { transform: { x: 480, y: 520 }, body: { type: "static", width: 960, height: 40 }, sprite: { color: "#345" } } },
+        ],
+      }),
+    );
+    const { code, out } = ludra("review", bare, "--json", "--strict");
+    assert.equal(code, 1);
+    const codes = (JSON.parse(out).findings as { code: string }[]).map((f) => f.code);
+    for (const expected of ["R_NO_TESTS", "R_DEFAULT_HUD", "R_FLAT_BACKDROP", "R_PLAIN_SHAPES", "R_NO_POSTFX", "R_UNNAMED_SCENE"]) {
+      assert.ok(codes.includes(expected), `${expected} in ${codes.join(", ")}`);
+    }
+    assert.equal(ludra("review", bare).code, 0, "without --strict, review only advises");
+  });
+});
+
+describe("multiple scenes", () => {
+  test("check validates every scene, and play can pick one", () => {
+    const report = JSON.parse(ludra("check", game, "--json").out);
+    assert.deepEqual(
+      report.scenes.map((s: { file: string }) => s.file),
+      ["scenes/main.scene.json", "scenes/level-2.scene.json"],
+    );
+    const { code, out } = ludra("play", game, "--scene", "scenes/level-2.scene.json", "--inputs", "right:1s", "--json");
+    assert.equal(code, 0, out);
+    assert.equal(JSON.parse(out).final.score, 1, "picked up level 2's first coin");
+  });
+
+  test("a broken second scene fails check, with its own file name", () => {
+    const path = join(game, "scenes", "level-2.scene.json");
+    const original = readFileSync(path, "utf8");
+    try {
+      writeFileSync(path, original.replace('"prefab": "slime"', '"prefab": "slim"'));
+      const { code, out } = ludra("check", game);
+      assert.equal(code, 1);
+      assert.match(out, /level-2\.scene\.json/);
+      assert.match(out, /Did you mean "slime"/);
+    } finally {
+      writeFileSync(path, original);
+    }
   });
 });

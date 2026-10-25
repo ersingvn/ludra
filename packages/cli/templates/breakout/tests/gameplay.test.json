@@ -19,7 +19,7 @@
     {
       "name": "missing the ball costs a life and puts the ball back on the paddle",
       "duration": "3s",
-      "assert": ["events.ball-lost == 1", "deaths == 1", "ball.state.stuck == true"]
+      "assert": ["events.die == 1", "lives == 2", "ball.state.stuck == true"]
     },
     {
       "name": "the wall can be cleared without losing a life",

@@ -1,0 +1,413 @@
+{
+  "name": "Moonlit Cliffs",
+  "world": {
+    "width": 1600,
+    "height": 540,
+    "gravity": 1800,
+    "background": "#1a1035",
+    "lives": 3
+  },
+  "fonts": {
+    "Fredoka": "google"
+  },
+  "postfx": {
+    "shader": "shaders/glow.frag",
+    "uniforms": {
+      "bloom": 1.3,
+      "warmth": 0.7,
+      "vignette": 1
+    }
+  },
+  "effects": {
+    "jump": {
+      "sound": "jump",
+      "particles": {
+        "count": 6,
+        "color": "#cfd8ff",
+        "speed": 60,
+        "direction": 90,
+        "spread": 150,
+        "life": 0.25,
+        "size": 3,
+        "gravity": 0
+      }
+    },
+    "land": {
+      "sound": "thud",
+      "particles": {
+        "count": 5,
+        "color": "#cfd8ff",
+        "speed": 50,
+        "direction": -90,
+        "spread": 160,
+        "life": 0.2,
+        "size": 2,
+        "gravity": 300
+      }
+    },
+    "collect": {
+      "sound": "coin",
+      "particles": {
+        "count": 14,
+        "color": "#ffd166",
+        "speed": 140,
+        "life": 0.45,
+        "size": 3,
+        "gravity": 200
+      }
+    },
+    "stomp": {
+      "sound": "hit",
+      "shake": 5,
+      "particles": {
+        "count": 18,
+        "color": "#c77dff",
+        "speed": 180,
+        "life": 0.5,
+        "size": 4
+      }
+    },
+    "die": {
+      "sound": "explosion",
+      "shake": 10,
+      "particles": {
+        "count": 30,
+        "color": "#ff5d73",
+        "speed": 220,
+        "life": 0.7,
+        "size": 4
+      }
+    },
+    "win": {
+      "sound": "powerup",
+      "shake": 3,
+      "particles": {
+        "count": 60,
+        "color": "#4cc9f0",
+        "speed": 260,
+        "life": 1.2,
+        "size": 4,
+        "gravity": 150
+      }
+    },
+    "checkpoint": {
+      "sound": "powerup",
+      "particles": {
+        "count": 24,
+        "color": "#ffd166",
+        "speed": 120,
+        "life": 0.7,
+        "size": 3,
+        "gravity": -60
+      }
+    },
+    "gameover": {
+      "sound": "explosion",
+      "shake": 12
+    }
+  },
+  "entities": [
+    {
+      "id": "sky",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": 0
+        },
+        "script": {
+          "src": "scripts/backdrop.ts",
+          "params": {
+            "sky": [
+              "#140a2e",
+              "#3d2a63"
+            ],
+            "hills": [
+              "#3a2866",
+              "#251944"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "player",
+      "components": {
+        "transform": {
+          "x": 60,
+          "y": 482
+        },
+        "body": {
+          "type": "dynamic",
+          "width": 28,
+          "height": 36
+        },
+        "sprite": {
+          "color": "#7cf29c",
+          "image": "assets/player.svg",
+          "frameWidth": 28,
+          "frameHeight": 36,
+          "idle": "0",
+          "run": "1-2",
+          "jump": "3",
+          "fall": "4",
+          "fps": 10,
+          "layer": 3
+        },
+        "platformer": {
+          "speed": 240,
+          "jumpSpeed": 680
+        },
+        "camera": {}
+      }
+    },
+    {
+      "id": "ground-a",
+      "components": {
+        "transform": {
+          "x": 300,
+          "y": 520
+        },
+        "body": {
+          "type": "static",
+          "width": 600,
+          "height": 40
+        },
+        "sprite": {
+          "color": "#3b4766",
+          "image": "assets/ground.svg",
+          "tile": true
+        }
+      }
+    },
+    {
+      "id": "ground-b",
+      "components": {
+        "transform": {
+          "x": 910,
+          "y": 520
+        },
+        "body": {
+          "type": "static",
+          "width": 380,
+          "height": 40
+        },
+        "sprite": {
+          "color": "#3b4766",
+          "image": "assets/ground.svg",
+          "tile": true
+        }
+      }
+    },
+    {
+      "id": "ground-c",
+      "components": {
+        "transform": {
+          "x": 1390,
+          "y": 520
+        },
+        "body": {
+          "type": "static",
+          "width": 420,
+          "height": 40
+        },
+        "sprite": {
+          "color": "#3b4766",
+          "image": "assets/ground.svg",
+          "tile": true
+        }
+      }
+    },
+    {
+      "id": "wall-left",
+      "components": {
+        "transform": {
+          "x": -10,
+          "y": 270
+        },
+        "body": {
+          "type": "static",
+          "width": 20,
+          "height": 540
+        }
+      }
+    },
+    {
+      "id": "wall-right",
+      "components": {
+        "transform": {
+          "x": 1610,
+          "y": 270
+        },
+        "body": {
+          "type": "static",
+          "width": 20,
+          "height": 540
+        }
+      }
+    },
+    {
+      "id": "coin-1",
+      "prefab": "coin",
+      "components": {
+        "transform": {
+          "x": 250,
+          "y": 470
+        }
+      }
+    },
+    {
+      "id": "slime-1",
+      "prefab": "slime",
+      "components": {
+        "transform": {
+          "x": 380,
+          "y": 487
+        },
+        "patrol": {
+          "distance": 150,
+          "speed": 80
+        }
+      }
+    },
+    {
+      "id": "lantern",
+      "components": {
+        "transform": {
+          "x": 760,
+          "y": 468
+        },
+        "body": {
+          "type": "static",
+          "width": 24,
+          "height": 64,
+          "sensor": true
+        },
+        "sprite": {
+          "color": "#6b4f3a",
+          "image": "assets/lantern.svg",
+          "layer": 1
+        },
+        "checkpoint": {},
+        "script": {
+          "src": "scripts/lantern.ts"
+        }
+      }
+    },
+    {
+      "id": "ledge",
+      "components": {
+        "transform": {
+          "x": 930,
+          "y": 400
+        },
+        "body": {
+          "type": "static",
+          "width": 140,
+          "height": 20
+        },
+        "sprite": {
+          "color": "#56658f",
+          "image": "assets/platform.svg",
+          "tile": true
+        }
+      }
+    },
+    {
+      "id": "coin-2",
+      "prefab": "coin",
+      "components": {
+        "transform": {
+          "x": 930,
+          "y": 360
+        }
+      }
+    },
+    {
+      "id": "coin-3",
+      "prefab": "coin",
+      "components": {
+        "transform": {
+          "x": 1170,
+          "y": 410
+        }
+      }
+    },
+    {
+      "id": "slime-2",
+      "prefab": "slime",
+      "components": {
+        "transform": {
+          "x": 1290,
+          "y": 487
+        },
+        "patrol": {
+          "distance": 160,
+          "speed": 90
+        }
+      }
+    },
+    {
+      "id": "coin-4",
+      "prefab": "coin",
+      "components": {
+        "transform": {
+          "x": 1500,
+          "y": 470
+        }
+      }
+    },
+    {
+      "id": "flag",
+      "components": {
+        "transform": {
+          "x": 1560,
+          "y": 460
+        },
+        "body": {
+          "type": "static",
+          "width": 24,
+          "height": 80,
+          "sensor": true
+        },
+        "sprite": {
+          "color": "#4cc9f0",
+          "image": "assets/flag.svg",
+          "frameWidth": 24,
+          "idle": "0-1",
+          "fps": 3,
+          "flip": false,
+          "layer": 1
+        },
+        "emitter": {
+          "rate": 6,
+          "color": "#fff3b0",
+          "speed": 30,
+          "spread": 70,
+          "life": 1.2,
+          "size": 3,
+          "gravity": -20
+        },
+        "goal": {
+          "requireScore": 4
+        }
+      }
+    },
+    {
+      "id": "hud",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": 0
+        },
+        "script": {
+          "src": "scripts/hud.ts",
+          "params": {
+            "title": "Moonlit Cliffs",
+            "level": 2,
+            "lives": 3
+          }
+        }
+      }
+    }
+  ]
+}

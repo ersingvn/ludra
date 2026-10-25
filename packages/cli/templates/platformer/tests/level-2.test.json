@@ -1,0 +1,49 @@
+{
+  "tests": [
+    {
+      "name": "level 2 starts from the coin and slime prefabs",
+      "scene": "scenes/level-2.scene.json",
+      "inputs": "right:1s",
+      "assert": [
+        "coin-1.exists == false",
+        "score == 1",
+        "slime-1.x > 380"
+      ]
+    },
+    {
+      "name": "the first slime can be stomped across a wide window",
+      "scene": "scenes/level-2.scene.json",
+      "inputs": "right:1s, wait:0.6s, right+jump:0.45s, right:0.5s",
+      "assert": [
+        "events.stomp == 1",
+        "slime-1.exists == false",
+        "deaths == 0"
+      ]
+    },
+    {
+      "name": "after the lantern, a fall respawns the player there",
+      "scene": "scenes/level-2.scene.json",
+      "inputs": "right:1s, wait:0.73s, right+jump:0.45s, right:0.7s, wait:0.1s, right+jump:0.45s, right:0.3s, wait:0.1s, right:1.8s",
+      "duration": "7s",
+      "assert": [
+        "events.checkpoint == 1",
+        "deaths == 1",
+        "lives == 2",
+        "player.x == 760",
+        "player.grounded == true"
+      ]
+    },
+    {
+      "name": "Moonlit Cliffs can be completed without dying",
+      "scene": "scenes/level-2.scene.json",
+      "inputs": "right:1s, wait:0.73s, right+jump:0.45s, right:0.7s, wait:0.1s, right+jump:0.45s, right:0.3s, wait:0.1s, right+jump:0.45s, right:0.2s, wait:0.1s, right:0.3s, right+jump:0.45s, right:0.5s, wait:1.5s, right+jump:0.45s, right:1.5s",
+      "assert": [
+        "won == true",
+        "deaths == 0",
+        "score == 6",
+        "events.stomp == 2",
+        "events.checkpoint == 1"
+      ]
+    }
+  ]
+}

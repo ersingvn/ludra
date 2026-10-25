@@ -1,0 +1,9 @@
+{
+  "description": "A purple slime that walks back and forth; stomp it for a point. Override patrol to change its range and pace.",
+  "components": {
+    "body": { "type": "kinematic", "width": 32, "height": 26, "sensor": true },
+    "sprite": { "color": "#c77dff", "image": "assets/slime.svg", "frameWidth": 32, "idle": "0", "run": "0-1", "fps": 4, "layer": 2 },
+    "patrol": { "axis": "x", "distance": 200, "speed": 70 },
+    "hazard": { "stompable": true, "score": 1 }
+  }
+}

@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { runTest, type TestCase, type TestResult } from "@ludra/core";
 import { paint } from "../format.ts";
-import { loadProject, requireGame } from "../project.ts";
+import { loadProject, requireGame, type Game } from "../project.ts";
 
 interface FileResult {
   file: string;
@@ -10,9 +10,16 @@ interface FileResult {
   tests: TestResult[];
 }
 
+/** Runs every tests/*.test.json case against its scene (the entry scene unless the case names one). */
 export async function test(dir: string, options: { json?: boolean }): Promise<number> {
   const project = loadProject(dir);
-  const { scene, scripts } = await requireGame(project);
+  // Each test runs its own scene ("scene" in the test case), loaded once.
+  const games = new Map<string, Game>([[project.entryLabel, await requireGame(project)]]);
+  const gameFor = async (scene: string | undefined) => {
+    const key = scene ?? project.entryLabel;
+    if (!games.has(key)) games.set(key, await requireGame(project, key));
+    return games.get(key)!;
+  };
   const testsDir = join(project.dir, "tests");
   const files = existsSync(testsDir) ? readdirSync(testsDir).filter((f) => f.endsWith(".test.json")).sort() : [];
 
@@ -23,17 +30,24 @@ export async function test(dir: string, options: { json?: boolean }): Promise<nu
     return 1;
   }
 
-  const results: FileResult[] = files.map((file) => {
+  const results: FileResult[] = [];
+  for (const file of files) {
     let cases: TestCase[];
     try {
       const parsed = JSON.parse(readFileSync(join(testsDir, file), "utf8"));
       cases = parsed.tests;
       if (!Array.isArray(cases)) throw new Error('expected { "tests": [...] }');
     } catch (err) {
-      return { file, error: (err as Error).message, tests: [] };
+      results.push({ file, error: (err as Error).message, tests: [] });
+      continue;
     }
-    return { file, tests: cases.map((c) => runTest(scene, c, { scripts })) };
-  });
+    const tests: TestResult[] = [];
+    for (const c of cases) {
+      const { scene, scripts } = await gameFor(c.scene);
+      tests.push(runTest(scene, c, { scripts }));
+    }
+    results.push({ file, tests });
+  }
 
   const all = results.flatMap((r) => r.tests);
   const failed = all.filter((t) => !t.pass).length + results.filter((r) => r.error).length;

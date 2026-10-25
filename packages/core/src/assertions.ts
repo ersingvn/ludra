@@ -10,7 +10,7 @@ type Operator = (typeof OPERATORS)[number];
 const ENTITY_FIELDS = ["x", "y", "vx", "vy", "grounded", "exists"] as const;
 type EntityField = (typeof ENTITY_FIELDS)[number];
 
-const WORLD_FIELDS = ["score", "deaths", "won"] as const;
+const WORLD_FIELDS = ["score", "deaths", "won", "lost", "lives"] as const;
 type WorldField = (typeof WORLD_FIELDS)[number];
 
 type Subject =
@@ -100,6 +100,9 @@ export function evaluateAssertion(assertion: Assertion, snapshot: WorldSnapshot,
     case "world":
       actual = snapshot[subject.field];
       label = subject.field;
+      if (actual === undefined) {
+        return { source, pass: false, actual, time, message: `${label} is not set: the scene has unlimited retries. Add "lives" to "world" to count them.` };
+      }
       break;
     case "events": {
       const matches = (e: GameEvent) => (subject.builtin ? e.type === subject.name : e.type === "custom" && e.name === subject.name);
@@ -184,6 +187,8 @@ function round(n: number): number {
 /** One case in a `tests/*.test.json` file. */
 export interface TestCase {
   name: string;
+  /** Scene to run, relative to the project. Defaults to the entry scene in ludra.json. */
+  scene?: string;
   /** Input script, see `InputScript`. */
   inputs?: string;
   /** Run length, e.g. "3s". Defaults to the inputs plus one second, or the latest `at`. */
@@ -197,6 +202,8 @@ export interface TestResult {
   duration: number;
   results: AssertionResult[];
   error?: string;
+  /** Names of the events that fired during the run (built-in types and custom names). */
+  events: string[];
 }
 
 export function runTest(scene: SceneDef, test: TestCase, options: WorldOptions = {}): TestResult {
@@ -215,7 +222,7 @@ export function runTest(scene: SceneDef, test: TestCase, options: WorldOptions =
         ? secondsToFrames(typeof test.duration === "number" ? test.duration : parseDuration(test.duration))
         : Math.max(secondsToFrames(defaultDuration(script)), latestAt);
   } catch (err) {
-    return { name: test.name, pass: false, duration: 0, results: [], error: (err as Error).message };
+    return { name: test.name, pass: false, duration: 0, results: [], error: (err as Error).message, events: [] };
   }
 
   const wanted = new Set(assertions.map((a) => (a.at === "end" ? frames : Math.min(a.at, frames))));
@@ -228,12 +235,13 @@ export function runTest(scene: SceneDef, test: TestCase, options: WorldOptions =
     });
   } catch (err) {
     // A throwing script fails this test, not the whole run.
-    return { name: test.name, pass: false, duration: frames * FIXED_DT, results: [], error: (err as Error).message };
+    return { name: test.name, pass: false, duration: frames * FIXED_DT, results: [], error: (err as Error).message, events: [] };
   }
 
   const results = assertions.map((a) => {
     const frame = a.at === "end" ? frames : Math.min(a.at, frames);
     return evaluateAssertion(a, snapshots.get(frame)!, world.events);
   });
-  return { name: test.name, pass: results.every((r) => r.pass), duration: frames * FIXED_DT, results };
+  const events = [...new Set(world.events.map((e) => (e.type === "custom" ? e.name : e.type)))];
+  return { name: test.name, pass: results.every((r) => r.pass), duration: frames * FIXED_DT, results, events };
 }
