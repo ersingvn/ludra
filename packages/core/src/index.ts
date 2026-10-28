@@ -15,6 +15,8 @@ export * from "./physics.ts";
 export { ArcadePhysics } from "./arcade.ts";
 export * from "./engines.ts";
 export * from "./simulate.ts";
+export { fuzz, type FuzzFinding, type FuzzOptions, type FuzzResult } from "./fuzz.ts";
+export { measureWindows, solve, type SolveOptions, type SolveResult, type TimingWindow } from "./solve.ts";
 export * from "./assertions.ts";
 export * from "./ascii.ts";
 export * from "./drawcheck.ts";

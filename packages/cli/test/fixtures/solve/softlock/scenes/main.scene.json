@@ -1,0 +1,111 @@
+{
+  "name": "softlock",
+  "world": {
+    "width": 900,
+    "height": 800,
+    "gravity": 1800
+  },
+  "entities": [
+    {
+      "id": "player",
+      "components": {
+        "transform": {
+          "x": 80,
+          "y": 482
+        },
+        "body": {
+          "type": "dynamic",
+          "width": 28,
+          "height": 36
+        },
+        "platformer": {}
+      }
+    },
+    {
+      "id": "ground-start",
+      "components": {
+        "transform": {
+          "x": 150,
+          "y": 650
+        },
+        "body": {
+          "type": "static",
+          "width": 300,
+          "height": 300
+        }
+      }
+    },
+    {
+      "id": "pit-floor",
+      "components": {
+        "transform": {
+          "x": 360,
+          "y": 760
+        },
+        "body": {
+          "type": "static",
+          "width": 120,
+          "height": 80
+        }
+      }
+    },
+    {
+      "id": "ground-end",
+      "components": {
+        "transform": {
+          "x": 660,
+          "y": 650
+        },
+        "body": {
+          "type": "static",
+          "width": 480,
+          "height": 300
+        }
+      }
+    },
+    {
+      "id": "goal",
+      "components": {
+        "transform": {
+          "x": 820,
+          "y": 460
+        },
+        "body": {
+          "type": "static",
+          "width": 40,
+          "height": 80,
+          "sensor": true
+        },
+        "goal": {}
+      }
+    },
+    {
+      "id": "wall-left",
+      "components": {
+        "transform": {
+          "x": -10,
+          "y": 400
+        },
+        "body": {
+          "type": "static",
+          "width": 20,
+          "height": 800
+        }
+      }
+    },
+    {
+      "id": "wall-right",
+      "components": {
+        "transform": {
+          "x": 910,
+          "y": 400
+        },
+        "body": {
+          "type": "static",
+          "width": 20,
+          "height": 800
+        }
+      }
+    }
+  ]
+}

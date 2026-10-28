@@ -19,6 +19,13 @@ export class ArcadePhysics implements PhysicsEngine {
 
   remove(): void {}
 
+  /** Arcade keeps everything on the entities, so there is nothing of its own to save. */
+  save(): null {
+    return null;
+  }
+
+  restore(): void {}
+
   step(host: PhysicsHost): void {
     // Kinematic bodies move first, so anything standing on them can follow.
     const moved = new Map<Entity, { dx: number; dy: number }>();

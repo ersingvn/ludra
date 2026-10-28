@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="80" height="20" viewBox="0 0 80 20">
+  <!-- Spritesheet: 4 frames of 20x20, a spinning temple coin stamped with a sun. -->
+  <g>
+    <circle cx="10" cy="10" r="9" fill="#c9871f"/>
+    <circle cx="10" cy="10" r="7.2" fill="#ffcf4a"/>
+    <circle cx="10" cy="10" r="3" fill="#e89b25"/>
+    <path d="M10 2.8 v2 M10 15.2 v2 M2.8 10 h2 M15.2 10 h2 M4.9 4.9 l1.4 1.4 M13.7 13.7 l1.4 1.4 M4.9 15.1 l1.4 -1.4 M13.7 6.3 l1.4 -1.4" stroke="#e89b25" stroke-width="1.4" stroke-linecap="round"/>
+    <circle cx="7" cy="6.2" r="1.4" fill="#fff4c2"/>
+  </g>
+  <g transform="translate(20 0)">
+    <ellipse cx="10" cy="10" rx="6.4" ry="9" fill="#c9871f"/>
+    <ellipse cx="10" cy="10" rx="5" ry="7.2" fill="#ffcf4a"/>
+    <ellipse cx="10" cy="10" rx="2.1" ry="3" fill="#e89b25"/>
+  </g>
+  <g transform="translate(40 0)">
+    <ellipse cx="10" cy="10" rx="2" ry="9" fill="#c9871f"/>
+    <rect x="9.4" y="2" width="1.2" height="16" fill="#ffcf4a"/>
+  </g>
+  <g transform="translate(60 0)">
+    <ellipse cx="10" cy="10" rx="6.4" ry="9" fill="#c9871f"/>
+    <ellipse cx="10" cy="10" rx="5" ry="7.2" fill="#f2b83a"/>
+    <ellipse cx="10" cy="10" rx="2.1" ry="3" fill="#e89b25"/>
+  </g>
+</svg>

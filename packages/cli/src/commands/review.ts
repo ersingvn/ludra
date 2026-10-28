@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
-import { isSoundPreset, runTest, type SceneDef, type Script, type TestCase, type TestResult } from "@ludra/core";
+import { fuzz, InputScript, isSoundPreset, measureWindows, runTest, World, type SceneDef, type Script, type TestCase, type TestResult } from "@ludra/core";
 import { paint } from "../format.ts";
 import { listScenes, loadGame, loadProject, type Game, type Project } from "../project.ts";
 
@@ -11,7 +11,7 @@ import { listScenes, loadGame, loadProject, type Game, type Project } from "../p
  * game is called done; ideas are worth considering.
  */
 
-type Area = "proof" | "feel" | "looks" | "identity";
+type Area = "proof" | "fair" | "feel" | "looks" | "identity";
 type Level = "issue" | "idea";
 
 export interface Finding {
@@ -26,6 +26,7 @@ export interface Finding {
 
 const AREAS: Record<Area, string> = {
   proof: "Proof: is it shown to work?",
+  fair: "Fair: can a person beat it, and can it never trap them?",
   feel: "Feel: does every moment answer the player?",
   looks: "Looks: does it have a style of its own?",
   identity: "Identity: is it a game, or a project folder?",
@@ -39,9 +40,11 @@ interface SceneInfo {
   label: string;
   game: Game;
   results: TestResult[];
+  /** The test case behind each result. */
+  cases: TestCase[];
 }
 
-export async function review(dir: string, options: { json?: boolean; strict?: boolean }): Promise<number> {
+export async function review(dir: string, options: { json?: boolean; strict?: boolean; fast?: boolean }): Promise<number> {
   const project = loadProject(dir);
   const findings: Finding[] = [];
   const add = (level: Level, area: Area, code: string, where: string, message: string, fix: string) =>
@@ -56,14 +59,16 @@ export async function review(dir: string, options: { json?: boolean; strict?: bo
       add("issue", "proof", "R_CHECK_FAILS", label, `The scene has ${errors} error(s), so it can't be reviewed.`, "Run `ludra check` and fix them first.");
       continue;
     }
-    scenes.push({ label, game, results: [] });
+    scenes.push({ label, game, results: [], cases: [] });
   }
 
   const tests = readTests(project);
   for (const problem of tests.problems) add("issue", "proof", "R_TESTS_UNREADABLE", problem.file, problem.message, "Fix the JSON in that test file.");
   for (const c of tests.cases) {
     const scene = scenes.find((s) => s.label === (c.scene ?? project.entryLabel));
-    if (scene) scene.results.push(runTest(scene.game.scene, c, { scripts: scene.game.scripts }));
+    if (!scene) continue;
+    scene.results.push(runTest(scene.game.scene, c, { scripts: scene.game.scripts }));
+    scene.cases.push(c);
   }
 
   if (tests.cases.length === 0) {
@@ -76,6 +81,7 @@ export async function review(dir: string, options: { json?: boolean; strict?: bo
 
   for (const scene of scenes) {
     reviewScene(project, scene, tests.cases.length > 0, add);
+    reviewFairness(scene, add, !options.fast);
   }
 
   // Identity.
@@ -165,7 +171,50 @@ function reviewScene(project: Project, info: SceneInfo, hasTests: boolean, add: 
   }
 }
 
-type Add = (severity: "issue" | "idea", area: "proof" | "feel" | "looks" | "identity", code: string, where: string, message: string, fix: string) => void;
+/** Seconds of random play per scene, looking for crashes and softlocks. */
+const FUZZ_SECONDS = 4;
+
+/**
+ * Fair: the win test's route, press by press, must leave a person room to be a little early or
+ * late; random play must never crash a script or trap the player where it can neither win nor die.
+ */
+function reviewFairness(info: SceneInfo, add: Add, play: boolean): void {
+  const { label, game, results, cases } = info;
+  const make = () => new World(game.scene, { scripts: game.scripts });
+  const route = results.findIndex((r) => r.pass && r.results.some((a) => /^won == true\b/.test(a.source.replace(/\s+/g, " "))));
+  const inputs = route >= 0 ? cases[route]?.inputs : undefined;
+  if (inputs) {
+    const script = InputScript.parse(inputs);
+    const frames = Array.from({ length: script.totalFrames }, (_, f) => script.at(f));
+    const windows = measureWindows(make, frames, (w) => w.won);
+    const at = (frame: number) => `${(frame / 60).toFixed(2)}s`;
+    const exact = windows.filter((w) => w.width <= 2);
+    if (exact.length > 0) {
+      add("issue", "fair", "R_FRAME_PERFECT", label, `In "${results[route]!.name}", ${list(exact.map((w) => `the ${w.action} at ${at(w.frame)} (${w.width} frame${w.width === 1 ? "" : "s"})`))} must be pressed on the exact frame: no person can.`, "Give the move room: a shorter gap, a wider ledge, coyote time, a slower hazard. Run `ludra solve` to see whether another route is easier.");
+    }
+    const tight = windows.filter((w) => w.width > 2 && w.width <= 6);
+    if (tight.length > 0) {
+      add("idea", "fair", "R_TIGHT_TIMING", label, `In "${results[route]!.name}", ${list(tight.map((w) => `the ${w.action} at ${at(w.frame)} (${w.width} frames)`))} only work${tight.length === 1 ? "s" : ""} within 0.1 s.`, "Fine for a hard moment, unfair early on. Widen it where the level is meant to be easy.");
+    }
+  }
+  if (!play) return;
+  let result;
+  try {
+    const until = Date.now() + FUZZ_SECONDS * 1000;
+    result = fuzz(make, { sessions: 200, seconds: 30, deadline: () => Date.now() > until });
+  } catch {
+    return; // no player: nothing to play
+  }
+  for (const crash of result.crashes) {
+    add("issue", "proof", "R_CRASH", label, `Random play crashes a script: ${crash.message}`, `Reproduce it with ludra play --inputs "${crash.inputs}" and fix the script.`);
+  }
+  for (const trap of result.softlocks) {
+    const where = `(${trap.x}, ${trap.y}${trap.z !== undefined ? `, ${trap.z}` : ""})`;
+    add("issue", "fair", "R_SOFTLOCK", label, `The player can get stuck at ${where}: from there the game can't be won, and nothing kills them.`, `See it with ludra play --inputs "${trap.inputs}" --screenshot end. Give a way out (a ladder, a spring, a lower ledge) or make it cost a life (a hazard, a fall limit).`);
+  }
+}
+
+type Add = (severity: "issue" | "idea", area: Area, code: string, where: string, message: string, fix: string) => void;
 
 /** 2D: a painted backdrop, and art instead of flat colored shapes. */
 function review2DLooks(scene: SceneDef, hooksOf: (src: string) => (keyof Script)[], label: string, add: Add): void {

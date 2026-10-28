@@ -1,5 +1,5 @@
 {
-  "name": "key-quest",
+  "name": "Key Quest",
   "entry": "scenes/main.scene.json",
   "window": { "width": 960, "height": 540 }
 }

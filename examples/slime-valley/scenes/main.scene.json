@@ -1,15 +1,22 @@
 {
-  "name": "Level 1",
-  "world": { "width": 1920, "height": 540, "gravity": 1800, "background": "#1b2140" },
+  "name": "Slime Valley",
+  "world": { "width": 1920, "height": 540, "gravity": 1800, "background": "#bfe6ff" },
   "effects": {
-    "jump": { "sound": "jump", "particles": { "count": 6, "color": "#cfd8ff", "speed": 60, "direction": 90, "spread": 150, "life": 0.25, "size": 3, "gravity": 0 } },
-    "land": { "sound": "thud", "particles": { "count": 5, "color": "#cfd8ff", "speed": 50, "direction": -90, "spread": 160, "life": 0.2, "size": 2, "gravity": 300 } },
-    "collect": { "sound": "coin", "particles": { "count": 14, "color": "#ffd166", "speed": 140, "life": 0.45, "size": 3, "gravity": 200 } },
-    "stomp": { "sound": "hit", "shake": 5, "particles": { "count": 18, "color": "#c77dff", "speed": 180, "life": 0.5, "size": 4 } },
-    "die": { "sound": "explosion", "shake": 10, "particles": { "count": 30, "color": "#ff5d73", "speed": 220, "life": 0.7, "size": 4 } },
-    "win": { "sound": "powerup", "shake": 3, "particles": { "count": 60, "color": "#4cc9f0", "speed": 260, "life": 1.2, "size": 4, "gravity": 150 } }
+    "jump": { "sound": "hop", "particles": { "count": 6, "color": "#8fd19e", "speed": 60, "direction": 90, "spread": 150, "life": 0.25, "size": 3, "gravity": 0 } },
+    "land": { "sound": "squelch", "particles": { "count": 5, "color": "#8fd19e", "speed": 50, "direction": -90, "spread": 160, "life": 0.2, "size": 2, "gravity": 300 } },
+    "collect": { "sound": "chime", "particles": { "count": 14, "color": "#ffd166", "speed": 140, "life": 0.45, "size": 3, "gravity": 200 } },
+    "stomp": { "sound": "splat", "shake": 5, "particles": { "count": 18, "color": "#c77dff", "speed": 180, "life": 0.5, "size": 4 } },
+    "die": { "sound": "ouch", "shake": 10, "particles": { "count": 30, "color": "#ff5d73", "speed": 220, "life": 0.7, "size": 4 } },
+    "win": { "sound": "fanfare", "shake": 3, "particles": { "count": 60, "color": "#4cc9f0", "speed": 260, "life": 1.2, "size": 4, "gravity": 150 } }
   },
   "entities": [
+    {
+      "id": "valley",
+      "components": {
+        "transform": { "x": 0, "y": 0 },
+        "script": { "src": "scripts/valley.ts" }
+      }
+    },
     {
       "id": "player",
       "components": {
@@ -149,6 +156,78 @@
         "emitter": { "rate": 6, "color": "#fff3b0", "speed": 30, "spread": 70, "life": 1.2, "size": 3, "gravity": -20 },
         "goal": { "requireScore": 4 }
       }
+    },
+    {
+      "id": "hud",
+      "components": {
+        "transform": { "x": 0, "y": 0 },
+        "script": { "src": "scripts/hud.ts", "params": { "coins": 3 } }
+      }
     }
-  ]
+  ],
+  "fonts": { "Chewy": "google" },
+  "sounds": {
+    "hop": {
+      "tones": [
+        { "wave": "sine", "from": 300, "to": 620, "duration": 0.12, "volume": 0.18 },
+        { "wave": "triangle", "from": 600, "to": 1240, "start": 0.02, "duration": 0.08, "volume": 0.05 }
+      ],
+      "vary": 0.08
+    },
+    "squelch": {
+      "tones": [{ "wave": "sine", "from": 150, "to": 70, "duration": 0.09, "volume": 0.18 }],
+      "noise": [{ "filter": "lowpass", "from": 1400, "to": 300, "duration": 0.08, "volume": 0.07 }],
+      "vary": 0.15
+    },
+    "splat": {
+      "tones": [
+        { "wave": "sine", "from": 420, "to": 90, "duration": 0.25, "volume": 0.2 },
+        { "wave": "triangle", "from": 220, "to": 330, "start": 0.05, "duration": 0.12, "volume": 0.06 }
+      ],
+      "noise": [{ "filter": "bandpass", "from": 900, "to": 200, "duration": 0.22, "volume": 0.12 }],
+      "vary": 0.1
+    },
+    "ouch": {
+      "tones": [
+        { "wave": "triangle", "from": 520, "to": 180, "duration": 0.35, "volume": 0.16 },
+        { "wave": "sine", "from": 130, "to": 60, "start": 0.1, "duration": 0.4, "volume": 0.18 }
+      ],
+      "noise": [{ "filter": "lowpass", "from": 800, "to": 120, "duration": 0.35, "volume": 0.1 }]
+    },
+    "fanfare": {
+      "tones": [
+        { "wave": "triangle", "from": 523, "duration": 0.14, "volume": 0.12 },
+        { "wave": "triangle", "from": 659, "start": 0.14, "duration": 0.14, "volume": 0.12 },
+        { "wave": "triangle", "from": 784, "start": 0.28, "duration": 0.14, "volume": 0.12 },
+        { "wave": "triangle", "from": 1047, "start": 0.42, "duration": 0.6, "volume": 0.14 },
+        { "wave": "sine", "from": 523, "start": 0.42, "duration": 0.7, "volume": 0.08 }
+      ]
+    },
+    "chime": {
+      "tones": [
+        { "wave": "square", "from": 988, "duration": 0.07, "volume": 0.06 },
+        { "wave": "square", "from": 1319, "start": 0.07, "duration": 0.22, "volume": 0.06 },
+        { "wave": "sine", "from": 2637, "start": 0.07, "duration": 0.3, "volume": 0.04 }
+      ],
+      "vary": 0.03
+    }
+  },
+  "music": {
+    "tempo": 120,
+    "steps": 2,
+    "volume": 0.55,
+    "tracks": [
+      { "wave": "triangle", "volume": 0.13, "decay": 0.6, "notes": "C5 - E5 G5 | A5 ~ G5 - | E5 - D5 C5 | D5 ~ ~ - | C5 - E5 G5 | A5 ~ C6 - | G5 E5 D5 E5 | C5 ~ ~ -" },
+      { "wave": "sine", "volume": 0.22, "decay": 0.5, "notes": "C3 - G2 - | F2 - C3 - | A2 - E2 - | G2 - D3 - | C3 - G2 - | F2 - A2 - | G2 - G2 - | C3 - G2 -" },
+      {
+        "wave": "square",
+        "volume": 0.03,
+        "filter": 1600,
+        "decay": 0.3,
+        "notes": "- C4+E4+G4 - C4+E4+G4 | - C4+F4+A4 - C4+F4+A4 | - C4+E4+A4 - C4+E4+A4 | - B3+D4+G4 - B3+D4+G4 | - C4+E4+G4 - C4+E4+G4 | - C4+F4+A4 - C4+F4+A4 | - B3+D4+G4 - B3+D4+G4 | - C4+E4+G4 - C4+E4+G4"
+      },
+      { "wave": "noise", "filter": 150, "volume": 0.25, "decay": 0.4, "notes": "X - - - x - - -" },
+      { "wave": "noise", "filter": 8000, "volume": 0.035, "decay": 0.15, "notes": "- x - x - x - x" }
+    ]
+  }
 }

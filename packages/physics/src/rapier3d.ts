@@ -7,6 +7,7 @@ import RAPIER, {
   type World as RapierWorld,
 } from "@dimforge/rapier3d-deterministic-compat";
 import { dmath, FIXED_DT, registerPhysics, type Body, type Entity, type PhysicsEngine, type PhysicsHost, type PhysicsSettings, type RayHit, type RayOptions } from "@ludra/core";
+import { restoreLinks, saveEngine, type SavedEngine } from "./saving.ts";
 
 /**
  * Ludra's 3D worlds use Rapier's own conventions: metres, +y up, right-handed (+z toward
@@ -82,7 +83,7 @@ export function loadRapier3DPhysics(): Promise<void> {
   return loading;
 }
 
-const cleanup = new FinalizationRegistry<RapierWorld>((world) => world.free());
+const cleanup = new FinalizationRegistry<{ world: RapierWorld }>((box) => box.world.free());
 
 /** Degrees (applied y, then x, then z) to a quaternion. */
 export function quaternionFromDegrees(x: number, y: number, z: number): Quat {
@@ -148,7 +149,9 @@ const sameQuat = (a: Quat, b: Quat) => a.x === b.x && a.y === b.y && a.z === b.z
  */
 export class Rapier3DPhysics implements PhysicsEngine {
   readonly name = "rapier3d";
-  readonly world: RapierWorld;
+  /** Replaced when a saved state is restored. */
+  world: RapierWorld;
+  private readonly box: { world: RapierWorld };
   private readonly events = new RAPIER.EventQueue(true);
   private readonly links = new Map<Entity, Link>();
   private readonly byCollider = new Map<number, Link>();
@@ -157,7 +160,8 @@ export class Rapier3DPhysics implements PhysicsEngine {
   constructor(settings: PhysicsSettings) {
     this.world = new RAPIER.World({ x: 0, y: -settings.gravity, z: 0 });
     this.world.timestep = FIXED_DT;
-    cleanup.register(this, this.world);
+    this.box = { world: this.world };
+    cleanup.register(this, this.box);
   }
 
   add(entity: Entity): void {
@@ -209,6 +213,26 @@ export class Rapier3DPhysics implements PhysicsEngine {
     entity.joints?.forEach((_, index) => this.pendingJoints.push({ entity, index }));
     this.links.set(entity, link);
     this.byCollider.set(collider.handle, link);
+  }
+
+  save(): SavedEngine {
+    return saveEngine(this.world.takeSnapshot(), this.links.values(), this.pendingJoints);
+  }
+
+  restore(state: unknown, host: PhysicsHost): void {
+    const saved = state as SavedEngine;
+    const old = this.world;
+    this.world = RAPIER.World.restoreSnapshot(saved.snapshot);
+    this.box.world = this.world;
+    old.free();
+    const { links, pendingJoints } = restoreLinks<RigidBody, Collider, ImpulseJoint, Link>(saved, host.entities, this.world, (entity) => this.createController(entity));
+    this.links.clear();
+    this.byCollider.clear();
+    for (const link of links) {
+      this.links.set(link.entity, link);
+      this.byCollider.set(link.collider.handle, link);
+    }
+    this.pendingJoints = pendingJoints;
   }
 
   remove(entity: Entity): void {

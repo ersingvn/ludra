@@ -1,0 +1,20 @@
+{
+  "tests": [
+    {
+      "name": "three running jumps reach the goal",
+      "inputs": "up:0.3s, up+jump:0.5s, up:1s, up+jump:0.5s, up:1s, up+jump:0.5s, up:3s",
+      "assert": [
+        "won == true",
+        "deaths == 0"
+      ]
+    },
+    {
+      "name": "walking without jumping falls into the void",
+      "inputs": "up:3s",
+      "assert": [
+        "won == false",
+        "deaths >= 1"
+      ]
+    }
+  ]
+}
