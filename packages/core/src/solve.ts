@@ -341,16 +341,43 @@ export function measureWindows(make: () => World, frames: readonly ReadonlySet<A
   if (presses.length === 0) return [];
   const base = make();
   const canSave = base.canSave;
-  // A save every 10 frames along the solution.
-  const saves = new Map<number, WorldSave>();
-  if (canSave) {
-    for (let f = 0; f <= frames.length; f++) {
-      if (f % 10 === 0) saves.set(f, base.save());
-      if (f < frames.length) base.step(frames[f]!);
-    }
-  }
+  const playerId = findPlayer(base)?.id;
   const limit = frames.length + 3 * FPS;
-  const wins = (variant: readonly ReadonlySet<Action>[], from: number): boolean => {
+
+  // The run as it is: a save every 10 frames, and where the player landed and what it picked up.
+  const saves = new Map<number, WorldSave>();
+  const landings: { frame: number; on: string | undefined; y: number }[] = [];
+  const pickups: { frame: number; item: string }[] = [];
+  let wonAt = Infinity;
+  for (let f = 0; f < limit && !base.over; f++) {
+    if (canSave && f % 10 === 0) saves.set(f, base.save());
+    const seen = base.events.length;
+    base.step(frames[f] ?? NOTHING);
+    for (const event of base.events.slice(seen)) {
+      if (event.type === "land" && event.entity === playerId) {
+        const p = base.get(playerId)!;
+        landings.push({ frame: base.frame, on: p.body?.standingOn?.id, y: p.transform.y });
+      }
+      if (event.type === "collect" && event.entity === playerId) pickups.push({ frame: base.frame, item: event.item });
+    }
+    if (isGoal(base)) wonAt = base.frame;
+  }
+
+  /**
+   * What a press achieved, judged the way a person would: a jump worked if it lands on the same
+   * thing, picking up the same things on the way, without dying. Being a frame off shouldn't count
+   * against a press just because the rest of a recorded route no longer lines up: a person adjusts.
+   * A press whose run reaches the goal before landing is judged by the goal.
+   */
+  const outcome = (press: { frame: number; end: number }) => {
+    const landing = landings.find((l) => l.frame > press.frame + 1);
+    if (!landing || landing.frame >= wonAt) return undefined;
+    const items = pickups.filter((p) => p.frame > press.frame && p.frame <= landing.frame).map((p) => p.item);
+    return { landing, items };
+  };
+
+  const succeeds = (variant: readonly ReadonlySet<Action>[], from: number, press: { frame: number; end: number }, by: number): boolean => {
+    const goal = outcome(press);
     let world: World;
     let start = 0;
     if (canSave) {
@@ -360,14 +387,31 @@ export function measureWindows(make: () => World, frames: readonly ReadonlySet<A
     } else {
       world = make();
     }
-    for (let f = start; f < limit; f++) {
+    const deaths = world.deaths;
+    const until = goal ? goal.landing.frame + FPS : limit;
+    const wanted = new Set(goal?.items);
+    for (let f = start; f < until; f++) {
+      const seen = world.events.length;
       world.step(variant[f] ?? NOTHING);
       if (isGoal(world)) return true;
-      if (world.lost || (!allowDeaths && world.deaths > startDeaths)) return false;
+      if (world.lost || (!allowDeaths && world.deaths > Math.max(deaths, startDeaths))) return false;
+      if (!goal || world.frame <= press.frame + by + 1) continue;
+      for (const event of world.events.slice(seen)) {
+        if (event.type === "collect" && event.entity === playerId) wanted.delete(event.item);
+        if (event.type === "land" && event.entity === playerId) {
+          const p = world.get(playerId!)!;
+          // The same thing, or (when either stood on an edge the ground probe missed) the same height.
+          const on = p.body?.standingOn?.id;
+          const same = on !== undefined && goal.landing.on !== undefined ? on === goal.landing.on : Math.abs(p.transform.y - goal.landing.y) < (p.body?.height ?? 0) / 4;
+          return wanted.size === 0 && same;
+        }
+      }
     }
     return false;
   };
-  return presses.map(({ frame, action, end }) => {
+
+  return presses.map((press) => {
+    const { frame, action, end } = press;
     // This press moved by `by` frames; every other press stays where it was.
     const shifted = (by: number) => {
       const variant = frames.map((set, f) => {
@@ -379,9 +423,9 @@ export function measureWindows(make: () => World, frames: readonly ReadonlySet<A
       return variant;
     };
     let early = 0;
-    while (early < WINDOW_REACH && frame - early - 1 >= 0 && wins(shifted(-(early + 1)), frame - early - 1)) early++;
+    while (early < WINDOW_REACH && frame - early - 1 >= 0 && succeeds(shifted(-(early + 1)), frame - early - 1, press, -(early + 1))) early++;
     let late = 0;
-    while (late < WINDOW_REACH && wins(shifted(late + 1), frame)) late++;
+    while (late < WINDOW_REACH && succeeds(shifted(late + 1), frame, press, late + 1)) late++;
     return { frame, action, early, late, width: early + late + 1 };
   });
 }
