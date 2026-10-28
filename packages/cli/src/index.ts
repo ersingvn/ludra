@@ -9,6 +9,7 @@ import { create } from "./commands/new.ts";
 import { play } from "./commands/play.ts";
 import { test } from "./commands/test.ts";
 import { review } from "./commands/review.ts";
+import { solve } from "./commands/solve.ts";
 import { paint } from "./format.ts";
 import { CliError } from "./project.ts";
 
@@ -38,6 +39,14 @@ Usage
       --out screenshots                        Folder for screenshots, relative to the project (default: screenshots)
       --json                                   Machine-readable output
   ludra test [folder] [--json]                 Run tests/*.test.json (a test can pick its "scene")
+  ludra solve [folder] [options]               Search the inputs for a way to win; exit 1 when none is found
+      --scene scenes/level-2.scene.json        Scene to solve (default: the entry scene)
+      --goal "player.x > 900"                  What counts as done, as a test assertion (default: won == true)
+      --time 30s                               How long to search (default: 30s; 2m for minutes)
+      --budget 2000000                         Most frames to simulate
+      --allow-deaths                           Accept routes that cost a life
+      --seed 1                                 Seed for the search's own choices
+      --json                                   Machine-readable output
   ludra review [folder] [--json] [--strict]    Find what makes a game feel unfinished: untested mechanics,
                                                silent events, default HUD, flat looks (--strict: exit 1 on issues)
   ludra components [name] [--json]             Reference for every component and field
@@ -73,6 +82,11 @@ async function main(argv: string[]): Promise<number> {
       id: { type: "string" },
       force: { type: "boolean" },
       strict: { type: "boolean" },
+      time: { type: "string" },
+      budget: { type: "string" },
+      "allow-deaths": { type: "boolean" },
+      seed: { type: "string" },
+      goal: { type: "string" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -91,6 +105,8 @@ async function main(argv: string[]): Promise<number> {
       return play(target ?? ".", values);
     case "test":
       return test(target ?? ".", values);
+    case "solve":
+      return solve(target ?? ".", values);
     case "review":
       return review(target ?? ".", values);
     case "components":
