@@ -99,17 +99,21 @@ function format(info: Inspection): string {
     `${paint("bold", info.file)}  ${info.format === "glb" ? "glTF binary" : "glTF"}, ${size}${info.generator ? paint("dim", `, made by ${info.generator}`) : ""}`,
     row("size", `${fixed(w, 2)} × ${fixed(h, 2)} × ${fixed(d, 2)} m ${paint("dim", "(x × y × z)")}`),
     row("bounds", `min ${point(info.bounds.min)}  max ${point(info.bounds.max)}`),
-    row("geometry", `${info.meshes} meshes, ${info.primitives} primitives, ${info.vertices} vertices, ${info.triangles} triangles`),
+    row("geometry", `${count(info.meshes, "mesh", "meshes")}, ${count(info.primitives, "primitive")}, ${count(info.vertices, "vertex", "vertices")}, ${count(info.triangles, "triangle")}`),
     row("materials", info.materials.length ? info.materials.join(", ") : paint("dim", "none")),
     row("textures", `${info.textures}${info.images.length ? ` (${info.images.length} images, ${info.images.filter((i) => i.embedded).length} embedded)` : ""}`),
     row("skins", info.skins.length ? info.skins.map((s) => `${s.name ?? "skin"}: ${s.joints} bones`).join(", ") : paint("dim", "none")),
     row("animations", info.animations.length ? "" : paint("dim", "none")),
   ];
-  for (const a of info.animations) lines.push(`    ${pad(a.name, 24)} ${fixed(a.duration, 2)}s ${paint("dim", `${a.channels} channels`)}`);
+  for (const a of info.animations) lines.push(`    ${pad(a.name, 24)} ${fixed(a.duration, 2)}s ${paint("dim", count(a.channels, "channel"))}`);
   if (info.extensionsRequired.length) lines.push(row("requires", paint("yellow", info.extensionsRequired.join(", "))));
   if (info.externalFiles.length) lines.push(row("files", info.externalFiles.map((f) => (info.missingFiles.includes(f) ? paint("red", `${f} (missing)`) : f)).join(", ")));
   if (info.hints.length) lines.push("", ...info.hints.map((h) => `${paint("cyan", "hint:")} ${h}`));
   return lines.join("\n");
+}
+
+function count(n: number, one: string, many = `${one}s`): string {
+  return `${n} ${n === 1 ? one : many}`;
 }
 
 /** Width and height from a PNG, JPEG, GIF or WebP header. */
