@@ -34,6 +34,16 @@ Unity-level games, made by AI, that are actually good. Ludra rests on two promis
 - **No ceiling on creativity.** The agent gets raw power, not a menu of presets: the full Canvas 2D API, GLSL shaders, any font, TypeScript for any mechanic, any genre. The engine never says "that's all you can do".
 - **No slop.** Power alone produces games that look generated: generic, untested, silent, flat. So Ludra gives the agent eyes (simulation, screenshots), proof (deterministic tests), taste (a design guide) and a reviewer that flags unfinished work. The few hard rules guard correctness, never creativity: the simulation is deterministic, drawing can't change the game, and a game isn't done until `check`, `test` and `review` are clean.
 
+What that means for every feature:
+
+1. **Raw power, thin layer.** Three.js, Rapier, Web Audio, GLSL and Canvas are fully open to scripts. Ludra adds what an agent can't build alone (the loop below) and stays out of the way of everything else.
+2. **Starting points are source, not boxes.** Templates, blocks and examples are copied into the project as files the agent reads and rewrites. Nothing ships as a preset the agent can only configure.
+3. **Eyes.** Anything a human would check by looking, an agent can check from text or a real rendered frame.
+4. **Proof.** The engine, not the agent, does the searching: whether a level can be won, how tight its timing is, what breaks under random play.
+5. **Taste.** `review` judges feel, not only completeness, against what the game is meant to be.
+6. **Agent-shaped interface.** Plain JSON, short outputs, `--json` everywhere, docs queryable from the CLI, and every error with a fix that can be applied without guessing.
+7. **Any asset, readable.** Models, images and sounds can come from anywhere; the engine describes them to the agent (size, bones, animations, length) so it never uses one blind.
+
 ## Why an engine for agents?
 
 When an AI writes a game with a normal engine, it is coding blind. It cannot see the screen, cannot press keys, and does not find out that the player falls through the floor until a human tries it. Ludra closes that loop:
@@ -452,9 +462,12 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how it fits together.
 - ~~**v0.8: game structure and quality.** `ludra review`, multiple scenes and level transitions, prefabs, lives and checkpoints.~~ Done.
 - ~~**v0.9: physics, sound and worlds.** Rapier as one physics engine for 2D now and 3D later, a game's own synthesized sounds and music with the full Web Audio API in scripts, tilemaps, camera zones, tweened animation. See [`examples/clockwork-keep`](examples/clockwork-keep).~~ Done.
 - ~~**v0.91: 3D foundations.** 3D transforms and bodies on Rapier 3D, a Three.js renderer with lights and shadows, cameras, a character controller, scripts with the raw Three.js and Rapier APIs, and a first 3D template, all through the same check/play/test/review loop and real screenshots.~~ Done.
-- **v0.92: 3D content.** glTF models, free (CC0) model packs as blocks, skeletal animation, procedural geometry and terrain.
-- **v0.93: shipping.** A single-file web build ready for itch.io, touch and gamepad controls, performance budgets in `review`.
-- **v1.0.** 2D and 3D templates side by side, a `make-games` skill, complete docs: an engine where an AI makes games people want to play.
+- **v0.92: 3D content.** Any glTF model from anywhere (made by hand, generated, downloaded), `ludra inspect` to read a model, image or sound as text before using it, skeletal animation on the simulation clock, physics colliders from any geometry (trimesh, convex hull, heightfield), so procedural geometry and terrain are just code. See [`examples/moonlit-shrine`](examples/moonlit-shrine).
+- **v0.93: proof at scale.** `ludra solve` searches inputs for a way to win (is the level beatable, what is the shortest route, how wide is each timing window), `ludra fuzz` runs thousands of random sessions to find softlocks, falls through the floor and crashes, and `review` reports difficulty from both.
+- **v0.94: sharper eyes and taste.** Contact sheets (many frames in one image), visual diffs between versions, a free debug camera and a top-down map in 3D, readability checks on frames, and a `game.md` of design intent that `review` measures the game against.
+- **v0.95: humans in the loop.** Record a person's session in `ludra dev`, let them mark moments ("too hard", "boring here"), and turn any recording into a test with one command, so the agent sees exactly what the player felt.
+- **v0.96: shipping.** A single-file web build ready for itch.io, touch and gamepad controls, performance budgets in `review`.
+- **v1.0.** Any genre in 2D or 3D, as far as the agent wants to take it, with a `make-games` skill and complete docs: an engine where an AI makes games people want to play.
 
 ## Contributing
 
