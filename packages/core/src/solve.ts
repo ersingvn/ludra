@@ -30,6 +30,11 @@ export interface SolveOptions {
   seed?: number;
   /** Measure how far each jump's timing can move and still win. Default true. */
   windows?: boolean;
+  /** Stop at the first win: no faster route, no simplifying, no windows. For "can it still be won from here?". */
+  quick?: boolean;
+  /** Filled with every place the search reached, as "x,y,z" cells of `placeSize` (fuzz uses it to know a trap's extent). */
+  places?: Set<string>;
+  placeSize?: number;
 }
 
 export interface TimingWindow {
@@ -39,7 +44,7 @@ export interface TimingWindow {
   /** How many frames earlier and later the press still wins. */
   early: number;
   late: number;
-  /** early + late + 1, in frames. Below 6 (0.1 s) is tight for a person. */
+  /** early + late + 1, in frames. 6 (0.1 s) or fewer is tight for a person. */
   width: number;
 }
 
@@ -56,7 +61,7 @@ export interface SolveResult {
   cells: number;
   /** How the search went back in time: "save" (World.save) or "replay" (from frame 0). */
   method: "save" | "replay";
-  /** The closest the player came to a goal, when there is one. */
+  /** The closest the player came to a goal standing on something (or at all, if it never stood), when there is one. */
   closest?: { frame: number; distance: number; x: number; y: number; z?: number; inputs: string };
   /** Timing windows of each press in the solution (jumps and actions). */
   windows?: TimingWindow[];
@@ -109,17 +114,24 @@ export function solve(make: () => World, options: SolveOptions = {}): SolveResul
 
   const cells = new Map<string, Cell>();
   let closest: Cell | undefined;
-  const enter = (path: [number, number][]): Cell | undefined => {
+  let closestGrounded = false;
+  /** Records where the player is now. True only for a place never reached before (a faster way to a known one is kept, but isn't new). */
+  const enter = (path: [number, number][]): boolean => {
     const p = world.get(playerId);
-    if (!p) return undefined;
+    if (!p) return false;
     const key = cellKey(world, p, quantum);
     const distance = goalDistance(world, p);
     const known = cells.get(key);
-    if (known && known.frame <= world.frame) return undefined;
+    if (known && known.frame <= world.frame) return false;
     const cell: Cell = { key, frame: world.frame, path: path.slice(), save: method === "save" ? world.save() : undefined, chosen: known?.chosen ?? 0, distance };
     cells.set(key, cell);
-    if (!closest || distance < closest.distance) closest = cell;
-    return cell;
+    if (options.places) options.places.add(placeKey(p, options.placeSize ?? quantum));
+    const grounded = !!p.body?.grounded;
+    if (!closest || (grounded && !closestGrounded) || (grounded === closestGrounded && distance < closest.distance)) {
+      closest = cell;
+      closestGrounded = grounded;
+    }
+    return !known;
   };
   /** Puts the world back at a cell: restore its save, or replay its path on a fresh world. */
   const goTo = (cell: Cell) => {
@@ -154,7 +166,7 @@ export function solve(make: () => World, options: SolveOptions = {}): SolveResul
         if (isGoal(world)) {
           extend(path, choice, f + 1);
           if (!win || world.frame < win.frame) {
-            if (!win) refineUntil = explored + Math.max(REFINE_MIN, explored);
+            if (!win) refineUntil = options.quick ? explored : explored + Math.max(REFINE_MIN, explored);
             win = { path, frame: world.frame };
           }
           break explore;
@@ -175,6 +187,11 @@ export function solve(make: () => World, options: SolveOptions = {}): SolveResul
     result.closest = { frame: closest.frame, distance: round(closest.distance), x: round(p.transform.x), y: round(p.transform.y), ...(world.dimensions === 3 ? { z: round(p.transform.z) } : {}), inputs: format(closest.path, choices) };
   }
   if (!win) return result;
+  if (options.quick) {
+    result.inputs = format(win.path, choices);
+    result.frame = win.frame;
+    return result;
+  }
 
   const lost = (w: World) => w.lost || (!options.allowDeaths && w.deaths > startDeaths);
   const simple = simplify(make, win.path, sets, isGoal, lost, win.frame);
@@ -371,12 +388,12 @@ export function measureWindows(make: () => World, frames: readonly ReadonlySet<A
 
 const NOTHING: ReadonlySet<Action> = new Set();
 
-function findPlayer(world: World): Entity | undefined {
+export function findPlayer(world: World): Entity | undefined {
   return world.entities.find((e) => e.platformer || e.character || (e.topdown && e.body?.type !== "static"));
 }
 
 /** What a player can do at once, by how it is controlled. */
-function defaultChoices(player: Entity): Action[][] {
+export function defaultChoices(player: Entity): Action[][] {
   if (player.platformer) return [[], ["right"], ["left"], ["jump"], ["right", "jump"], ["left", "jump"]];
   const moves: Action[][] = [[], ["up"], ["down"], ["left"], ["right"], ["up", "left"], ["up", "right"], ["down", "left"], ["down", "right"]];
   if (player.character) return [...moves, ...moves.map((m) => [...m, "jump" as Action])];
@@ -456,7 +473,7 @@ function pick(cells: Cell[], startDistance: number, random: () => number): Cell 
 }
 
 /** Adds frames to a path. Steps are replaced, never changed: cells share them. */
-function extend(path: [number, number][], choice: number, frames: number): void {
+export function extend(path: [number, number][], choice: number, frames: number): void {
   const last = path[path.length - 1];
   if (last && last[0] === choice) path[path.length - 1] = [choice, last[1] + frames];
   else path.push([choice, frames]);
@@ -479,7 +496,7 @@ export function format(path: [number, number][], choices: readonly (readonly Act
     .join(", ");
 }
 
-function mulberry32(seed: number): () => number {
+export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) >>> 0;
@@ -498,4 +515,9 @@ function hash(text: string): string {
 
 function round(v: number): number {
   return Math.round(v * 100) / 100;
+}
+
+/** A place as "x,y,z" cells of `size`. */
+export function placeKey(p: Entity, size: number): string {
+  return `${Math.floor(p.transform.x / size)},${Math.floor(p.transform.y / size)},${Math.floor(p.transform.z / size)}`;
 }
