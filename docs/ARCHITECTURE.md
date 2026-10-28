@@ -65,6 +65,18 @@ The `sound` hook runs in `startGame`'s frame loop after the simulation steps, on
 
 The CLI is a thin layer over core: project loading (`ludra.json`), output formatting (`--json` everywhere), templates and the dev server. `ludra check` adds file-system checks core can't do, such as `E_ASSET_MISSING`.
 
+`gltf.ts` reads .glb and .gltf files without dependencies:
+- `readModel` gives a `ModelSummary`: bounds through the node transforms, triangles, materials, skins, clips with durations, required extensions and external files.
+- `readModelGeometry` gives every triangle in scene-root space. It follows `byteStride`, normalized integers, `data:` URIs and external `.bin` files, and refuses Draco and meshopt with the extension's name.
+
+`ludra inspect` (`commands/inspect.ts`) prints that summary with a ready `"mesh"` line, and also reads image sizes from headers and WAV durations. `readScene` uses the same reader for model diagnostics. It caches each model by path, mtime and size, and reports:
+- `E_MODEL_INVALID`: the file can't be read.
+- `E_MODEL_FILE_MISSING`: a `.bin` or texture isn't next to the `.gltf`.
+- `E_MODEL_ANIMATION`: a clip name the model lacks, with a did-you-mean and the real list.
+- `W_MODEL_EXTENSION`: a required extension the renderer can't load.
+
+Prefab meshes are checked once, on the prefab.
+
 `server.ts` serves a project to a browser: the engine's browser module (type-stripped on the fly when running from source; no bundler), the validated scene, and only media files from the project. `ludra dev` puts a game page in front of it and reloads when the scene or any asset changes.
 
 ### Review
@@ -122,6 +134,31 @@ Players with `character` move through Rapier's character controller. Gravity app
 ### Rendering (`packages/three`)
 
 `startGame` and `captureFrames` ask `options.loadRenderer3D` for a `Renderer3D` when a scene is 3D. `ThreeRenderer` keeps a Three.js object per entity with a `mesh` or `light`, syncs transforms each frame, and moves a camera rig (follow, orbit, first person, fixed) once per simulation step. The sun's shadow area follows the rig's focus. Its WebGL canvas is copied into the game's 2D canvas (`preserveDrawingBuffer`), where the View draws the HUD and `drawUI` hooks and the postfx shader runs, so screenshots need nothing new. Render hooks run right before each frame through `World.callRenderHook`, with the same read-only guard as draw hooks. `ctx.addon` imports from `three/addons/` (mapped by the dev server's import map), and `settle()` lets screenshots wait for those imports.
+
+### Models
+
+`mesh.model` names a glTF file. `ThreeRenderer` loads every model the scene and its prefabs name before the first frame (so screenshots are complete), with `GLTFLoader` plus the Draco and meshopt decoders from three's addons. A model a spawned entity names later draws as an empty stand-in until it loads. A file that fails to load falls back to the mesh's shape, with one console warning.
+
+Each entity gets its own copy, made with `SkeletonUtils.clone` so skinned meshes keep their bones:
+1. The copy is turned by `turn`.
+2. Its box is measured and fitted. `"height"` scales it evenly to the mesh's (or body's) height; `"box"` stretches it to width, height and depth; `"none"` keeps its metres.
+3. Unless the fit is `"none"`, it is centred on x and z, and its lowest point is put at the bottom of the body.
+4. Then `scale` and `offset` apply.
+
+The fit lives on a pivot group inside the entity's object, so render hooks can still move `ctx.model.root`.
+
+Animation is deterministic. In `step()`, once per simulation step, the renderer asks `chooseClip` which clip each entity should play. The order is:
+1. A script's `state.animation`.
+2. `mesh.animation`.
+3. `mesh.animations` for its movement state: jump while rising in the air (once, holding the last pose), fall otherwise in the air, walk below 60% of `character.speed`, run above it, idle under 0.3 m/s.
+
+When the clip changes, the renderer records it with its start time, keeping the newest two. Each frame, the pose is a pure function of simulation time and that history: the current clip from its start, crossfading out of the previous one over `fade`, scaled by `animationSpeed`. The mixer is then evaluated at that moment, so a screenshot of a frame always shows the same pose as live play. A clip a model lacks warns once per entity and clip. Render hooks get `ctx.model` (`root`, `clips`, `mixer`) after the pose is set.
+
+Colliders can come from models too. A `convex` or `mesh` body without its own `points` (and, for `mesh`, `triangles`) takes its geometry from `body.model`, or from `mesh.model` when that is `""`. The CLI's `fillModelColliders` (`colliders.ts`) builds it while reading the scene:
+- It reads `readModelGeometry` and fits it exactly as the renderer fits the drawn model.
+- It writes plain `points` and `triangles` into the scene JSON.
+
+Physics only ever sees numbers, so headless runs and the browser use identical colliders. `mesh` shapes are trimeshes, static or kinematic only (`E_MESH_DYNAMIC`). Procedural terrain is the same `points` and `triangles` written directly. Entities created by `world.spawn` with inline components never pass through the CLI, so they need a prefab for a model collider.
 
 ## Development
 

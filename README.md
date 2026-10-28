@@ -325,6 +325,23 @@ Draw hooks can read the game but not change it (that throws), so the browser nev
   - custom geometry and shaders, instancing, particles;
   - any three.js addon, and its own post-processing chain (bloom in a few lines).
 - **Scripts.** 3D impulses, forces, spin and raycasts, and the raw Rapier 3D API.
+- **Models.** Any glTF/GLB file, skinned and animated ones included. They can be made in code, generated, or downloaded.
+  - `ludra inspect` reads one as text first: size in metres, triangles, bones, and every clip with its length.
+  - `fit` sizes it to the body.
+  - `animations` maps clips to how the entity moves: idle, walk, run, jump, fall.
+  - `ludra check` names any clip the model doesn't have.
+  - Poses follow simulation time, so screenshots match live play.
+- **Colliders of any shape.** `"shape": "mesh"` collides with exact triangles: procedural terrain as `points` and `triangles`, or a model's own geometry. The CLI fits that geometry like the mesh, so tests and the browser agree.
+
+```json
+{ "id": "knight", "components": {
+  "transform": { "x": 0, "y": 0.9, "z": 0 },
+  "body": { "type": "dynamic", "shape": "capsule", "width": 0.6, "height": 1.8 },
+  "character": {},
+  "mesh": { "model": "assets/knight.glb", "turn": { "y": 180 },
+            "animations": { "idle": "Idle", "run": "Run", "jump": "Jump", "fall": "Fall" } }
+} }
+```
 
 `npx @ludra/cli new my-game --template 3d` starts from **Sky Islands**: hop between floating islands, collect five crystals, ride the raft, dodge the storm puff and step through the portal. It has its own sounds and music, ten tests, and a clean `review --strict`. Three.js and Rapier 3D are loaded only by 3D scenes, so 2D games stay small.
 
@@ -410,7 +427,7 @@ For everything else, a script's `sound` hook gets the real Web Audio API, the wa
 | Component | What it does |
 | --- | --- |
 | `transform` | Position (entity center; 2D: px, +y down; 3D: metres, +y up, with z and a rotation per axis) |
-| `body` | Collider: `static`, `dynamic` (gravity and collisions) or `kinematic`; `sensor` for triggers; `bounce` for balls that rebound. Under rapier: `shape` (box, circle, capsule, polygon, polyline), `friction`, `density`, `fixedRotation`, `bullet` |
+| `body` | Collider: `static`, `dynamic` (gravity and collisions) or `kinematic`; `sensor` for triggers; `bounce` for balls that rebound. Under rapier: `shape` (box, circle, capsule, polygon, polyline; 3D: sphere, cylinder, convex, and mesh for exact triangles or a model's), `friction`, `density`, `fixedRotation`, `bullet` |
 | `sprite` | A colored shape, or an image: animated spritesheets (idle/run/jump/fall), tiles and mirroring |
 | `platformer` | Run and jump controls with coyote time, jump buffering and variable jump height |
 | `topdown` | Movement seen from above: 8 directions, 4 directions, or a single axis for paddles |
@@ -427,7 +444,7 @@ For everything else, a script's `sound` hook gets the real Web Audio API, the wa
 | `cameraZone` | An area that takes over the camera: a room the view stays inside, a fixed shot, a zoom; changes ease smoothly |
 | `tilemap` | A level drawn as rows of characters: tiles merge into big colliders, letters place prefabs |
 | `tween` | Eases x, y, rotation, scale or opacity: lifts that pause at each floor, gates that open on an event, bobbing coins |
-| `mesh` | 3D: how it looks, from a shape or its body's, with physically based materials and textures |
+| `mesh` | 3D: how it looks: a shape or its body's with physically based materials and textures, or a glTF `model` with skeletal animation |
 | `light` | 3D: a sun with shadows, sky fill, point, spot and ambient lights |
 | `camera3d` | 3D: follow, orbit, first-person or fixed camera |
 
