@@ -1,0 +1,1358 @@
+{
+  "name": "Moonlit Shrine",
+  "world": {
+    "dimensions": 3,
+    "lives": 3,
+    "fallLimit": -9,
+    "seed": 7
+  },
+  "environment": {
+    "sky": [
+      "#05071a",
+      "#2a2350"
+    ],
+    "fog": {
+      "color": "#221d48",
+      "near": 26,
+      "far": 95
+    },
+    "toneMapping": "aces",
+    "exposure": 1.15
+  },
+  "fonts": {
+    "Cinzel": "google",
+    "Nunito": "google"
+  },
+  "effects": {
+    "jump": {
+      "sound": "cloak"
+    },
+    "land": {
+      "sound": "stone-step"
+    },
+    "collect": {
+      "sound": "chime"
+    },
+    "spring": {
+      "sound": "updraft"
+    },
+    "stomp": {
+      "sound": "snuff"
+    },
+    "die": {
+      "sound": "splash"
+    },
+    "checkpoint": {
+      "sound": "temple-bell"
+    },
+    "win": {
+      "sound": "moonrise"
+    },
+    "gameover": {
+      "sound": "lanterns-out"
+    }
+  },
+  "sounds": {
+    "cloak": {
+      "tones": [
+        {
+          "wave": "triangle",
+          "from": 260,
+          "to": 420,
+          "duration": 0.12,
+          "volume": 0.08
+        }
+      ],
+      "noise": [
+        {
+          "filter": "bandpass",
+          "from": 700,
+          "to": 2400,
+          "duration": 0.18,
+          "volume": 0.12,
+          "attack": 0.02
+        }
+      ],
+      "vary": 0.08
+    },
+    "stone-step": {
+      "tones": [
+        {
+          "wave": "sine",
+          "from": 190,
+          "to": 85,
+          "duration": 0.08,
+          "volume": 0.2
+        }
+      ],
+      "noise": [
+        {
+          "filter": "bandpass",
+          "from": 1900,
+          "to": 900,
+          "duration": 0.06,
+          "volume": 0.08
+        }
+      ],
+      "vary": 0.15
+    },
+    "chime": {
+      "tones": [
+        {
+          "wave": "sine",
+          "from": 1175,
+          "duration": 0.9,
+          "volume": 0.12
+        },
+        {
+          "wave": "sine",
+          "from": 1760,
+          "start": 0.07,
+          "duration": 1.1,
+          "volume": 0.09
+        },
+        {
+          "wave": "sine",
+          "from": 2349,
+          "start": 0.14,
+          "duration": 1.3,
+          "volume": 0.06
+        },
+        {
+          "wave": "triangle",
+          "from": 3520,
+          "start": 0.14,
+          "duration": 0.25,
+          "volume": 0.025
+        }
+      ],
+      "noise": [
+        {
+          "filter": "highpass",
+          "from": 8000,
+          "duration": 0.4,
+          "volume": 0.025,
+          "attack": 0.03
+        }
+      ],
+      "vary": 0.03
+    },
+    "updraft": {
+      "tones": [
+        {
+          "wave": "sine",
+          "from": 220,
+          "to": 880,
+          "duration": 0.55,
+          "volume": 0.12
+        },
+        {
+          "wave": "sine",
+          "from": 1320,
+          "to": 2640,
+          "start": 0.15,
+          "duration": 0.5,
+          "volume": 0.04
+        }
+      ],
+      "noise": [
+        {
+          "filter": "bandpass",
+          "from": 400,
+          "to": 3200,
+          "duration": 0.7,
+          "volume": 0.18,
+          "attack": 0.05
+        }
+      ]
+    },
+    "snuff": {
+      "tones": [
+        {
+          "wave": "sine",
+          "from": 640,
+          "to": 140,
+          "duration": 0.22,
+          "volume": 0.16
+        }
+      ],
+      "noise": [
+        {
+          "filter": "bandpass",
+          "from": 2600,
+          "to": 300,
+          "duration": 0.32,
+          "volume": 0.22
+        }
+      ],
+      "vary": 0.08
+    },
+    "splash": {
+      "tones": [
+        {
+          "wave": "sine",
+          "from": 320,
+          "to": 60,
+          "duration": 0.6,
+          "volume": 0.16
+        }
+      ],
+      "noise": [
+        {
+          "filter": "lowpass",
+          "from": 2400,
+          "to": 200,
+          "duration": 0.9,
+          "volume": 0.3,
+          "attack": 0.01
+        },
+        {
+          "filter": "highpass",
+          "from": 5000,
+          "duration": 0.35,
+          "volume": 0.06,
+          "start": 0.05
+        }
+      ]
+    },
+    "temple-bell": {
+      "tones": [
+        {
+          "wave": "sine",
+          "from": 587,
+          "duration": 2.2,
+          "volume": 0.13,
+          "attack": 0.005
+        },
+        {
+          "wave": "sine",
+          "from": 880,
+          "duration": 1.8,
+          "volume": 0.07,
+          "attack": 0.005
+        },
+        {
+          "wave": "sine",
+          "from": 1397,
+          "duration": 1.2,
+          "volume": 0.04,
+          "attack": 0.005
+        },
+        {
+          "wave": "sine",
+          "from": 293,
+          "duration": 2.4,
+          "volume": 0.08,
+          "attack": 0.02
+        }
+      ]
+    },
+    "moonrise": {
+      "tones": [
+        {
+          "wave": "triangle",
+          "from": 587,
+          "start": 0,
+          "duration": 0.5,
+          "volume": 0.14
+        },
+        {
+          "wave": "triangle",
+          "from": 698,
+          "start": 0.14,
+          "duration": 0.5,
+          "volume": 0.14
+        },
+        {
+          "wave": "triangle",
+          "from": 784,
+          "start": 0.28,
+          "duration": 0.5,
+          "volume": 0.14
+        },
+        {
+          "wave": "triangle",
+          "from": 880,
+          "start": 0.42,
+          "duration": 0.5,
+          "volume": 0.14
+        },
+        {
+          "wave": "triangle",
+          "from": 1047,
+          "start": 0.56,
+          "duration": 0.6,
+          "volume": 0.14
+        },
+        {
+          "wave": "sine",
+          "from": 1175,
+          "start": 0.7,
+          "duration": 2.2,
+          "volume": 0.16,
+          "attack": 0.02
+        },
+        {
+          "wave": "sine",
+          "from": 1760,
+          "start": 0.7,
+          "duration": 2.4,
+          "volume": 0.07,
+          "attack": 0.1
+        },
+        {
+          "wave": "sine",
+          "from": 147,
+          "duration": 3,
+          "volume": 0.14,
+          "attack": 0.3
+        }
+      ],
+      "noise": [
+        {
+          "filter": "highpass",
+          "from": 7000,
+          "start": 0.7,
+          "duration": 2,
+          "volume": 0.03,
+          "attack": 0.4
+        }
+      ]
+    },
+    "lanterns-out": {
+      "tones": [
+        {
+          "wave": "triangle",
+          "from": 440,
+          "duration": 0.7,
+          "volume": 0.14
+        },
+        {
+          "wave": "triangle",
+          "from": 349,
+          "start": 0.6,
+          "duration": 0.7,
+          "volume": 0.14
+        },
+        {
+          "wave": "triangle",
+          "from": 294,
+          "start": 1.2,
+          "duration": 1.6,
+          "volume": 0.14
+        },
+        {
+          "wave": "sine",
+          "from": 147,
+          "start": 1.2,
+          "duration": 1.8,
+          "volume": 0.12,
+          "attack": 0.1
+        }
+      ]
+    }
+  },
+  "music": {
+    "tempo": 76,
+    "steps": 2,
+    "volume": 0.9,
+    "tracks": [
+      {
+        "wave": "triangle",
+        "volume": 0.17,
+        "decay": 0.5,
+        "notes": "A4 ~ C5 D5 ~ - C5 A4 | G4 ~ ~ - A4 C5 ~ - | D5 ~ F5 E5 ~ D5 C5 ~ | A4 ~ ~ ~ - - - - | F4 ~ G4 A4 ~ - C5 ~ | D5 ~ C5 A4 ~ G4 ~ - | A4 ~ C5 G4 ~ F4 ~ E4 | D4 ~ ~ ~ - - - -"
+      },
+      {
+        "wave": "sine",
+        "volume": 0.3,
+        "decay": 0.95,
+        "notes": "D2 ~ ~ ~ ~ ~ A2 ~ | F2 ~ ~ ~ ~ ~ C3 ~ | C2 ~ ~ ~ ~ ~ G2 ~ | D2 ~ ~ ~ ~ ~ A2 ~ | A#1 ~ ~ ~ ~ ~ F2 ~ | F2 ~ ~ ~ ~ ~ C3 ~ | C2 ~ ~ ~ ~ ~ G2 ~ | D2 ~ ~ ~ ~ ~ ~ ~"
+      },
+      {
+        "wave": "sawtooth",
+        "volume": 0.035,
+        "decay": 1,
+        "attack": 1.2,
+        "filter": 900,
+        "notes": "D4+F4+A4 ~ ~ ~ ~ ~ ~ ~ | F3+A3+C4 ~ ~ ~ ~ ~ ~ ~ | C4+E4+G4 ~ ~ ~ ~ ~ ~ ~ | D4+F4+A4 ~ ~ ~ ~ ~ ~ ~ | A#3+D4+F4 ~ ~ ~ ~ ~ ~ ~ | F3+A3+C4 ~ ~ ~ ~ ~ ~ ~ | C4+E4+G4 ~ ~ ~ ~ ~ ~ ~ | D4+F4+A4 ~ ~ ~ ~ ~ ~ ~"
+      },
+      {
+        "wave": "sine",
+        "volume": 0.05,
+        "decay": 0.9,
+        "notes": "- - - - A5 - - - | - - E6 - - - - - | - - - - D6 - - - | - - - - - - A5 - | - - - - C6 - - - | - - G5 - - - - - | - - - - E6 - - - | - - D6 - - - - -"
+      },
+      {
+        "wave": "noise",
+        "volume": 0.2,
+        "decay": 0.5,
+        "filter": 90,
+        "notes": "X - - - - - - - | - - - - x - - -"
+      },
+      {
+        "wave": "noise",
+        "volume": 0.02,
+        "decay": 1,
+        "attack": 1.5,
+        "filter": 600,
+        "notes": "x ~ ~ ~ ~ ~ ~ ~ | - - - - - - - - | - - - - x ~ ~ ~ | ~ ~ ~ ~ - - - -"
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "moon",
+      "components": {
+        "transform": {
+          "x": -18,
+          "y": 26,
+          "z": -60
+        },
+        "light": {
+          "type": "directional",
+          "color": "#b9c9ff",
+          "intensity": 1.5,
+          "shadowSize": 36,
+          "target": {
+            "x": 0,
+            "y": 0,
+            "z": -20
+          }
+        }
+      }
+    },
+    {
+      "id": "night",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": 20,
+          "z": 0
+        },
+        "light": {
+          "type": "hemisphere",
+          "color": "#5b6fb8",
+          "groundColor": "#1a1428",
+          "intensity": 0.9
+        }
+      }
+    },
+    {
+      "id": "camera",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "camera3d": {
+          "mode": "follow",
+          "distance": 9.5,
+          "height": 3.8,
+          "fov": 56,
+          "smoothing": 0.18
+        }
+      }
+    },
+    {
+      "id": "sky",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "script": {
+          "src": "scripts/sky.ts",
+          "params": {
+            "bloom": 0.6
+          }
+        }
+      }
+    },
+    {
+      "id": "lake",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": -3,
+          "z": -30
+        },
+        "script": {
+          "src": "scripts/lake.ts",
+          "params": {
+            "size": 900
+          }
+        }
+      }
+    },
+    {
+      "id": "fireflies",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": 0,
+          "z": -28
+        },
+        "script": {
+          "src": "scripts/fireflies.ts",
+          "params": {
+            "count": 140
+          }
+        }
+      }
+    },
+    {
+      "id": "plaza",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": -0.5,
+          "z": 0
+        },
+        "body": {
+          "width": 8,
+          "height": 1,
+          "depth": 8,
+          "friction": 0.8
+        },
+        "mesh": {
+          "color": "#6b7889",
+          "roughness": 0.92,
+          "flatShading": true
+        },
+        "script": {
+          "src": "scripts/stone.ts",
+          "params": {
+            "w": 8,
+            "d": 8
+          }
+        }
+      }
+    },
+    {
+      "id": "plaza-rock",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": -4.08,
+          "z": 0,
+          "rotation": {
+            "x": 180,
+            "y": 20
+          }
+        },
+        "mesh": {
+          "shape": "cone",
+          "color": "#2b3140",
+          "roughness": 1,
+          "flatShading": true,
+          "width": 8.8,
+          "height": 6.16
+        }
+      }
+    },
+    {
+      "id": "stone-1",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": -0.5,
+          "z": -10
+        },
+        "body": {
+          "width": 3.4,
+          "height": 1,
+          "shape": "cylinder",
+          "friction": 0.8
+        },
+        "mesh": {
+          "color": "#6b7889",
+          "roughness": 0.92,
+          "flatShading": true
+        },
+        "script": {
+          "src": "scripts/stone.ts",
+          "params": {
+            "round": true
+          }
+        }
+      }
+    },
+    {
+      "id": "stone-1-rock",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": -2.19,
+          "z": -10,
+          "rotation": {
+            "x": 180,
+            "y": 70
+          }
+        },
+        "mesh": {
+          "shape": "cone",
+          "color": "#2b3140",
+          "roughness": 1,
+          "flatShading": true,
+          "width": 3.4,
+          "height": 2.38
+        }
+      }
+    },
+    {
+      "id": "stone-2",
+      "components": {
+        "transform": {
+          "x": 0.7,
+          "y": 0,
+          "z": -17
+        },
+        "body": {
+          "width": 3.4,
+          "height": 1,
+          "shape": "cylinder",
+          "friction": 0.8
+        },
+        "mesh": {
+          "color": "#6b7889",
+          "roughness": 0.92,
+          "flatShading": true
+        },
+        "script": {
+          "src": "scripts/stone.ts",
+          "params": {
+            "round": true
+          }
+        }
+      }
+    },
+    {
+      "id": "stone-2-rock",
+      "components": {
+        "transform": {
+          "x": 0.7,
+          "y": -1.69,
+          "z": -17,
+          "rotation": {
+            "x": 180,
+            "y": 140
+          }
+        },
+        "mesh": {
+          "shape": "cone",
+          "color": "#2b3140",
+          "roughness": 1,
+          "flatShading": true,
+          "width": 3.4,
+          "height": 2.38
+        }
+      }
+    },
+    {
+      "id": "stone-3",
+      "components": {
+        "transform": {
+          "x": -0.5,
+          "y": 0.5,
+          "z": -23.5
+        },
+        "body": {
+          "width": 3.4,
+          "height": 1,
+          "shape": "cylinder",
+          "friction": 0.8
+        },
+        "mesh": {
+          "color": "#6b7889",
+          "roughness": 0.92,
+          "flatShading": true
+        },
+        "script": {
+          "src": "scripts/stone.ts",
+          "params": {
+            "round": true
+          }
+        }
+      }
+    },
+    {
+      "id": "stone-3-rock",
+      "components": {
+        "transform": {
+          "x": -0.5,
+          "y": -1.19,
+          "z": -23.5,
+          "rotation": {
+            "x": 180,
+            "y": 200
+          }
+        },
+        "mesh": {
+          "shape": "cone",
+          "color": "#2b3140",
+          "roughness": 1,
+          "flatShading": true,
+          "width": 3.4,
+          "height": 2.38
+        }
+      }
+    },
+    {
+      "id": "terrace",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": 0.5,
+          "z": -30
+        },
+        "body": {
+          "width": 7,
+          "height": 1,
+          "depth": 6,
+          "friction": 0.8
+        },
+        "mesh": {
+          "color": "#6b7889",
+          "roughness": 0.92,
+          "flatShading": true
+        },
+        "script": {
+          "src": "scripts/stone.ts",
+          "params": {
+            "w": 7,
+            "d": 6
+          }
+        }
+      }
+    },
+    {
+      "id": "terrace-rock",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": -2.31,
+          "z": -30,
+          "rotation": {
+            "x": 180,
+            "y": 10
+          }
+        },
+        "mesh": {
+          "shape": "cone",
+          "color": "#2b3140",
+          "roughness": 1,
+          "flatShading": true,
+          "width": 6.6000000000000005,
+          "height": 4.62
+        }
+      }
+    },
+    {
+      "id": "pillar-1",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": -3.5,
+          "z": -37.5
+        },
+        "body": {
+          "type": "kinematic",
+          "width": 2.4,
+          "height": 6,
+          "shape": "cylinder",
+          "friction": 0.8
+        },
+        "mesh": {
+          "color": "#596579",
+          "roughness": 0.85,
+          "flatShading": true
+        },
+        "tween": {
+          "property": "y",
+          "by": 3,
+          "duration": 1.8,
+          "ease": "sineInOut",
+          "repeat": "pingpong"
+        },
+        "script": {
+          "src": "scripts/pillar.ts"
+        }
+      }
+    },
+    {
+      "id": "pillar-2",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": -0.5,
+          "z": -43
+        },
+        "body": {
+          "type": "kinematic",
+          "width": 2.4,
+          "height": 6,
+          "shape": "cylinder",
+          "friction": 0.8
+        },
+        "mesh": {
+          "color": "#596579",
+          "roughness": 0.85,
+          "flatShading": true
+        },
+        "tween": {
+          "property": "y",
+          "by": -3,
+          "duration": 1.8,
+          "ease": "sineInOut",
+          "repeat": "pingpong"
+        },
+        "script": {
+          "src": "scripts/pillar.ts"
+        }
+      }
+    },
+    {
+      "id": "bridge",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": 2,
+          "z": -51.5
+        },
+        "body": {
+          "width": 3,
+          "height": 1,
+          "depth": 12,
+          "friction": 0.8
+        },
+        "mesh": {
+          "color": "#6b7889",
+          "roughness": 0.92,
+          "flatShading": true
+        },
+        "script": {
+          "src": "scripts/stone.ts",
+          "params": {
+            "w": 3,
+            "d": 12
+          }
+        }
+      }
+    },
+    {
+      "id": "bridge-rock",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": 0.345,
+          "z": -51.5,
+          "rotation": {
+            "x": 180,
+            "y": 0
+          }
+        },
+        "mesh": {
+          "shape": "cone",
+          "color": "#2b3140",
+          "roughness": 1,
+          "flatShading": true,
+          "width": 3.3000000000000003,
+          "height": 2.31
+        }
+      }
+    },
+    {
+      "id": "sanctum",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": 7.5,
+          "z": -64.5
+        },
+        "body": {
+          "width": 9,
+          "height": 1,
+          "depth": 8,
+          "friction": 0.8
+        },
+        "mesh": {
+          "color": "#6b7889",
+          "roughness": 0.92,
+          "flatShading": true
+        },
+        "script": {
+          "src": "scripts/stone.ts",
+          "params": {
+            "w": 9,
+            "d": 8
+          }
+        }
+      }
+    },
+    {
+      "id": "sanctum-rock",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": 3.92,
+          "z": -64.5,
+          "rotation": {
+            "x": 180,
+            "y": 45
+          }
+        },
+        "mesh": {
+          "shape": "cone",
+          "color": "#2b3140",
+          "roughness": 1,
+          "flatShading": true,
+          "width": 8.8,
+          "height": 6.16
+        }
+      }
+    },
+    {
+      "id": "shard-1",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": 1,
+          "z": -2
+        },
+        "body": {
+          "width": 0.8,
+          "height": 1,
+          "sensor": true
+        },
+        "collectible": {
+          "score": 1
+        },
+        "script": {
+          "src": "scripts/shard.ts"
+        },
+        "tween": [
+          {
+            "property": "rotationY",
+            "by": 360,
+            "duration": 4,
+            "ease": "linear",
+            "repeat": "loop"
+          },
+          {
+            "property": "y",
+            "by": 0.3,
+            "duration": 1.4,
+            "ease": "sineInOut",
+            "repeat": "pingpong"
+          }
+        ]
+      }
+    },
+    {
+      "id": "shard-2",
+      "components": {
+        "transform": {
+          "x": 0.3,
+          "y": 3,
+          "z": -14
+        },
+        "body": {
+          "width": 0.8,
+          "height": 1,
+          "sensor": true
+        },
+        "collectible": {
+          "score": 1
+        },
+        "script": {
+          "src": "scripts/shard.ts"
+        },
+        "tween": [
+          {
+            "property": "rotationY",
+            "by": 360,
+            "duration": 4,
+            "ease": "linear",
+            "repeat": "loop"
+          },
+          {
+            "property": "y",
+            "by": 0.3,
+            "duration": 1.4,
+            "ease": "sineInOut",
+            "repeat": "pingpong"
+          }
+        ]
+      }
+    },
+    {
+      "id": "shard-3",
+      "components": {
+        "transform": {
+          "x": 2.6,
+          "y": 2,
+          "z": -30.6
+        },
+        "body": {
+          "width": 0.8,
+          "height": 1,
+          "sensor": true
+        },
+        "collectible": {
+          "score": 1
+        },
+        "script": {
+          "src": "scripts/shard.ts"
+        },
+        "tween": [
+          {
+            "property": "rotationY",
+            "by": 360,
+            "duration": 4,
+            "ease": "linear",
+            "repeat": "loop"
+          },
+          {
+            "property": "y",
+            "by": 0.3,
+            "duration": 1.4,
+            "ease": "sineInOut",
+            "repeat": "pingpong"
+          }
+        ]
+      }
+    },
+    {
+      "id": "shard-4",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": 3.6,
+          "z": -37.5
+        },
+        "body": {
+          "width": 0.8,
+          "height": 1,
+          "sensor": true
+        },
+        "collectible": {
+          "score": 1
+        },
+        "script": {
+          "src": "scripts/shard.ts"
+        },
+        "tween": [
+          {
+            "property": "rotationY",
+            "by": 360,
+            "duration": 4,
+            "ease": "linear",
+            "repeat": "loop"
+          },
+          {
+            "property": "y",
+            "by": 0.3,
+            "duration": 1.4,
+            "ease": "sineInOut",
+            "repeat": "pingpong"
+          }
+        ]
+      }
+    },
+    {
+      "id": "shard-5",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": 3.5,
+          "z": -55
+        },
+        "body": {
+          "width": 0.8,
+          "height": 1,
+          "sensor": true
+        },
+        "collectible": {
+          "score": 1
+        },
+        "script": {
+          "src": "scripts/shard.ts"
+        },
+        "tween": [
+          {
+            "property": "rotationY",
+            "by": 360,
+            "duration": 4,
+            "ease": "linear",
+            "repeat": "loop"
+          },
+          {
+            "property": "y",
+            "by": 0.3,
+            "duration": 1.4,
+            "ease": "sineInOut",
+            "repeat": "pingpong"
+          }
+        ]
+      }
+    },
+    {
+      "id": "shard-6",
+      "components": {
+        "transform": {
+          "x": 3,
+          "y": 9,
+          "z": -65
+        },
+        "body": {
+          "width": 0.8,
+          "height": 1,
+          "sensor": true
+        },
+        "collectible": {
+          "score": 1
+        },
+        "script": {
+          "src": "scripts/shard.ts"
+        },
+        "tween": [
+          {
+            "property": "rotationY",
+            "by": 360,
+            "duration": 4,
+            "ease": "linear",
+            "repeat": "loop"
+          },
+          {
+            "property": "y",
+            "by": 0.3,
+            "duration": 1.4,
+            "ease": "sineInOut",
+            "repeat": "pingpong"
+          }
+        ]
+      }
+    },
+    {
+      "id": "shrine",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": 3.5,
+          "z": -47
+        },
+        "body": {
+          "width": 3,
+          "height": 2,
+          "depth": 0.8,
+          "sensor": true
+        },
+        "checkpoint": {},
+        "script": {
+          "src": "scripts/shrine.ts"
+        }
+      }
+    },
+    {
+      "id": "wisp",
+      "components": {
+        "transform": {
+          "x": -1,
+          "y": 3.1,
+          "z": -51.5
+        },
+        "body": {
+          "type": "kinematic",
+          "width": 1,
+          "height": 1,
+          "shape": "sphere",
+          "sensor": true
+        },
+        "hazard": {
+          "stompable": true,
+          "score": 0
+        },
+        "patrol": {
+          "axis": "x",
+          "distance": 2,
+          "speed": 1.6
+        },
+        "script": {
+          "src": "scripts/wisp.ts"
+        }
+      }
+    },
+    {
+      "id": "spring",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": 2.65,
+          "z": -56.5
+        },
+        "body": {
+          "width": 1.8,
+          "height": 0.3,
+          "depth": 1.8,
+          "sensor": true
+        },
+        "script": {
+          "src": "scripts/spring.ts",
+          "params": {
+            "launch": 12.5
+          }
+        }
+      }
+    },
+    {
+      "id": "gate",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": 9.8,
+          "z": -67.5
+        },
+        "body": {
+          "width": 2.8,
+          "height": 3.4,
+          "depth": 0.6,
+          "sensor": true
+        },
+        "goal": {
+          "requireScore": 6
+        },
+        "script": {
+          "src": "scripts/gate.ts",
+          "params": {
+            "need": 6
+          }
+        }
+      }
+    },
+    {
+      "id": "lantern-plaza",
+      "components": {
+        "transform": {
+          "x": -3.2,
+          "y": 0,
+          "z": 3.2
+        },
+        "script": {
+          "src": "scripts/lantern.ts",
+          "params": {
+            "color": "#ffb35c"
+          }
+        }
+      }
+    },
+    {
+      "id": "lantern-terrace",
+      "components": {
+        "transform": {
+          "x": -3,
+          "y": 1,
+          "z": -28
+        },
+        "script": {
+          "src": "scripts/lantern.ts",
+          "params": {
+            "color": "#ffb35c"
+          }
+        }
+      }
+    },
+    {
+      "id": "lantern-bridge",
+      "components": {
+        "transform": {
+          "x": -1.2,
+          "y": 2.5,
+          "z": -57
+        },
+        "script": {
+          "src": "scripts/lantern.ts",
+          "params": {
+            "color": "#9fd8ff"
+          }
+        }
+      }
+    },
+    {
+      "id": "lantern-sanctum-l",
+      "components": {
+        "transform": {
+          "x": -3.6,
+          "y": 8,
+          "z": -61.5
+        },
+        "script": {
+          "src": "scripts/lantern.ts",
+          "params": {
+            "color": "#ffb35c"
+          }
+        }
+      }
+    },
+    {
+      "id": "lantern-sanctum-r",
+      "components": {
+        "transform": {
+          "x": 3.6,
+          "y": 8,
+          "z": -67.5
+        },
+        "script": {
+          "src": "scripts/lantern.ts",
+          "params": {
+            "color": "#ffb35c"
+          }
+        }
+      }
+    },
+    {
+      "id": "player",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": 0.9,
+          "z": 2
+        },
+        "body": {
+          "type": "dynamic",
+          "width": 0.6,
+          "height": 1.8,
+          "shape": "capsule"
+        },
+        "character": {
+          "speed": 5,
+          "jumpSpeed": 7
+        },
+        "script": {
+          "src": "scripts/wanderer.ts"
+        }
+      }
+    },
+    {
+      "id": "hud",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "script": {
+          "src": "scripts/hud.ts",
+          "params": {
+            "title": "Moonlit Shrine",
+            "subtitle": "Return the six shards of the moon",
+            "lives": 3,
+            "need": 6
+          }
+        }
+      }
+    }
+  ]
+}
