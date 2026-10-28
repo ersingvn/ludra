@@ -1,5 +1,5 @@
 {
-  "name": "slime-valley",
+  "name": "Slime Valley",
   "entry": "scenes/main.scene.json",
   "window": { "width": 960, "height": 540 }
 }

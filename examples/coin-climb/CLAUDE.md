@@ -5,7 +5,9 @@ A game built with Ludra, a game engine designed for AI agents.
 ## Layout
 
 - `ludra.json`: project config (name, entry scene, window size)
-- `scenes/main.scene.json`: the level. Entities are made of components.
+- `scenes/main.scene.json`: the level. Entities are made of components; `effects` adds particles, sound and shake to game events, and `sounds` and `music` are the game's own.
+- `assets/`: SVG art. Spritesheets are frames side by side; tiles repeat.
+- `scripts/`: `sunset.ts` (the desert backdrop), `shrine.ts` (the shrine's glow once all coins are found) and `hud.ts` (coin slots, title card, end screen). All presentation: tests never depend on them.
 - `tests/*.test.json`: gameplay tests, run headlessly
 
 ## Loop

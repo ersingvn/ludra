@@ -27,6 +27,11 @@
       "name": "the level can be completed without dying",
       "inputs": "right:0.72s, wait:0.45s, right:1.6s, wait:1.6s, jump:0.45s, wait:0.6s, right:1.5s",
       "assert": ["won == true", "deaths == 0", "events.stomp == 1", "score == 1"]
+    },
+    {
+      "name": "a run that never stops wins in under 4 seconds: the pad throws the player through the key (found by ludra solve)",
+      "inputs": "right:2.5s, jump:0.3s, right:56f",
+      "assert": ["won == true", "won == true at 3.75s", "deaths == 0", "events.key == 1", "events.stomp == 1"]
     }
   ]
 }
