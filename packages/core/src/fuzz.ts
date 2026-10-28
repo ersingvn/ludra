@@ -101,7 +101,7 @@ export function fuzz(make: () => World, options: FuzzOptions = {}): FuzzResult {
     const path: [number, number][] = [];
     let eventsSeen = 0;
     try {
-      while (world.frame < maxFrames && !world.over) {
+      while (world.frame < maxFrames && !world.over && !options.deadline?.()) {
         // Hold one choice for 0.05 to 0.5 s, like someone mashing keys.
         const choice = Math.floor(random() * sets.length);
         const hold = 3 + Math.floor(random() * 28);
@@ -129,11 +129,11 @@ export function fuzz(make: () => World, options: FuzzOptions = {}): FuzzResult {
         checked.add(key);
         const place = placeKey(p, quantum);
         if (trapped.has(place) || free.has(place)) continue;
-        if (isStuck(make, world, options.checkBudget ?? 60_000, trapped, free, quantum)) result.softlocks.push(finding(world, p, path, choices));
+        if (isStuck(make, world, options.checkBudget ?? 60_000, trapped, free, quantum, options.deadline)) result.softlocks.push(finding(world, p, path, choices));
       }
     } catch (err) {
       if (!(err instanceof ScriptError)) throw err;
-      const cause = err.cause instanceof Error ? err.cause.message : err.message.replace(/frame d+/, "");
+      const cause = err.cause instanceof Error ? err.cause.message : err.message.replace(/frame \d+/, "");
       const crashKey = `${err.src}|${err.hook}|${cause}`;
       if (!crashMessages.has(crashKey)) {
         crashMessages.add(crashKey);
@@ -154,7 +154,7 @@ export function fuzz(make: () => World, options: FuzzOptions = {}): FuzzResult {
  * True when the game can't be won from this moment: a quick search from a save of it runs out of
  * new places without a win. A search that runs out of budget proves nothing, so it says false.
  */
-function isStuck(make: () => World, world: World, budget: number, trapped: Set<string>, free: Set<string>, quantum: number): boolean {
+function isStuck(make: () => World, world: World, budget: number, trapped: Set<string>, free: Set<string>, quantum: number, deadline?: () => boolean): boolean {
   const save = world.save();
   const from = () => {
     const w = make();
@@ -162,7 +162,7 @@ function isStuck(make: () => World, world: World, budget: number, trapped: Set<s
     return w;
   };
   const places = new Set<string>();
-  const answer = solve(from, { quick: true, budget, places, placeSize: quantum });
+  const answer = solve(from, { quick: true, budget, places, placeSize: quantum, deadline });
   if (answer.solved && answer.inputs) {
     // Every place on the way to that win can reach it too.
     const w = from();

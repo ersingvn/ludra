@@ -106,7 +106,8 @@ function goalFrom(source: string): (world: World) => boolean {
   return (world) => evaluateAssertion(assertion, world.snapshot(), world.events).pass;
 }
 
-function parse<T>(flag: string, read: () => T): T {
+/** Runs a flag parser, naming the flag in its error. Shared with `ludra fuzz`. */
+export function parse<T>(flag: string, read: () => T): T {
   try {
     return read();
   } catch (err) {
@@ -115,12 +116,12 @@ function parse<T>(flag: string, read: () => T): T {
 }
 
 /** Like a test duration, plus minutes ("2m"): searches run longer than any test. */
-function searchTime(text: string): number {
+export function searchTime(text: string): number {
   const minutes = /^\s*(\d+(?:\.\d+)?)m\s*$/.exec(text);
   return minutes ? Number(minutes[1]) * 60 : parseDuration(text);
 }
 
-function positiveInteger(flag: string, text: string): number {
+export function positiveInteger(flag: string, text: string): number {
   const n = Number(text);
   if (!Number.isInteger(n) || n <= 0) throw new CliError(`${flag} must be a whole number above 0, not "${text}".`);
   return n;

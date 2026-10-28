@@ -4,6 +4,7 @@ import { add, blocks } from "./commands/blocks.ts";
 import { check } from "./commands/check.ts";
 import { components } from "./commands/components.ts";
 import { dev } from "./commands/dev.ts";
+import { fuzz } from "./commands/fuzz.ts";
 import { inspect } from "./commands/inspect.ts";
 import { create } from "./commands/new.ts";
 import { play } from "./commands/play.ts";
@@ -47,8 +48,19 @@ Usage
       --allow-deaths                           Accept routes that cost a life
       --seed 1                                 Seed for the search's own choices
       --json                                   Machine-readable output
+  ludra fuzz [folder] [options]                Play random sessions to find crashes, softlocks and where players die;
+                                               exit 1 on crashes, softlocks or a level that can't be won
+      --scene scenes/level-2.scene.json        Scene to play (default: the entry scene)
+      --sessions 200                           How many sessions
+      --seconds 60                             Longest session
+      --time 60s                               How long to play in all (2m for minutes)
+      --seed 1                                 Seed for the random inputs
+      --no-softlocks                           Skip the softlock checks (faster)
+      --json                                   Machine-readable output
   ludra review [folder] [--json] [--strict]    Find what makes a game feel unfinished: untested mechanics,
+                                               frame-perfect jumps, crashes and softlocks found by random play,
                                                silent events, default HUD, flat looks (--strict: exit 1 on issues)
+      --fast                                   Skip the random play (a few seconds per scene)
   ludra components [name] [--json]             Reference for every component and field
   ludra inspect <file> [--json]                What a .glb/.gltf model holds (size in metres, triangles, animations,
                                                bones), or an image's size or a WAV's duration
@@ -82,11 +94,15 @@ async function main(argv: string[]): Promise<number> {
       id: { type: "string" },
       force: { type: "boolean" },
       strict: { type: "boolean" },
+      fast: { type: "boolean" },
       time: { type: "string" },
       budget: { type: "string" },
       "allow-deaths": { type: "boolean" },
       seed: { type: "string" },
       goal: { type: "string" },
+      sessions: { type: "string" },
+      seconds: { type: "string" },
+      "no-softlocks": { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -107,6 +123,8 @@ async function main(argv: string[]): Promise<number> {
       return test(target ?? ".", values);
     case "solve":
       return solve(target ?? ".", values);
+    case "fuzz":
+      return fuzz(target ?? ".", values);
     case "review":
       return review(target ?? ".", values);
     case "components":
