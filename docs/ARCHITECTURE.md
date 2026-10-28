@@ -65,6 +65,11 @@ The `sound` hook runs in `startGame`'s frame loop after the simulation steps, on
 
 The CLI is a thin layer over core: project loading (`ludra.json`), output formatting (`--json` everywhere), templates and the dev server. `ludra check` adds file-system checks core can't do, such as `E_ASSET_MISSING`.
 
+`commands/solve.ts` and `commands/fuzz.ts` wrap the searches below.
+- They print copy-pasteable `ludra play --inputs` lines.
+- `solve` labels windows of 6 frames or fewer tight and over 15 forgiving, and turns a solution into a test case.
+- Both exit 1 when they find nothing to win, or find a crash or softlock.
+
 `gltf.ts` reads .glb and .gltf files without dependencies:
 - `readModel` gives a `ModelSummary`: bounds through the node transforms, triangles, materials, skins, clips with durations, required extensions and external files.
 - `readModelGeometry` gives every triangle in scene-root space. It follows `byteStride`, normalized integers, `data:` URIs and external `.bin` files, and refuses Draco and meshopt with the extension's name.
@@ -81,7 +86,12 @@ Prefab meshes are checked once, on the prefab.
 
 ### Review
 
-`commands/review.ts` loads every scene, runs every test (`runTest` reports the events each run fired) and reads the scripts' sources. It reports findings by area (proof, feel, looks, identity) as issues or ideas: no passing win test without deaths, a script with gameplay hooks whose entities and emitted events no assertion mentions, important events that fired with no `effects` entry and no `recent("…")` in a draw hook, no `drawUI`, no backdrop, sprites without art, no postfx. It's heuristic on purpose: it can't judge beauty, but it reliably catches the signs of unfinished work. `--strict` exits 1 on issues; CI runs it on the templates.
+`commands/review.ts` loads every scene, runs every test (`runTest` reports the events each run fired) and reads the scripts' sources. It reports findings by area (proof, fair, feel, looks, identity) as issues or ideas: no passing win test without deaths, a script with gameplay hooks whose entities and emitted events no assertion mentions, important events that fired with no `effects` entry and no `recent("…")` in a draw hook, no `drawUI`, no backdrop, sprites without art, no postfx. It's heuristic on purpose: it can't judge beauty, but it reliably catches the signs of unfinished work.
+
+The fair area uses the search below:
+- **Timing.** It takes the first passing test that asserts `won == true` and runs `measureWindows` on its inputs. A press that works on 2 frames or fewer is `R_FRAME_PERFECT` (an issue); 3 to 6 frames is `R_TIGHT_TIMING` (an idea).
+- **Random play.** It fuzzes each scene for 4 seconds of wall clock. Crashes become `R_CRASH` (under proof) and softlocks become `R_SOFTLOCK`.
+- `--fast` skips the fuzzing. `--strict` exits 1 on issues; CI runs it on the templates.
 
 ### Blocks
 
@@ -96,6 +106,62 @@ Prefab meshes are checked once, on the prefab.
 - Fixed timestep (`FIXED_DT = 1/60`). The browser uses an accumulator to run whole steps.
 - No `Math.random` and no `Date.now` in the simulation.
 - Input is a set of held actions per step. "Pressed" is derived from the previous step's set, so scripts and keyboards behave identically.
+
+## Proof at scale
+
+### Saving and restoring
+
+`World.save()` returns a moment of the world, and `World.restore(save)` brings it back any number of times. From there the world goes on bit for bit as it did the first time. A save holds:
+- deep copies of the entities (`cloneEntities`);
+- the events, counters (score, deaths, lives, won, lost, exit) and reached checkpoints;
+- the previous frame's input (so "pressed" stays right);
+- the tween bookkeeping, the random seed, the spawn counter;
+- the physics engine's own state.
+
+`cloneEntities` copies through arrays, sets, maps and typed arrays with a memo. So references between entities (what a body stands on) point at the copies, and shared objects stay shared. Script modules (`module`) are code and are shared, not copied. Their module-level variables aren't saved, which is one more reason scripts keep their data in `state`. Restoring makes new entity objects with the same ids. Saving or restoring inside a hook throws.
+
+`PhysicsEngine.save` and `restore` are optional:
+- **Arcade** keeps everything on the entities, so it saves `null` and restores nothing.
+- **Rapier** (2D and 3D, `packages/physics/src/saving.ts`) serializes its whole world with `takeSnapshot`: bodies, colliders, joints, contacts, islands and solver caches. Rapier's handles survive the round trip. What Ludra keeps per entity beside it (a "link") is saved as plain numbers plus the handles of its body, collider, joints and anchors. `restoreSnapshot` rebuilds the world, and each link is bound again to the restored entity with its id and to the objects found by those handles. Characters get a new controller, since a controller holds settings, not state.
+- `World.canSave` is false for an engine without them. Searches then replay inputs from frame 0 instead.
+
+`packages/physics/test/saving.test.ts` proves it for arcade, Rapier 2D and Rapier 3D. It hashes every frame of a run that never stopped, and of one that was saved, sent on a different future, restored and played on; the hashes must match. On Moonlit Shrine a save costs about 1.5 steps and a restore about 1.8.
+
+### Solve and fuzz
+
+`solve` (`packages/core/src/solve.ts`) is a Go-Explore search.
+
+**Cells.** A cell is a distinct situation: `cellKey` combines the player's position in squares of 16 px (1 m in 3D), whether it is grounded, the score, the number of entities, and a hash of every entity's `state`. That last part is why a key taken counts as progress. The search keeps the earliest way to reach each cell, with a save of it.
+
+**Each round:**
+1. `pick` chooses a cell. The weight is `1/√(1 + times chosen)`, times up to 5 for cells much closer to the nearest goal than the start was.
+2. The world is restored to that cell.
+3. Up to 12 random decisions are played, each holding a choice of the player's controls for 6 frames, and kept 75% of the time.
+4. `towardGoal` makes moving toward the goal about three times as likely as moving away. Moving away stays possible, since a key may lie behind the player.
+5. Dying (unless `allowDeaths`) ends the try.
+
+**Ending the search.**
+- The first win sets a refine budget: at least 100,000 more frames, or as many as it took to find. The search spends it looking for an earlier win, skipping cells already later than the best.
+- The search is *exhausted* after 400 rounds in a row that reach no new place. A faster way to a known cell doesn't count as new.
+- Exhausted without a win is reported as unsolvable at this resolution.
+- `quick` mode stops at the first win and skips the steps below.
+
+**Finishing a win:**
+1. `simplify` makes the route read like a person's. It tries each stretch as its neighbour, as the run's main direction, with one action fewer, or not at all, and keeps changes that still win as early.
+2. The route is replayed on a fresh world as proof. If it doesn't win, the simulation isn't deterministic, and `solve` throws.
+3. `measureWindows` shifts each press of `jump` or `action` one frame at a time, up to 30 frames each way, from a save every 10 frames.
+
+`measureWindows` judges a shifted press the way a person would. It must land on the same thing, picking up the same items on the way, without dying. "The same thing" is the same `standingOn` id, or the same height within a quarter of the player's height when the ground probe misses an edge. The goal itself is the test only when the run wins before landing. So a press is never blamed because the rest of a recorded route stops lining up much later.
+
+`closest` prefers a cell where the player stood, then the smallest distance to a goal.
+
+`fuzz` (`fuzz.ts`) plays seeded random sessions: each holds a random choice for 3 to 30 frames, like someone mashing keys.
+- **Preflight.** When the scene has a goal, it first runs a quick `solve` from the start. If that is exhausted, the result is `winnable: false` and no softlocks are looked for, since every place would count.
+- **Softlocks.** Each new grounded place is checked with a quick `solve` from a save of that moment, within `checkBudget` frames. An exhausted check is a softlock, and every place that search reached joins `trapped`, so one trap is reported once. A successful check replays its win and adds each place on the way to `free`, so those places are never checked again. A check that runs out of budget proves nothing and reports nothing.
+- **Crashes.** A `ScriptError` ends the session. Crashes are deduplicated by script, hook and cause (the message without its frame number).
+- **Deaths.** They are counted per cause and per place, snapped to the same 16 px (1 m) grid.
+
+Every finding carries the inputs from frame 0 that reproduce it. Both commands take a wall-clock deadline from the CLI; the simulation never sees the clock.
 
 ## Physics
 
