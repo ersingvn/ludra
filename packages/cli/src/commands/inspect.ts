@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fixed, pad, paint } from "../format.ts";
 import { readModel, type ModelSummary } from "../gltf.ts";
@@ -30,8 +30,11 @@ export function inspect(file: string | undefined, options: { json?: boolean }): 
 export function inspectFile(file: string): Inspection {
   const ext = extname(file).toLowerCase();
   // Inside the current folder (normally the project), show the path the way a scene would write it.
-  const absolute = resolve(file);
-  const shown = (isInside(process.cwd(), absolute) ? relative(process.cwd(), absolute) : file).replaceAll("\\", "/");
+  // Real paths on both sides: on macOS the temp folder is reached through a link (/var → /private/var).
+  const real = (path: string) => (existsSync(path) ? realpathSync(path) : resolve(path));
+  const absolute = real(file);
+  const cwd = real(process.cwd());
+  const shown = (isInside(cwd, absolute) ? relative(cwd, absolute) : file).replaceAll("\\", "/");
   const bytes = statSync(file).size;
   if (ext === ".glb" || ext === ".gltf") {
     let summary: ModelSummary;
