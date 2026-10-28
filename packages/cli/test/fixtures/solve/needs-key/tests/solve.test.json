@@ -1,0 +1,46 @@
+{
+  "tests": [
+    {
+      "name": "taking the key first, then walking right, wins",
+      "inputs": "left:0.9s, right:4s",
+      "assert": [
+        "won == true",
+        "key.exists == false",
+        "door.exists == false",
+        "events.key == 1"
+      ]
+    },
+    {
+      "name": "the earliest turn back that reaches the key (frame 49)",
+      "inputs": "left:0.817s, right:4s",
+      "assert": [
+        "won == true"
+      ]
+    },
+    {
+      "name": "one frame less misses the key",
+      "inputs": "left:0.8s, right:4s",
+      "assert": [
+        "won == false",
+        "key.exists == true"
+      ]
+    },
+    {
+      "name": "going right first stops at the locked door",
+      "inputs": "right:3s",
+      "assert": [
+        "won == false",
+        "door.exists == true",
+        "player.x < 590"
+      ]
+    },
+    {
+      "name": "the door is too tall to jump",
+      "inputs": "right:1s, right+jump:0.5s, right:2s",
+      "assert": [
+        "won == false",
+        "door.exists == true"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "tests": [
+    {
+      "name": "a jump inside the six-frame window clears the gap",
+      "inputs": "right:1.45s, right+jump:0.5s, right:3s",
+      "assert": [
+        "won == true",
+        "won == true at 2.95s",
+        "deaths == 0"
+      ]
+    },
+    {
+      "name": "the earliest jump that works (frame 84)",
+      "inputs": "right:1.4s, right+jump:0.5s, right:3s",
+      "assert": [
+        "won == true",
+        "deaths == 0"
+      ]
+    },
+    {
+      "name": "the latest jump that works (frame 89)",
+      "inputs": "right:1.483s, right+jump:0.5s, right:3s",
+      "assert": [
+        "won == true",
+        "deaths == 0"
+      ]
+    },
+    {
+      "name": "one frame early falls short",
+      "inputs": "right:1.383s, right+jump:0.5s, right:1s",
+      "duration": "3s",
+      "assert": [
+        "won == false",
+        "deaths >= 1"
+      ]
+    },
+    {
+      "name": "one frame late runs off the edge first",
+      "inputs": "right:1.5s, right+jump:0.5s, right:1s",
+      "duration": "3s",
+      "assert": [
+        "won == false",
+        "deaths >= 1"
+      ]
+    }
+  ]
+}

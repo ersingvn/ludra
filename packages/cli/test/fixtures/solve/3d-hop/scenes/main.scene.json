@@ -1,0 +1,104 @@
+{
+  "name": "3d-hop",
+  "world": {
+    "dimensions": 3,
+    "fallLimit": -5
+  },
+  "entities": [
+    {
+      "id": "player",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": 0.9,
+          "z": 0
+        },
+        "body": {
+          "type": "dynamic",
+          "width": 0.6,
+          "height": 1.8,
+          "shape": "capsule"
+        },
+        "character": {}
+      }
+    },
+    {
+      "id": "plaza",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": -0.5,
+          "z": 0
+        },
+        "body": {
+          "width": 4,
+          "height": 1,
+          "depth": 4
+        }
+      }
+    },
+    {
+      "id": "stone-1",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": -0.5,
+          "z": -8.5
+        },
+        "body": {
+          "width": 3,
+          "height": 1,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "id": "stone-2",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": -0.5,
+          "z": -15.5
+        },
+        "body": {
+          "width": 3,
+          "height": 1,
+          "depth": 3
+        }
+      }
+    },
+    {
+      "id": "landing",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": -0.5,
+          "z": -22.5
+        },
+        "body": {
+          "width": 4,
+          "height": 1,
+          "depth": 4
+        }
+      }
+    },
+    {
+      "id": "goal",
+      "components": {
+        "transform": {
+          "x": 0,
+          "y": 1,
+          "z": -22.5
+        },
+        "body": {
+          "type": "static",
+          "width": 1,
+          "height": 2,
+          "depth": 1,
+          "sensor": true
+        },
+        "goal": {}
+      }
+    }
+  ]
+}

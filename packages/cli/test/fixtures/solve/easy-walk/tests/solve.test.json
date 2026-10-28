@@ -1,0 +1,21 @@
+{
+  "tests": [
+    {
+      "name": "walking right wins, at the earliest possible moment",
+      "inputs": "right:3s",
+      "assert": [
+        "won == true",
+        "won == true at 2.45s",
+        "won == false at 2.43s",
+        "deaths == 0"
+      ]
+    },
+    {
+      "name": "standing still never wins",
+      "duration": "5s",
+      "assert": [
+        "won == false"
+      ]
+    }
+  ]
+}

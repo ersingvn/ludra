@@ -1,0 +1,121 @@
+{
+  "name": "needs-key",
+  "world": {
+    "width": 900,
+    "height": 540,
+    "gravity": 1800
+  },
+  "entities": [
+    {
+      "id": "player",
+      "components": {
+        "transform": {
+          "x": 300,
+          "y": 482
+        },
+        "body": {
+          "type": "dynamic",
+          "width": 28,
+          "height": 36
+        },
+        "platformer": {}
+      }
+    },
+    {
+      "id": "ground",
+      "components": {
+        "transform": {
+          "x": 450,
+          "y": 520
+        },
+        "body": {
+          "type": "static",
+          "width": 900,
+          "height": 40
+        }
+      }
+    },
+    {
+      "id": "key",
+      "components": {
+        "transform": {
+          "x": 80,
+          "y": 470
+        },
+        "body": {
+          "type": "static",
+          "width": 24,
+          "height": 24,
+          "sensor": true
+        },
+        "script": {
+          "src": "scripts/key.ts",
+          "params": {
+            "door": "door"
+          }
+        }
+      }
+    },
+    {
+      "id": "door",
+      "components": {
+        "transform": {
+          "x": 600,
+          "y": 400
+        },
+        "body": {
+          "type": "static",
+          "width": 28,
+          "height": 200
+        },
+        "script": {
+          "src": "scripts/locked-door.ts"
+        }
+      }
+    },
+    {
+      "id": "goal",
+      "components": {
+        "transform": {
+          "x": 800,
+          "y": 460
+        },
+        "body": {
+          "type": "static",
+          "width": 40,
+          "height": 80,
+          "sensor": true
+        },
+        "goal": {}
+      }
+    },
+    {
+      "id": "wall-left",
+      "components": {
+        "transform": {
+          "x": -10,
+          "y": 270
+        },
+        "body": {
+          "type": "static",
+          "width": 20,
+          "height": 540
+        }
+      }
+    },
+    {
+      "id": "wall-right",
+      "components": {
+        "transform": {
+          "x": 910,
+          "y": 270
+        },
+        "body": {
+          "type": "static",
+          "width": 20,
+          "height": 540
+        }
+      }
+    }
+  ]
+}
