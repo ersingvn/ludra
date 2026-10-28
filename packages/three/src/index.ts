@@ -1,7 +1,12 @@
 import * as THREE from "three";
 import { ConvexGeometry } from "three/addons/geometries/ConvexGeometry.js";
+import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
+import { GLTFLoader, type GLTF } from "three/addons/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
+import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import {
   FIXED_DT,
+  type AnimationState,
   type Body,
   type Camera3D,
   type DrawEvent,
@@ -46,6 +51,21 @@ export const createRenderer3D: Renderer3DFactory = async (scene, options) => {
   return renderer;
 };
 
+/** A drawn glTF model and what poses it. */
+interface Model {
+  root: THREE.Object3D;
+  clips: THREE.AnimationClip[];
+  mixer: THREE.AnimationMixer;
+  actions: Map<string, THREE.AnimationAction>;
+}
+
+/** A clip an entity started playing, at simulation time `since`. `once` holds the last pose (a jump). */
+interface ClipStart {
+  clip: string;
+  since: number;
+  once: boolean;
+}
+
 interface Rig {
   position: THREE.Vector3;
   look: THREE.Vector3;
@@ -65,6 +85,18 @@ export class ThreeRenderer implements Renderer3D {
   private readonly objects = new Map<Entity, THREE.Object3D>();
   private readonly lights = new Map<Entity, THREE.Light>();
   private readonly textures = new Map<string, THREE.Texture>();
+  /** Loaded glTF files by path; null when one failed to load (its entities fall back to a shape). */
+  private readonly gltfs = new Map<string, GLTF | null>();
+  private readonly gltfLoads = new Map<string, Promise<void>>();
+  private gltfLoader: GLTFLoader | undefined;
+  private readonly models = new Map<Entity, Model>();
+  /** Entities drawn with a placeholder while their model loads. */
+  private readonly waiting = new Set<Entity>();
+  /**
+   * The clips each modelled entity played, recorded once per simulation step (not per frame), so a
+   * pose depends only on the simulation: a screenshot shows what the live game shows at that moment.
+   */
+  private readonly clipHistory = new Map<Entity, ClipStart[]>();
   private readonly debugGroup = new THREE.Group();
   private readonly defaultLights = new THREE.Group();
   private rig: Rig | undefined;
@@ -100,12 +132,16 @@ export class ThreeRenderer implements Renderer3D {
     this.scene.add(this.debugGroup, this.defaultLights);
   }
 
-  /** Loads every texture the scene names, so the first frame (and screenshots) are complete. */
+  /** Loads every texture and model the scene (and its prefabs) names, so the first frame (and screenshots) are complete. */
   async load(): Promise<void> {
     const loader = new THREE.TextureLoader();
-    const paths = new Set(this.def.entities.map((e) => e.components.mesh?.texture).filter((p): p is string => typeof p === "string" && p !== ""));
-    await Promise.all(
-      [...paths].map(async (path) => {
+    const meshes = [...this.def.entities, ...Object.values(this.def.prefabs ?? {})].map((e) => e.components?.mesh as Record<string, unknown> | undefined);
+    const named = (field: string) => new Set(meshes.map((m) => m?.[field]).filter((p): p is string => typeof p === "string" && p !== ""));
+    const paths = named("texture");
+    const models = [...named("model")].map((path) => this.loadModel(path));
+    await Promise.all([
+      ...models,
+      ...[...paths].map(async (path) => {
         try {
           const texture = await loader.loadAsync(this.assetBase + path);
           texture.colorSpace = THREE.SRGBColorSpace;
@@ -116,7 +152,32 @@ export class ThreeRenderer implements Renderer3D {
           console.warn(`[ludra] could not load texture "${path}", using the mesh color instead.`);
         }
       }),
+    ]);
+  }
+
+  /** Loads a glTF file once. Draco and meshopt compressed files work too. */
+  private loadModel(path: string): Promise<void> {
+    let load = this.gltfLoads.get(path);
+    if (load) return load;
+    if (!this.gltfLoader) {
+      this.gltfLoader = new GLTFLoader();
+      const draco = new DRACOLoader();
+      // The decoder sits in three's addons, which the import map serves.
+      draco.setDecoderPath(new URL("../libs/draco/gltf/", import.meta.resolve("three/addons/loaders/DRACOLoader.js")).href);
+      this.gltfLoader.setDRACOLoader(draco);
+      this.gltfLoader.setMeshoptDecoder(MeshoptDecoder);
+    }
+    load = this.track(
+      this.gltfLoader.loadAsync(this.assetBase + path).then(
+        (gltf) => void this.gltfs.set(path, gltf),
+        (err: unknown) => {
+          console.warn(`[ludra] could not load model "${path}" (${(err as Error)?.message ?? err}), drawing its shape instead.`);
+          this.gltfs.set(path, null);
+        },
+      ),
     );
+    this.gltfLoads.set(path, load);
+    return load;
   }
 
   private applyEnvironment(env: EnvironmentDef): void {
@@ -145,10 +206,13 @@ export class ThreeRenderer implements Renderer3D {
 
   step(world: WorldView): void {
     this.updateRig(world, FIXED_DT);
+    this.recordClips(world);
   }
 
   reset(world: WorldView): void {
     this.rig = undefined;
+    this.clipHistory.clear();
+    this.recordClips(world);
     // Things render hooks built belong to the old run.
     for (const group of this.hookGroups.values()) group.removeFromParent();
     this.hookGroups.clear();
@@ -163,6 +227,7 @@ export class ThreeRenderer implements Renderer3D {
     const rig = this.rig!;
     this.camera.position.copy(rig.position);
     this.camera.lookAt(rig.look);
+    this.poseModels(world);
     this.runRenderHooks(world);
     if (this.customRender) this.customRender();
     else this.renderer.render(this.scene, this.camera);
@@ -210,6 +275,7 @@ export class ThreeRenderer implements Renderer3D {
         camera: this.camera,
         renderer: this.renderer,
         object: group,
+        model: this.modelHandle(e),
         time: world.time ?? 0,
         local: this.hookLocals.get(e)!,
         view: { width: this.canvas.width, height: this.canvas.height },
@@ -235,15 +301,74 @@ export class ThreeRenderer implements Renderer3D {
     this.renderer.dispose();
   }
 
+  // ---------------------------------------------------------------- animation
+
+  /** Notes which clip every modelled entity should play now, and when that clip started. */
+  private recordClips(world: WorldView): void {
+    const time = world.time ?? 0;
+    const live = new Set(world.entities);
+    for (const entity of this.clipHistory.keys()) if (!live.has(entity)) this.clipHistory.delete(entity);
+    for (const e of world.entities) {
+      if (!e.mesh?.model) continue;
+      const { clip, once } = chooseClip(e);
+      const history = this.clipHistory.get(e) ?? [];
+      const last = history[history.length - 1];
+      if (last && last.clip === clip) continue;
+      history.push({ clip, since: time, once });
+      // Only the newest two matter: the clip playing and the one it blends out of.
+      if (history.length > 2) history.shift();
+      this.clipHistory.set(e, history);
+    }
+  }
+
+  /** Poses every model for this moment: a pure function of simulation time and the clip history. */
+  private poseModels(world: WorldView): void {
+    const time = world.time ?? 0;
+    for (const [e, model] of this.models) {
+      if (model.actions.size === 0) continue;
+      const spec = e.mesh!;
+      const history = this.clipHistory.get(e) ?? [];
+      const current = history[history.length - 1];
+      const previous = history[history.length - 2];
+      const blend = !current || !previous || spec.fade <= 0 ? 1 : Math.min(1, (time - current.since) / spec.fade);
+      for (const [name, action] of model.actions) {
+        const entry = name === current?.clip ? current : name === previous?.clip && blend < 1 ? previous : undefined;
+        if (!entry) {
+          action.setEffectiveWeight(0);
+          continue;
+        }
+        const duration = action.getClip().duration;
+        const elapsed = Math.max(0, time - entry.since) * spec.animationSpeed;
+        action.time = duration <= 0 ? 0 : entry.once ? Math.min(elapsed, duration - 1e-4) : elapsed % duration;
+        action.setEffectiveWeight(entry === current ? blend : 1 - blend);
+      }
+      if (current && current.clip !== "" && !model.actions.has(current.clip) && !warnedClips.has(`${e.id}:${current.clip}`)) {
+        warnedClips.add(`${e.id}:${current.clip}`);
+        console.warn(`[ludra] entity "${e.id}" asked for the clip "${current.clip}", which its model doesn't have. Clips: ${[...model.actions.keys()].join(", ") || "none"}.`);
+      }
+      model.mixer.update(0);
+    }
+  }
+
+  private modelHandle(e: Entity): RenderContext["model"] {
+    const model = this.models.get(e);
+    return model && { root: model.root, clips: model.clips, mixer: model.mixer };
+  }
+
   // ---------------------------------------------------------------- objects
 
   /** Brings Three's scene in line with the world: new entities, removed ones, every transform. */
   private sync(world: WorldView): void {
     const live = new Set(world.entities);
     for (const [entity, object] of this.objects) {
-      if (live.has(entity)) continue;
+      // A model that finished loading replaces its placeholder.
+      const ready = this.waiting.has(entity) && this.gltfs.has(entity.mesh!.model);
+      if (live.has(entity) && !ready) continue;
       object.removeFromParent();
       this.objects.delete(entity);
+      this.models.get(entity)?.mixer.stopAllAction();
+      this.models.delete(entity);
+      this.waiting.delete(entity);
     }
     for (const [entity, light] of this.lights) {
       if (live.has(entity)) continue;
@@ -297,6 +422,18 @@ export class ThreeRenderer implements Renderer3D {
 
   private createMesh(e: Entity): THREE.Object3D {
     const spec = e.mesh!;
+    if (spec.model) {
+      const gltf = this.gltfs.get(spec.model);
+      if (gltf) return this.createModel(e, gltf);
+      if (gltf === undefined) {
+        // Not loaded yet (a spawned entity whose model the scene never named): an empty stand-in until it is.
+        void this.loadModel(spec.model);
+        this.waiting.add(e);
+        const placeholder = new THREE.Group();
+        placeholder.name = e.id;
+        return placeholder;
+      }
+    }
     const geometry = meshGeometry(spec, e.body);
     const texture = spec.texture ? this.textures.get(spec.texture)?.clone() : undefined;
     if (texture && spec.textureScale > 0) {
@@ -324,6 +461,60 @@ export class ThreeRenderer implements Renderer3D {
     mesh.receiveShadow = spec.receiveShadow;
     mesh.name = e.id;
     return mesh;
+  }
+
+  /**
+   * A copy of the model (bones included), turned, fitted to the entity and offset. The returned group
+   * is placed like any mesh; inside it a pivot holds the fit, so scripts can still move the root.
+   */
+  private createModel(e: Entity, gltf: GLTF): THREE.Object3D {
+    const spec = e.mesh!;
+    const root = cloneSkinned(gltf.scene);
+    root.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh) {
+        o.castShadow = spec.castShadow;
+        o.receiveShadow = spec.receiveShadow;
+      }
+    });
+    root.rotation.set((spec.turn.x ?? 0) * DEG, (spec.turn.y ?? 0) * DEG, (spec.turn.z ?? 0) * DEG, "YXZ");
+    root.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(root, true);
+    const size = box.isEmpty() ? new THREE.Vector3(1, 1, 1) : box.getSize(new THREE.Vector3());
+    const center = box.isEmpty() ? new THREE.Vector3() : box.getCenter(new THREE.Vector3());
+
+    const w = spec.width || e.body?.width || 0;
+    const h = spec.height || e.body?.height || 0;
+    const d = spec.depth || e.body?.depth || e.body?.width || 0;
+    const fitted = (target: number, own: number) => (target > 0 && own > 0 ? target / own : 1);
+    const scale = new THREE.Vector3(1, 1, 1);
+    if (spec.fit === "height") scale.setScalar(fitted(h, size.y));
+    else if (spec.fit === "box") scale.set(fitted(w, size.x), fitted(h, size.y), fitted(d, size.z));
+    scale.multiplyScalar(spec.scale);
+
+    const pivot = new THREE.Group();
+    pivot.scale.copy(scale);
+    pivot.add(root);
+    if (spec.fit !== "none") {
+      // Centred on the entity, standing on the bottom of its body (or on its origin without a height).
+      root.position.sub(new THREE.Vector3(center.x, box.isEmpty() ? 0 : box.min.y, center.z));
+      pivot.position.y = h > 0 ? -h / 2 : 0;
+    }
+    pivot.position.add(new THREE.Vector3(spec.offset.x ?? 0, spec.offset.y ?? 0, spec.offset.z ?? 0));
+
+    const mixer = new THREE.AnimationMixer(root);
+    const actions = new Map<string, THREE.AnimationAction>();
+    for (const clip of gltf.animations) {
+      const action = mixer.clipAction(clip);
+      action.setEffectiveWeight(0);
+      action.play();
+      actions.set(clip.name, action);
+    }
+    this.models.set(e, { root, clips: gltf.animations, mixer, actions });
+
+    const group = new THREE.Group();
+    group.name = e.id;
+    group.add(pivot);
+    return group;
   }
 
   private placeLight(light: THREE.Light, e: Entity): void {
@@ -442,6 +633,35 @@ function recentEvents(world: WorldView, name: string | undefined, seconds: numbe
   return result.reverse();
 }
 
+/** Clips already reported missing, so the console says it once. */
+const warnedClips = new Set<string>();
+
+/**
+ * The clip an entity should play: a script's `state.animation`, then `mesh.animation`, then the
+ * clip its `animations` map gives the way it moves (in the air: jump while rising, fall after).
+ */
+function chooseClip(e: Entity): { clip: string; once: boolean } {
+  const spec = e.mesh!;
+  const scripted = e.state.animation;
+  if (typeof scripted === "string" && scripted !== "") return { clip: scripted, once: false };
+  if (spec.animation) return { clip: spec.animation, once: false };
+  const map = spec.animations;
+  const pick = (...states: AnimationState[]) => states.map((s) => map[s]).find((c) => c) ?? "";
+  const b = e.body;
+  if (!b) return { clip: pick("idle"), once: false };
+  if (!b.grounded && b.type === "dynamic") {
+    const clip = b.vy > 0 ? pick("jump", "fall", "idle") : pick("fall", "jump", "idle");
+    // A jump plays once and holds its last pose; a fall loops.
+    return { clip, once: clip === map.jump && clip !== map.fall };
+  }
+  const speed = Math.hypot(b.vx, b.vz);
+  if (speed > 0.3) {
+    const runFrom = (e.character?.speed ?? 5) * 0.6;
+    return { clip: speed < runFrom ? pick("walk", "run", "idle") : pick("run", "walk", "idle"), once: false };
+  }
+  return { clip: pick("idle"), once: false };
+}
+
 const DEFAULT_CAMERA: Camera3D = { mode: "follow", target: "", fov: 55, distance: 9, height: 4, yaw: 0, orbitSpeed: 20, lookAt: {}, smoothing: 0.12 };
 
 function placeObject(object: THREE.Object3D, e: Entity): void {
@@ -493,7 +713,7 @@ function createLight(spec: LightSpec): THREE.Light {
 /** The mesh's geometry: its own shape and size, or its body's. */
 function meshGeometry(spec: MeshSpec, body: Body | undefined): THREE.BufferGeometry {
   const shape = spec.shape === "auto" ? (body ? bodyShape(body) : "box") : spec.shape;
-  if (shape === "convex" && body && spec.shape === "auto") return colliderGeometry(body);
+  if ((shape === "convex" || shape === "mesh") && body && spec.shape === "auto") return colliderGeometry(body);
   const w = spec.width || body?.width || 1;
   const h = spec.height || body?.height || 1;
   const d = spec.depth || (body ? body.depth || body.width : w);
@@ -516,7 +736,7 @@ function meshGeometry(spec: MeshSpec, body: Body | undefined): THREE.BufferGeome
 }
 
 function bodyShape(body: Body): string {
-  return body.shape === "box" || body.shape === "sphere" || body.shape === "capsule" || body.shape === "cylinder" || body.shape === "convex" ? body.shape : "box";
+  return body.shape === "box" || body.shape === "sphere" || body.shape === "capsule" || body.shape === "cylinder" || body.shape === "convex" || body.shape === "mesh" ? body.shape : "box";
 }
 
 /** The exact collider shape, for the debug view and convex meshes. */
@@ -532,6 +752,15 @@ function colliderGeometry(b: Body): THREE.BufferGeometry {
     case "convex":
       if (b.points.length >= 4) return new ConvexGeometry(b.points.map(([x, y, z]) => new THREE.Vector3(x, y, z ?? 0)));
       return new THREE.BoxGeometry(b.width, b.height, d);
+    case "mesh": {
+      if (b.points.length < 3 || b.triangles.length === 0) return new THREE.BoxGeometry(b.width, b.height, d);
+      // Exactly the collider's triangles, so procedural terrain is drawn as it collides.
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.Float32BufferAttribute(b.points.flatMap(([x, y, z]) => [x!, y!, z ?? 0]), 3));
+      geometry.setIndex(b.triangles.flat());
+      geometry.computeVertexNormals();
+      return geometry;
+    }
     default:
       return new THREE.BoxGeometry(b.width, b.height, d);
   }

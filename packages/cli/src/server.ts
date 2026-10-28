@@ -28,6 +28,9 @@ const MEDIA_TYPES: Record<string, string> = {
   ".otf": "font/otf",
   ".frag": "text/plain; charset=utf-8",
   ".glsl": "text/plain; charset=utf-8",
+  ".glb": "model/gltf-binary",
+  ".gltf": "model/gltf+json",
+  ".bin": "application/octet-stream",
 };
 
 export interface GameServer {
@@ -83,6 +86,12 @@ function enginePaths() {
 function serveModule(res: ServerResponse, dir: string, path: string): void {
   const file = join(dir, decodeURIComponent(path));
   if (!file.startsWith(dir + sep) || !existsSync(file)) return notFound(res);
+  // three.js addons bring binaries along (the Draco decoder's .wasm): send those as bytes.
+  if (extname(file) === ".wasm") {
+    res.writeHead(200, { "content-type": "application/wasm" });
+    res.end(readFileSync(file));
+    return;
+  }
   const source = readFileSync(file, "utf8");
   res.writeHead(200, { "content-type": "text/javascript; charset=utf-8" });
   res.end(extname(file) === ".ts" ? stripTypeScriptTypes(source) : source);

@@ -8,6 +8,7 @@ export type SoundPreset = (typeof SOUND_PRESETS)[number];
 export const AUDIO_EXTENSIONS = [".wav", ".mp3", ".ogg"] as const;
 export const IMAGE_EXTENSIONS = [".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp"] as const;
 export const FONT_EXTENSIONS = [".woff2", ".woff", ".ttf", ".otf"] as const;
+export const MODEL_EXTENSIONS = [".glb", ".gltf"] as const;
 
 export const EFFECT_FIELDS: Record<string, FieldSpec> = {
   sound: {
@@ -30,7 +31,7 @@ export interface AssetReference {
   path: string;
   /** JSON path of the field that references it. */
   at: string;
-  kind: "image" | "audio" | "script" | "font" | "shader" | "scene";
+  kind: "image" | "audio" | "script" | "font" | "shader" | "scene" | "model";
 }
 
 /** Every file a scene points at, so tools can check that they exist. */
@@ -41,6 +42,10 @@ export function collectAssetPaths(scene: SceneDef): AssetReference[] {
     if (typeof image === "string" && image !== "") refs.push({ path: image, at: `entities[${i}].components.sprite.image`, kind: "image" });
     const texture = entity.components.mesh?.texture;
     if (typeof texture === "string" && texture !== "") refs.push({ path: texture, at: `entities[${i}].components.mesh.texture`, kind: "image" });
+    const model = entity.components.mesh?.model;
+    if (typeof model === "string" && model !== "") refs.push({ path: model, at: `entities[${i}].components.mesh.model`, kind: "model" });
+    const collider = entity.components.body?.model;
+    if (typeof collider === "string" && collider !== "") refs.push({ path: collider, at: `entities[${i}].components.body.model`, kind: "model" });
     const next = entity.components.goal?.next;
     if (typeof next === "string" && next !== "") refs.push({ path: next, at: `entities[${i}].components.goal.next`, kind: "scene" });
     const src = entity.components.script?.src;

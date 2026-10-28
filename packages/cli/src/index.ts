@@ -4,6 +4,7 @@ import { add, blocks } from "./commands/blocks.ts";
 import { check } from "./commands/check.ts";
 import { components } from "./commands/components.ts";
 import { dev } from "./commands/dev.ts";
+import { inspect } from "./commands/inspect.ts";
 import { create } from "./commands/new.ts";
 import { play } from "./commands/play.ts";
 import { test } from "./commands/test.ts";
@@ -40,6 +41,8 @@ Usage
   ludra review [folder] [--json] [--strict]    Find what makes a game feel unfinished: untested mechanics,
                                                silent events, default HUD, flat looks (--strict: exit 1 on issues)
   ludra components [name] [--json]             Reference for every component and field
+  ludra inspect <file> [--json]                What a .glb/.gltf model holds (size in metres, triangles, animations,
+                                               bones), or an image's size or a WAV's duration
   ludra blocks [--json]                        Catalog of ready-made gameplay blocks
   ludra add <block> [folder] --at x,y          Add a block: entities, scripts, art and effects
       --id name                                Id prefix for its entities (default: the block name)
@@ -94,6 +97,8 @@ async function main(argv: string[]): Promise<number> {
       return components(target, values);
     case "dev":
       return dev(target ?? ".", values);
+    case "inspect":
+      return inspect(target, values);
     case "blocks":
       return blocks(values);
     case "add":
