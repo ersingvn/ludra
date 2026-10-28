@@ -1,0 +1,145 @@
+{
+  "tests": [
+    {
+      "name": "the plaza holds the wanderer up, and the first shard is a walk away",
+      "inputs": "up:1s",
+      "duration": "1.5s",
+      "assert": [
+        "player.grounded == true",
+        "player.y > 0.8",
+        "shard-1.exists == false",
+        "score == 1",
+        "deaths == 0"
+      ]
+    },
+    {
+      "name": "a jump on landing carries the wanderer from stone to stone, and the shard over the first gap is caught mid-air",
+      "inputs": "up:1.1s, up+jump:0.6s, up:0.9s, up+jump:0.6s, up:0.9s, up+jump:0.6s, up:0.6s",
+      "duration": "6s",
+      "assert": [
+        "player.grounded == true at 2.6s",
+        "player.z < -8 at 2.6s",
+        "events.collect == 2",
+        "shard-2.exists == false",
+        "player.y > 1.8",
+        "player.z < -21",
+        "deaths == 0"
+      ]
+    },
+    {
+      "name": "the terrace shard needs a step to the side",
+      "inputs": "up:1.1s, up+jump:0.6s, up:0.9s, up+jump:0.6s, up:0.9s, up+jump:0.6s, up:0.9s, up+jump:0.6s, up:0.3s, right:0.5s",
+      "duration": "8s",
+      "assert": [
+        "shard-3.exists == false",
+        "score == 3",
+        "player.x > 2"
+      ]
+    },
+    {
+      "name": "falling into the lake costs a life and starts over on the plaza",
+      "inputs": "left:2s",
+      "duration": "4s",
+      "assert": [
+        "deaths == 1",
+        "lives == 2",
+        "events.die == 1",
+        "player.grounded == true",
+        "player.z > 1"
+      ]
+    },
+    {
+      "name": "the two pillars rise and sink out of step",
+      "duration": "4s",
+      "assert": [
+        "pillar-1.y < -3.4 at 0s",
+        "pillar-1.y > -0.6 at 1.8s",
+        "pillar-2.y > -0.6 at 0s",
+        "pillar-2.y < -3.4 at 1.8s",
+        "pillar-1.y < -3.4 at 3.6s"
+      ]
+    },
+    {
+      "name": "riding the pillars, the bridge is reached when the second pillar is up",
+      "inputs": "up:1.1s, up+jump:0.6s, up:0.9s, up+jump:0.6s, up:0.9s, up+jump:0.6s, up:0.9s, up+jump:0.6s, up:0.3s, right:0.5s, left:0.5s, wait:0.4s, up+jump:0.6s, up:0.8s, wait:0.5s, up+jump:0.6s, up:0.6s, wait:0.5s, up+jump:0.6s, up:0.5s",
+      "duration": "14s",
+      "assert": [
+        "shard-4.exists == false",
+        "score == 4",
+        "player.z < -45.5",
+        "player.y > 3.2",
+        "player.grounded == true",
+        "deaths == 0"
+      ]
+    },
+    {
+      "name": "jumping for the bridge while the second pillar is down falls short",
+      "inputs": "up:1.1s, up+jump:0.6s, up:0.9s, up+jump:0.6s, up:0.9s, up+jump:0.6s, up:0.9s, up+jump:0.6s, up:0.3s, right:0.5s, left:0.5s, wait:0.4s, up+jump:0.6s, up:0.8s, wait:0.5s, up+jump:0.6s, up:0.6s, wait:1.6s, up+jump:0.6s, up:0.5s",
+      "duration": "17s",
+      "assert": [
+        "deaths == 1",
+        "events.checkpoint == 0",
+        "player.z > 1"
+      ]
+    },
+    {
+      "name": "the gate on the bridge is a checkpoint, and walking into the wisp sends the wanderer back to it",
+      "inputs": "up:1.1s, up+jump:0.6s, up:0.9s, up+jump:0.6s, up:0.9s, up+jump:0.6s, up:0.9s, up+jump:0.6s, up:0.3s, right:0.5s, left:0.5s, wait:0.4s, up+jump:0.6s, up:0.8s, wait:0.5s, up+jump:0.6s, up:0.6s, wait:0.5s, up+jump:0.6s, up:0.5s, wait:0.1s, up:0.6s, wait:2s",
+      "duration": "16.5s",
+      "assert": [
+        "events.checkpoint == 1",
+        "deaths == 1",
+        "lives == 2",
+        "wisp.exists == true",
+        "player.z < -46",
+        "player.z > -49.5",
+        "player.grounded == true"
+      ]
+    },
+    {
+      "name": "landing on the wisp puts it out",
+      "inputs": "up:1.1s, up+jump:0.6s, up:0.9s, up+jump:0.6s, up:0.9s, up+jump:0.6s, up:0.9s, up+jump:0.6s, up:0.3s, right:0.5s, left:0.5s, wait:0.4s, up+jump:0.6s, up:0.8s, wait:0.5s, up+jump:0.6s, up:0.6s, wait:0.5s, up+jump:0.6s, up:0.5s, wait:0.7s, up+jump:0.3s, up:0.2s, wait:1s",
+      "duration": "16.5s",
+      "assert": [
+        "events.stomp == 1",
+        "wisp.exists == false",
+        "deaths == 0"
+      ]
+    },
+    {
+      "name": "the spirit spring throws the wanderer up to the sanctum",
+      "inputs": "up:1.1s, up+jump:0.6s, up:0.9s, up+jump:0.6s, up:0.9s, up+jump:0.6s, up:0.9s, up+jump:0.6s, up:0.3s, right:0.5s, left:0.5s, wait:0.4s, up+jump:0.6s, up:0.8s, wait:0.5s, up+jump:0.6s, up:0.6s, wait:0.5s, up+jump:0.6s, up:0.5s, wait:0.5s, up+jump:0.6s, up:2.6s",
+      "duration": "18s",
+      "assert": [
+        "events.spring == 1",
+        "spring.state.launches == 1",
+        "shard-5.exists == false",
+        "player.y > 8.5",
+        "player.z < -61",
+        "player.grounded == true",
+        "deaths == 0"
+      ]
+    },
+    {
+      "name": "the moon gate stays shut while a shard is missing",
+      "inputs": "up:1.1s, up+jump:0.6s, up:0.9s, up+jump:0.6s, up:0.9s, up+jump:0.6s, up:0.9s, up+jump:0.6s, up:0.3s, right:0.5s, left:0.5s, wait:0.4s, up+jump:0.6s, up:0.8s, wait:0.5s, up+jump:0.6s, up:0.6s, wait:0.5s, up+jump:0.6s, up:0.5s, wait:0.5s, up+jump:0.6s, up:2.6s, wait:0.3s, up:0.6s",
+      "duration": "20s",
+      "assert": [
+        "score == 5",
+        "won == false",
+        "player.z < -67.5",
+        "deaths == 0"
+      ]
+    },
+    {
+      "name": "Moonlit Shrine can be completed without a single fall",
+      "inputs": "up:1.1s, up+jump:0.6s, up:0.9s, up+jump:0.6s, up:0.9s, up+jump:0.6s, up:0.9s, up+jump:0.6s, up:0.3s, right:0.5s, left:0.5s, wait:0.4s, up+jump:0.6s, up:0.8s, wait:0.5s, up+jump:0.6s, up:0.6s, wait:0.5s, up+jump:0.6s, up:0.5s, wait:0.5s, up+jump:0.6s, up:2.6s, right:0.6s, left:0.6s, up:0.8s",
+      "duration": "21s",
+      "assert": [
+        "won == true",
+        "score == 6",
+        "deaths == 0"
+      ]
+    }
+  ]
+}

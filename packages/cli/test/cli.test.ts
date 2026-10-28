@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { findBrowser } from "../src/headless.ts";
+import { boxModel, glb } from "./models.ts";
 
 const CLI = fileURLToPath(new URL("../src/index.ts", import.meta.url));
 const workDir = mkdtempSync(join(tmpdir(), "ludra-cli-"));
@@ -265,6 +266,55 @@ describe("rapier physics through the CLI", () => {
     const hooked = ludra("play", dir, "--duration", "1s", "--screenshot", "1s", "--out", "shots-hook", "--json");
     assert.equal(hooked.code, 0, hooked.out);
     assert.notDeepEqual(readFileSync(join(dir, "shots-hook", "t-1.00s.png")), plain, "the render hook's knot is in the frame");
+  });
+
+  test("a scene with glTF models passes check and plays headless", () => {
+    const dir = join(workDir, "models");
+    mkdirSync(join(dir, "scenes"), { recursive: true });
+    mkdirSync(join(dir, "assets"), { recursive: true });
+    writeFileSync(join(dir, "ludra.json"), JSON.stringify({ name: "Models" }));
+    // A box that turns half a circle about y over its 2 s "Spin" clip.
+    const { json, bin } = boxModel();
+    writeFileSync(join(dir, "assets", "spinner.glb"), glb(json, bin));
+    const mesh = (extra: object) => ({ model: "assets/spinner.glb", turn: { y: 180 }, ...extra });
+    writeFileSync(
+      join(dir, "scenes", "main.scene.json"),
+      JSON.stringify({
+        world: { dimensions: 3 },
+        environment: { sky: "#87b5ff" },
+        entities: [
+          { id: "floor", components: { transform: { x: 0, y: -0.5, z: 0 }, body: { width: 20, height: 1, depth: 20 }, mesh: { color: "#6f9a52" } } },
+          { id: "hero", components: { transform: { x: -1.5, y: 0.9, z: 0 }, body: { type: "dynamic", width: 0.6, height: 1.8, shape: "capsule" }, character: {}, mesh: mesh({ animations: { idle: "Spin", run: "Spin" } }) } },
+          { id: "spinner", components: { transform: { x: 1.5, y: 1, z: 0 }, mesh: mesh({ width: 2, height: 2, animation: "Spin" }) } },
+          { id: "sun", components: { transform: { x: 5, y: 10, z: 5 }, light: { type: "directional", intensity: 2.5 } } },
+          { id: "sky", components: { transform: { x: 0, y: 5, z: 0 }, light: { type: "hemisphere", intensity: 1 } } },
+          { id: "eye", components: { transform: { x: 0, y: 3, z: 7 }, camera3d: { mode: "fixed", lookAt: { x: 0, y: 1, z: 0 } } } },
+        ],
+      }),
+    );
+    const checked = ludra("check", dir);
+    assert.equal(checked.code, 0, checked.out);
+    assert.match(checked.out, /no problems/);
+    assert.equal(ludra("play", dir, "--duration", "0.5s").code, 0, "a model never changes the simulation");
+  });
+
+  test("screenshots draw glTF models and pose them by simulation time", { skip: findBrowser() ? false : "no Chrome, Edge or Chromium installed" }, () => {
+    const dir = join(workDir, "models");
+    const first = ludra("play", dir, "--duration", "1s", "--screenshot", "0.5s,1s", "--out", "shots", "--json");
+    assert.equal(first.code, 0, first.out);
+    const [early, late] = ["t-0.50s.png", "t-1.00s.png"].map((name) => readFileSync(join(dir, "shots", name)));
+    assert.equal(early!.subarray(1, 4).toString(), "PNG");
+    assert.ok(early!.length > 20000, `a real 3D frame, not a blank one (${early!.length} bytes)`);
+    assert.notDeepEqual(early, late, "the Spin clip turned the models between 0.5s and 1s");
+
+    // Without the models the same frame is plain shapes: the models are really drawn.
+    const scenePath = join(dir, "scenes", "main.scene.json");
+    const scene = JSON.parse(readFileSync(scenePath, "utf8"));
+    for (const e of scene.entities) if (e.components.mesh?.model) e.components.mesh = { color: "#ff7a59" };
+    writeFileSync(scenePath, JSON.stringify(scene));
+    const shapes = ludra("play", dir, "--duration", "1s", "--screenshot", "0.5s", "--out", "shots-shapes", "--json");
+    assert.equal(shapes.code, 0, shapes.out);
+    assert.notDeepEqual(readFileSync(join(dir, "shots-shapes", "t-0.50s.png")), early, "the models replace the plain shapes");
   });
 
   test("screenshots of a rapier scene load Rapier in the browser, with and without --debug", { skip: findBrowser() ? false : "no Chrome, Edge or Chromium installed" }, () => {

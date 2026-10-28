@@ -1,5 +1,5 @@
-import { COMPONENT_NAMES, COMPONENTS, isComponentName, isFrameList, PARTICLE_FIELDS, type ComponentName, type FieldSpec } from "./components.ts";
-import { AUDIO_EXTENSIONS, EFFECT_FIELDS, FONT_EXTENSIONS, IMAGE_EXTENSIONS, SOUND_PRESETS } from "./effects.ts";
+import { ANIMATION_STATES, COMPONENT_NAMES, COMPONENTS, isComponentName, isFrameList, PARTICLE_FIELDS, type ComponentName, type FieldSpec } from "./components.ts";
+import { AUDIO_EXTENSIONS, EFFECT_FIELDS, FONT_EXTENSIONS, IMAGE_EXTENSIONS, MODEL_EXTENSIONS, SOUND_PRESETS } from "./effects.ts";
 import { isKnownSound, validateMusic, validateSounds } from "./sound.ts";
 import { expandTilemaps } from "./tilemap.ts";
 import { EVENT_TYPES, type Diagnostic, type SceneDef } from "./types.ts";
@@ -184,6 +184,28 @@ export function validateScene(input: unknown): ValidationResult {
       );
     }
 
+    const mesh = isObject(components.mesh) ? components.mesh : undefined;
+    if (mesh && typeof mesh.model === "string" && mesh.model !== "" && !hasExtension(mesh.model, MODEL_EXTENSIONS)) {
+      error(
+        "E_INVALID_MODEL",
+        `${path}.components.mesh.model`,
+        `"${mesh.model}" on entity ${label} is not a glTF model.`,
+        `Use a path ending in ${MODEL_EXTENSIONS.join(", ")}. Convert other formats (FBX, OBJ) to .glb first, e.g. with Blender.`,
+      );
+    }
+    if (mesh && isObject(mesh.animations)) {
+      for (const state of Object.keys(mesh.animations)) {
+        if ((ANIMATION_STATES as readonly string[]).includes(state)) continue;
+        const suggestion = closestName(state, ANIMATION_STATES);
+        error(
+          "E_ANIMATION_STATE",
+          `${path}.components.mesh.animations.${state}`,
+          `"${state}" on entity ${label} is not a movement state.`,
+          `${suggestion ? `Did you mean "${suggestion}"? ` : ""}States: ${ANIMATION_STATES.join(", ")}. For any other clip, set self.state.animation from a script.`,
+        );
+      }
+    }
+
     const script = isObject(components.script) ? components.script : undefined;
     if (script && typeof script.src === "string" && !hasExtension(script.src, SCRIPT_EXTENSIONS)) {
       error(
@@ -302,8 +324,29 @@ export function validateScene(input: unknown): ValidationResult {
       }
     });
     validateDimensions(components, path, label, is3D, error, warn);
+    // A convex or mesh shape can take its geometry from a model instead (the CLI fills in points and triangles).
+    const shapeModel = body && (body.shape === "convex" || body.shape === "mesh") ? stringOr(body.model, "") || (isObject(components.mesh) ? stringOr(components.mesh.model, "") : "") : "";
+    if (body && body.shape === "mesh") {
+      if (bodyType === "dynamic") {
+        error("E_MESH_DYNAMIC", `${path}.components.body.shape`, `A mesh shape on entity ${label} is a hollow surface of triangles, so it can't be a dynamic body.`, 'Use "convex" for a moving solid (it can come from the same model), or make the body "static" or "kinematic".');
+      }
+      const triangles = Array.isArray(body.triangles) ? body.triangles : [];
+      const points = Array.isArray(body.points) ? body.points : [];
+      if (!shapeModel && (points.length < 3 || triangles.length < 1)) {
+        error(
+          "E_SHAPE_POINTS",
+          `${path}.components.body`,
+          `A mesh shape on entity ${label} needs a model, or points and triangles (got ${points.length} points, ${triangles.length} triangles).`,
+          'Set "model": "assets/cave.glb" (or give the entity a mesh.model), or "points": [[x, y, z], ...] with "triangles": [[0, 1, 2], ...].',
+        );
+      }
+      const bad = triangles.findIndex((t: unknown) => !Array.isArray(t) || t.length !== 3 || t.some((i) => !Number.isInteger(i) || i < 0 || i >= points.length));
+      if (bad >= 0 && !shapeModel) {
+        error("E_SHAPE_TRIANGLES", `${path}.components.body.triangles[${bad}]`, `Triangle ${bad} on entity ${label} must be three indices into points (0 to ${points.length - 1}).`, "Each triangle is [a, b, c], counter-clockwise seen from the side that faces out.");
+      }
+    }
     // Free shapes need their points.
-    if (body && (body.shape === "polygon" || body.shape === "polyline" || body.shape === "convex")) {
+    if (body && !shapeModel && (body.shape === "polygon" || body.shape === "polyline" || body.shape === "convex")) {
       const needed = body.shape === "polygon" ? 3 : body.shape === "convex" ? 4 : 2;
       const points = Array.isArray(body.points) ? body.points : [];
       if (points.length < needed) {
@@ -363,9 +406,9 @@ export function validateScene(input: unknown): ValidationResult {
 const RAPIER_BODY_FIELDS = ["shape", "friction", "density", "fixedRotation", "bullet"] as const;
 
 const SHAPES_2D = ["circle", "polygon", "polyline"];
-const SHAPES_3D = ["sphere", "cylinder", "convex"];
+const SHAPES_3D = ["sphere", "cylinder", "convex", "mesh"];
 /** The 3D shape to suggest for a 2D one, and back. */
-const SHAPE_COUNTERPART: Record<string, string> = { circle: "sphere", polygon: "convex", polyline: "convex", sphere: "circle", cylinder: "box", convex: "polygon" };
+const SHAPE_COUNTERPART: Record<string, string> = { circle: "sphere", polygon: "convex", polyline: "convex", sphere: "circle", cylinder: "box", convex: "polygon", mesh: "polyline" };
 /** 2D-only components, and what to use in 3D instead. */
 const ONLY_2D: Record<string, string> = {
   platformer: '3D players use the "character" component.',
@@ -511,6 +554,10 @@ export function mergeComponents(base: Record<string, unknown>, overrides: Record
 
 function numberOr(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function stringOr(value: unknown, fallback: string): string {
+  return typeof value === "string" ? value : fallback;
 }
 
 type Report = (code: string, path: string, message: string, fix?: string) => void;

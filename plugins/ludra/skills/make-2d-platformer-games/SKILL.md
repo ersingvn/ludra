@@ -1,6 +1,6 @@
 ---
 name: make-2d-platformer-games
-description: Make beautiful 2D and 3D games of any genre: 3D platformers and adventures (islands, characters, lights, shadows, cameras, three.js looks), 2D platformers, top-down adventures and arena games, breakout and other bouncing-ball games, physics games (stacking, ropes, hinges, vehicles, physics puzzles), with levels, coins, enemies, hazards, moving platforms, real rigid-body physics, custom game logic in scripts (chasing enemies, keys and doors, timers, shooting, bosses), sprites, animations, particles, sound, code-drawn art and lighting, custom HUDs, fonts and post-processing shaders. Use whenever the user asks to make, build, change, fix, test or polish a game, or works in a project with a ludra.json. Builds with the Ludra engine proves the game works by play-testing it headlessly, and reviews it for anything that makes it feel unfinished.
+description: Make beautiful 2D and 3D games of any genre: 3D platformers and adventures (islands, characters, glTF models with skeletal animation, lights, shadows, cameras, three.js looks), 2D platformers, top-down adventures and arena games, breakout and other bouncing-ball games, physics games (stacking, ropes, hinges, vehicles, physics puzzles), with levels, coins, enemies, hazards, moving platforms, real rigid-body physics, custom game logic in scripts (chasing enemies, keys and doors, timers, shooting, bosses), sprites, animations, particles, sound, code-drawn art and lighting, custom HUDs, fonts and post-processing shaders. Use whenever the user asks to make, build, change, fix, test or polish a game, or works in a project with a ludra.json. Builds with the Ludra engine proves the game works by play-testing it headlessly, and reviews it for anything that makes it feel unfinished.
 ---
 
 # Building games with Ludra
@@ -172,7 +172,7 @@ See `examples/clockwork-keep` for all three together, with a test for each movin
 
 - **The world.** `"world": { "dimensions": 3 }`: metres, +x right, **+y up**, +z toward the camera, gravity 9.81 m/s². It always runs on Rapier 3D (deterministic on every machine). Players falling below `world.fallLimit` (default -50) die.
 - **Transforms.** `{ "x", "y", "z", "rotation": { "x", "y", "z" } }`, degrees applied y (turn), then x (tilt), then z (roll). A single-number rotation is 2D and an error in 3D.
-- **Bodies.** `width`, `height` and `depth` (0 = width). Shapes: `box`, `sphere` (diameter = width), `capsule` and `cylinder` (upright), `convex` (`points`: `[[x, y, z], ...]`). Joints work in 3D too: `revolute` turns around `axis` (`{ "y": 1 }` for a door; default `{ "z": 1 }`), plus `spherical` ball joints; anchors take `z`.
+- **Bodies.** `width`, `height` and `depth` (0 = width). Shapes: `box`, `sphere` (diameter = width), `capsule` and `cylinder` (upright), `convex` (`points`: `[[x, y, z], ...]`, or a model) and `mesh` (exact triangles, see below). Joints work in 3D too: `revolute` turns around `axis` (`{ "y": 1 }` for a door; default `{ "z": 1 }`), plus `spherical` ball joints; anchors take `z`.
 - **The player.** `"character": {}` on a dynamic capsule (`width` 0.6, `height` 1.8).
   - Left/right walk along x; up/down along z, and **up walks away from the camera (-z)**.
   - It turns to face where it walks (`faceMovement`).
@@ -201,7 +201,20 @@ See `examples/clockwork-keep` for all three together, with a test for each movin
 - **Testing.** `play --watch` adds z and vz columns; assertions can use `.z`, `.vz`, `.rotationX`, `.rotationY`. Positions are floats: assert ranges (`"player.z < -7.5"`), not exact values. Find timings by sweeping, as in 2D.
 - **Level numbers.** A running jump crosses about 7 m on the level and about 6 m landing 1 m higher: design gaps at about 60% of that. Make a moving platform's path overlap each shore a little, so players step on and off at the ends.
 - **Review in 3D** asks for its own lights (`R_DEFAULT_LIGHTING`), a sky (`R_DEFAULT_SKY`) and chosen materials (`R_DEFAULT_MATERIALS`), and points out solid bodies with no mesh.
-- **Not yet:** 3D model files. glTF/GLB models and skeletal animation come in v0.92. Until then, build characters and props from meshes and render hooks.
+- **Models (glTF/GLB).** Any `.glb` or `.gltf` works, skinned and animated ones included:
+  - **Get one.** Build it in code (a script that writes a .glb), generate it, or download a CC0 one (Kenney, Quaternius, Poly Pizza). For FBX or OBJ, import it into Blender and use File > Export > glTF 2.0 (.glb). Put it in `assets/`.
+  - **Read it first.** `ludra inspect assets/knight.glb` gives its size in metres, its triangles, its bones and every animation clip with its duration, and prints a `"mesh"` line to start from. Never guess clip names.
+  - **Use it.** `"mesh": { "model": "assets/knight.glb", "turn": { "y": 180 }, "animations": { "idle": "Idle", "walk": "Walk", "run": "Run", "jump": "Jump", "fall": "Fall" } }`. It keeps its own materials, so `color` and `texture` are ignored.
+  - **Facing.** Ludra characters face -z, but most glTF characters face +z: give them `"turn": { "y": 180 }`, then check in a screenshot that they walk face first.
+  - **Size.** `fit` `"height"` (the default) scales it evenly to the mesh's (or body's) height, centres it and stands its lowest point on the bottom of the body. `"box"` stretches it to width, height and depth, and `"none"` keeps its own metres. Then `scale` and `offset` (metres) adjust it.
+  - **Animation.** The `animations` clip is picked from how it moves: `walk` under 60% of `character.speed`, `run` above, `jump` while rising (plays once and holds), `fall` coming down, `idle` otherwise. Leave any out. `animation` plays one clip forever (a windmill). A script's `self.state.animation = "Wave"` overrides both. `fade` blends between clips and `animationSpeed` scales them. Poses depend only on simulation time, so screenshots match live play.
+  - **Beyond that.** A render hook's `ctx.model` is `{ root, clips, mixer }`: find bones and materials in `root`, or attach a sword to a hand bone.
+  - **Check, then look.** `ludra check` names clips the model doesn't have (with the real list), and broken files, missing `.bin`s and extensions the renderer can't load. Then `play --screenshot` to see its size, facing and pose.
+- **Colliders of any shape.**
+  - `"shape": "mesh"` collides with exact triangles: `points` `[[x, y, z], ...]` plus `triangles` `[[a, b, c], ...]` indexing them. It is static or kinematic only (a dynamic one is `E_MESH_DYNAMIC`), for terrain, caves and level geometry.
+  - **Procedural terrain** is just numbers: generate a heightmap grid of points and two triangles per cell, in the scene JSON (or a script that writes it), and draw the same data in a render hook.
+  - **From a model.** `"body": { "shape": "mesh", "model": "" }` uses the entity's own `mesh.model` (`"convex"` takes the hull around it, for dynamic props). The CLI reads the geometry when it loads the scene and fits it exactly like the mesh, so tests and the browser use identical numbers. Point `model` at a simpler file to collide with fewer triangles than you draw.
+  - Model colliders work on scene and prefab entities, but not on `world.spawn` with inline components: spawn a prefab instead.
 
 ## Gameplay building blocks
 

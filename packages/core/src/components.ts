@@ -103,15 +103,26 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       vz: { type: "number", default: 0, description: "3D only: initial velocity along z in m/s." },
       shape: {
         type: "enum",
-        values: ["box", "circle", "capsule", "polygon", "polyline", "sphere", "cylinder", "convex"],
+        values: ["box", "circle", "capsule", "polygon", "polyline", "sphere", "cylinder", "convex", "mesh"],
         default: "box",
         description:
-          "Rapier only. 2D: circle (diameter = width), capsule (a rounded box, upright when taller than wide), polygon (the convex shape around `points`), polyline (an open line through `points`; static or kinematic only). 3D: box, sphere (diameter = width), capsule (upright, height total, radius width/2), cylinder (upright), convex (the hull around [x, y, z] `points`).",
+          "Rapier only. 2D: circle (diameter = width), capsule (a rounded box, upright when taller than wide), polygon (the convex shape around `points`), polyline (an open line through `points`; static or kinematic only). 3D: box, sphere (diameter = width), capsule (upright, height total, radius width/2), cylinder (upright), convex (the hull around [x, y, z] `points`, or around a model), mesh (exact triangles: `points` + `triangles`, or a model's; static or kinematic only, for terrain, caves and level geometry).",
       },
       points: {
         type: "points",
         default: [],
-        description: "Rapier only, for polygon and polyline shapes: [[x, y], ...] offsets from the center in px; for 3D convex shapes [[x, y, z], ...] in metres. width and height stay the bounding box.",
+        description: "Rapier only, for polygon and polyline shapes: [[x, y], ...] offsets from the center in px; for 3D convex and mesh shapes [[x, y, z], ...] in metres. width and height stay the bounding box.",
+      },
+      triangles: {
+        type: "points",
+        default: [],
+        description: "3D mesh shape: [[a, b, c], ...] indices into `points`, one per triangle. Generate them for terrain, or leave them out and use a model.",
+      },
+      model: {
+        type: "string",
+        default: "",
+        description:
+          '3D convex and mesh shapes: the glTF model whose geometry becomes the collider, fitted exactly like the entity\'s mesh (fit, scale, turn, offset). "" = the mesh\'s own model. Point it at a simpler model to collide with fewer triangles than you draw.',
       },
       friction: { type: "number", min: 0, default: 0.5, description: "Rapier only. 0 = ice, 1 = rubber." },
       density: { type: "number", min: 0, default: 1, description: "Rapier only. Mass per area: heavier bodies push lighter ones." },
@@ -333,6 +344,34 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       castShadow: { type: "boolean", default: true, description: "Throws a shadow from shadow-casting lights." },
       receiveShadow: { type: "boolean", default: true, description: "Shows shadows falling on it." },
       visible: { type: "boolean", default: true, description: "false hides it (an invisible wall, a trigger)." },
+      model: {
+        type: "string",
+        default: "",
+        description:
+          'A glTF model drawn instead of the shape, e.g. "assets/knight.glb" (.glb or .gltf, from anywhere: made in code, generated, downloaded). It keeps its own materials, so color, texture and the other surface fields are ignored. `ludra inspect` shows its size, bones and animations.',
+      },
+      fit: {
+        type: "enum",
+        values: ["height", "box", "none"],
+        default: "height",
+        description: "model: height = scaled evenly to the mesh's (or body's) height, centred on it with its lowest point at the bottom; box = stretched to width, height and depth; none = its own size in metres.",
+      },
+      scale: { type: "number", min: 0, default: 1, description: "model: extra scale on top of fit." },
+      offset: { type: "object", default: { x: 0, y: 0, z: 0 }, description: "model: moves it inside the entity, { x, y, z } in metres, after fitting." },
+      turn: {
+        type: "object",
+        default: { x: 0, y: 0, z: 0 },
+        description: "model: turns it inside the entity, { x, y, z } in degrees. Ludra characters face -z; most glTF characters face +z, so they need { \"y\": 180 }.",
+      },
+      animation: { type: "string", default: "", description: 'model: a clip that always plays, looping (a windmill\'s "Spin"). A script\'s self.state.animation, when it is a clip name, plays instead.' },
+      animations: {
+        type: "object",
+        default: {},
+        description:
+          'model: the clip for each movement state, picked automatically: { "idle": "Idle", "walk": "Walk", "run": "Run", "jump": "Jump", "fall": "Fall" }. Any can be left out. Clips blend over `fade`.',
+      },
+      fade: { type: "number", min: 0, default: 0.2, description: "model: seconds a clip blends into the next one." },
+      animationSpeed: { type: "number", min: 0, default: 1, description: "model: playback speed of every clip, 1 = as authored." },
     },
   },
   light: {
@@ -433,8 +472,10 @@ export interface Body {
   vz: number;
   /** 3D: size along z; 0 = the same as width. */
   depth: number;
-  shape: "box" | "circle" | "capsule" | "polygon" | "polyline" | "sphere" | "cylinder" | "convex";
+  shape: "box" | "circle" | "capsule" | "polygon" | "polyline" | "sphere" | "cylinder" | "convex" | "mesh";
   points: number[][];
+  triangles: number[][];
+  model: string;
   friction: number;
   density: number;
   fixedRotation: boolean;
@@ -520,7 +561,20 @@ export interface Mesh {
   castShadow: boolean;
   receiveShadow: boolean;
   visible: boolean;
+  model: string;
+  fit: "height" | "box" | "none";
+  scale: number;
+  offset: { x?: number; y?: number; z?: number };
+  turn: { x?: number; y?: number; z?: number };
+  animation: string;
+  animations: Partial<Record<AnimationState, string>>;
+  fade: number;
+  animationSpeed: number;
 }
+
+/** Movement states a model's `animations` map to clips. */
+export const ANIMATION_STATES = ["idle", "walk", "run", "jump", "fall"] as const;
+export type AnimationState = (typeof ANIMATION_STATES)[number];
 
 export interface Light {
   type: "directional" | "point" | "spot" | "ambient" | "hemisphere";

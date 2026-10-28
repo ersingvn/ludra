@@ -237,6 +237,12 @@ export interface RenderContext {
   renderer: any;
   /** This entity's own THREE.Group, placed and turned with it every frame: add children in its local space. */
   object: any;
+  /**
+   * This entity's glTF model (`mesh.model`) once loaded: `root` is its THREE.Object3D (find bones and
+   * materials in it), `clips` its THREE.AnimationClips and `mixer` the THREE.AnimationMixer the engine
+   * poses it with each frame, before this hook runs. Undefined without a model.
+   */
+  model?: { root: any; clips: any[]; mixer: any };
   self: ScriptEntity;
   world: ScriptWorld;
   params: Record<string, unknown>;

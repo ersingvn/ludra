@@ -676,5 +676,9 @@ function shape(b: Body): ColliderDesc {
     const points = new Float32Array(b.points.flatMap(([x, y, z]) => [x!, y!, z ?? 0]));
     return RAPIER.ColliderDesc.convexHull(points) ?? RAPIER.ColliderDesc.cuboid(b.width / 2, b.height / 2, depth(b) / 2);
   }
+  if (b.shape === "mesh" && b.points.length >= 3 && b.triangles.length > 0) {
+    const vertices = new Float32Array(b.points.flatMap(([x, y, z]) => [x!, y!, z ?? 0]));
+    return RAPIER.ColliderDesc.trimesh(vertices, new Uint32Array(b.triangles.flat()));
+  }
   return RAPIER.ColliderDesc.cuboid(b.width / 2, b.height / 2, depth(b) / 2);
 }

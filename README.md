@@ -25,7 +25,7 @@ claude > ludra new slime-valley
          Done. Run `ludra dev` to play it.
 ```
 
-> **Status:** early (v0.91). 3D games with Three.js and Rapier 3D, and 2D games in several genres (platformers, top-down adventures, breakout, physics games) on arcade or real Rapier physics, with tilemaps, camera zones, tweens, multiple levels, lives, checkpoints and prefabs, `ludra review` to catch unfinished work, art drawn in code with lighting, custom interfaces and GLSL post-processing, a library of ready-made gameplay blocks, custom TypeScript scripts, enemies, hazards, moving platforms, goals, animated SVG sprites, particles, each game's own synthesized sounds and music, plus the full agent toolchain including real rendered screenshots, work today. 3D models (glTF) and more 3D content are next on the [roadmap](#roadmap).
+> **Status:** early (v0.92). 3D games with Three.js and Rapier 3D, including any glTF model with skeletal animation on the simulation clock and colliders of any shape (from a model, or procedural terrain), and 2D games in several genres (platformers, top-down adventures, breakout, physics games) on arcade or real Rapier physics, with tilemaps, camera zones, tweens, multiple levels, lives, checkpoints and prefabs, `ludra review` to catch unfinished work, art drawn in code with lighting, custom interfaces and GLSL post-processing, a library of ready-made gameplay blocks, custom TypeScript scripts, enemies, hazards, moving platforms, goals, animated SVG sprites, particles, each game's own synthesized sounds and music, plus the full agent toolchain including real rendered screenshots and `ludra inspect` to read any model, image or sound as text, work today. Proof at scale (`ludra solve` and `ludra fuzz`) is next on the [roadmap](#roadmap).
 
 ## The idea
 
@@ -33,6 +33,16 @@ Unity-level games, made by AI, that are actually good. Ludra rests on two promis
 
 - **No ceiling on creativity.** The agent gets raw power, not a menu of presets: the full Canvas 2D API, GLSL shaders, any font, TypeScript for any mechanic, any genre. The engine never says "that's all you can do".
 - **No slop.** Power alone produces games that look generated: generic, untested, silent, flat. So Ludra gives the agent eyes (simulation, screenshots), proof (deterministic tests), taste (a design guide) and a reviewer that flags unfinished work. The few hard rules guard correctness, never creativity: the simulation is deterministic, drawing can't change the game, and a game isn't done until `check`, `test` and `review` are clean.
+
+What that means for every feature:
+
+1. **Raw power, thin layer.** Three.js, Rapier, Web Audio, GLSL and Canvas are fully open to scripts. Ludra adds what an agent can't build alone (the loop below) and stays out of the way of everything else.
+2. **Starting points are source, not boxes.** Templates, blocks and examples are copied into the project as files the agent reads and rewrites. Nothing ships as a preset the agent can only configure.
+3. **Eyes.** Anything a human would check by looking, an agent can check from text or a real rendered frame.
+4. **Proof.** The engine, not the agent, does the searching: whether a level can be won, how tight its timing is, what breaks under random play.
+5. **Taste.** `review` judges feel, not only completeness, against what the game is meant to be.
+6. **Agent-shaped interface.** Plain JSON, short outputs, `--json` everywhere, docs queryable from the CLI, and every error with a fix that can be applied without guessing.
+7. **Any asset, readable.** Models, images and sounds can come from anywhere; the engine describes them to the agent (size, bones, animations, length) so it never uses one blind.
 
 ## Why an engine for agents?
 
@@ -315,6 +325,23 @@ Draw hooks can read the game but not change it (that throws), so the browser nev
   - custom geometry and shaders, instancing, particles;
   - any three.js addon, and its own post-processing chain (bloom in a few lines).
 - **Scripts.** 3D impulses, forces, spin and raycasts, and the raw Rapier 3D API.
+- **Models.** Any glTF/GLB file, skinned and animated ones included. They can be made in code, generated, or downloaded.
+  - `ludra inspect` reads one as text first: size in metres, triangles, bones, and every clip with its length.
+  - `fit` sizes it to the body.
+  - `animations` maps clips to how the entity moves: idle, walk, run, jump, fall.
+  - `ludra check` names any clip the model doesn't have.
+  - Poses follow simulation time, so screenshots match live play.
+- **Colliders of any shape.** `"shape": "mesh"` collides with exact triangles: procedural terrain as `points` and `triangles`, or a model's own geometry. The CLI fits that geometry like the mesh, so tests and the browser agree.
+
+```json
+{ "id": "knight", "components": {
+  "transform": { "x": 0, "y": 0.9, "z": 0 },
+  "body": { "type": "dynamic", "shape": "capsule", "width": 0.6, "height": 1.8 },
+  "character": {},
+  "mesh": { "model": "assets/knight.glb", "turn": { "y": 180 },
+            "animations": { "idle": "Idle", "run": "Run", "jump": "Jump", "fall": "Fall" } }
+} }
+```
 
 `npx @ludra/cli new my-game --template 3d` starts from **Sky Islands**: hop between floating islands, collect five crystals, ride the raft, dodge the storm puff and step through the portal. It has its own sounds and music, ten tests, and a clean `review --strict`. Three.js and Rapier 3D are loaded only by 3D scenes, so 2D games stay small.
 
@@ -395,12 +422,12 @@ No audio files are needed, and sound has no ceiling. A scene designs its own `"s
 
 For everything else, a script's `sound` hook gets the real Web Audio API, the way draw hooks get the real canvas: Crate & Chasm's wind grows as you climb, the spiked ball hisses as fast as it swings and the bridge creaks under your feet. Every template ships with its own sounds and music, and `ludra review` flags stock beeps and silent games. Presentation never touches the simulation, so polishing a game can't break its tests, and `ludra check` reports any missing image or audio file along with the files that do exist.
 
-## Components (v0.91)
+## Components (v0.92)
 
 | Component | What it does |
 | --- | --- |
 | `transform` | Position (entity center; 2D: px, +y down; 3D: metres, +y up, with z and a rotation per axis) |
-| `body` | Collider: `static`, `dynamic` (gravity and collisions) or `kinematic`; `sensor` for triggers; `bounce` for balls that rebound. Under rapier: `shape` (box, circle, capsule, polygon, polyline), `friction`, `density`, `fixedRotation`, `bullet` |
+| `body` | Collider: `static`, `dynamic` (gravity and collisions) or `kinematic`; `sensor` for triggers; `bounce` for balls that rebound. Under rapier: `shape` (box, circle, capsule, polygon, polyline; 3D: sphere, cylinder, convex, and mesh for exact triangles or a model's), `friction`, `density`, `fixedRotation`, `bullet` |
 | `sprite` | A colored shape, or an image: animated spritesheets (idle/run/jump/fall), tiles and mirroring |
 | `platformer` | Run and jump controls with coyote time, jump buffering and variable jump height |
 | `topdown` | Movement seen from above: 8 directions, 4 directions, or a single axis for paddles |
@@ -417,7 +444,7 @@ For everything else, a script's `sound` hook gets the real Web Audio API, the wa
 | `cameraZone` | An area that takes over the camera: a room the view stays inside, a fixed shot, a zoom; changes ease smoothly |
 | `tilemap` | A level drawn as rows of characters: tiles merge into big colliders, letters place prefabs |
 | `tween` | Eases x, y, rotation, scale or opacity: lifts that pause at each floor, gates that open on an event, bobbing coins |
-| `mesh` | 3D: how it looks, from a shape or its body's, with physically based materials and textures |
+| `mesh` | 3D: how it looks: a shape or its body's with physically based materials and textures, or a glTF `model` with skeletal animation |
 | `light` | 3D: a sun with shadows, sky fill, point, spot and ambient lights |
 | `camera3d` | 3D: follow, orbit, first-person or fixed camera |
 
@@ -452,9 +479,12 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how it fits together.
 - ~~**v0.8: game structure and quality.** `ludra review`, multiple scenes and level transitions, prefabs, lives and checkpoints.~~ Done.
 - ~~**v0.9: physics, sound and worlds.** Rapier as one physics engine for 2D now and 3D later, a game's own synthesized sounds and music with the full Web Audio API in scripts, tilemaps, camera zones, tweened animation. See [`examples/clockwork-keep`](examples/clockwork-keep).~~ Done.
 - ~~**v0.91: 3D foundations.** 3D transforms and bodies on Rapier 3D, a Three.js renderer with lights and shadows, cameras, a character controller, scripts with the raw Three.js and Rapier APIs, and a first 3D template, all through the same check/play/test/review loop and real screenshots.~~ Done.
-- **v0.92: 3D content.** glTF models, free (CC0) model packs as blocks, skeletal animation, procedural geometry and terrain.
-- **v0.93: shipping.** A single-file web build ready for itch.io, touch and gamepad controls, performance budgets in `review`.
-- **v1.0.** 2D and 3D templates side by side, a `make-games` skill, complete docs: an engine where an AI makes games people want to play.
+- ~~**v0.92: 3D content.** Any glTF model from anywhere (made by hand, generated, downloaded), `ludra inspect` to read a model, image or sound as text before using it, skeletal animation on the simulation clock, physics colliders from any geometry (exact triangles or a convex hull, from a model or from generated points), so procedural geometry and terrain are just code. See [`examples/moonlit-shrine`](examples/moonlit-shrine).~~ Done.
+- **v0.93: proof at scale.** `ludra solve` searches inputs for a way to win (is the level beatable, what is the shortest route, how wide is each timing window), `ludra fuzz` runs thousands of random sessions to find softlocks, falls through the floor and crashes, and `review` reports difficulty from both.
+- **v0.94: sharper eyes and taste.** Contact sheets (many frames in one image), visual diffs between versions, a free debug camera and a top-down map in 3D, readability checks on frames, and a `game.md` of design intent that `review` measures the game against.
+- **v0.95: humans in the loop.** Record a person's session in `ludra dev`, let them mark moments ("too hard", "boring here"), and turn any recording into a test with one command, so the agent sees exactly what the player felt.
+- **v0.96: shipping.** A single-file web build ready for itch.io, touch and gamepad controls, performance budgets in `review`.
+- **v1.0.** Any genre in 2D or 3D, as far as the agent wants to take it, with a `make-games` skill and complete docs: an engine where an AI makes games people want to play.
 
 ## Contributing
 
