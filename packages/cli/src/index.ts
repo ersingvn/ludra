@@ -4,6 +4,7 @@ import { add, blocks } from "./commands/blocks.ts";
 import { check } from "./commands/check.ts";
 import { components } from "./commands/components.ts";
 import { dev } from "./commands/dev.ts";
+import { diff } from "./commands/diff.ts";
 import { fuzz } from "./commands/fuzz.ts";
 import { inspect } from "./commands/inspect.ts";
 import { create } from "./commands/new.ts";
@@ -41,7 +42,12 @@ Usage
       --debug                                  Draw colliders, sensors, joints and ids over the screenshots
       --out screenshots                        Folder for screenshots, relative to the project (default: screenshots)
       --json                                   Machine-readable output
-  ludra test [folder] [--json]                 Run tests/*.test.json (a test can pick its "scene")
+  ludra diff <before> <after> [options]        What changed between two screenshots, or two folders of them by
+                                               file name: share of pixels, regions and where, an image of each
+      --out screenshots/diff                   Folder for the diff images (default: screenshots/diff)
+      --threshold 24                           How much a colour channel must move to count (0-255)
+      --json                                   Machine-readable output
+  ludra test [folder] [--json]               Run tests/*.test.json (a test can pick its "scene")
   ludra solve [folder] [options]               Search the inputs for a way to win; exit 1 when none is found
       --scene scenes/level-2.scene.json        Scene to solve (default: the entry scene)
       --goal "player.x > 900"                  What counts as done, as a test assertion (default: won == true)
@@ -102,6 +108,7 @@ async function main(argv: string[]): Promise<number> {
       budget: { type: "string" },
       "allow-deaths": { type: "boolean" },
       seed: { type: "string" },
+      threshold: { type: "string" },
       goal: { type: "string" },
       sessions: { type: "string" },
       seconds: { type: "string" },
@@ -136,6 +143,8 @@ async function main(argv: string[]): Promise<number> {
       return dev(target ?? ".", values);
     case "inspect":
       return inspect(target, values);
+    case "diff":
+      return diff(target, extra, values);
     case "blocks":
       return blocks(values);
     case "add":
