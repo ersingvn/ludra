@@ -36,6 +36,8 @@ Usage
       --ascii                                  Print the final frame as a text map
       --columns 120                            Width of the text map (default: 80)
       --screenshot 1s,2.5s,end                 Save real rendered frames as PNGs (needs Chrome, Edge or Chromium)
+      --sheet 0.5s                             One PNG of the whole run: a frame every 0.5s and the last, each
+                                               labelled with its time and the events since the one before
       --debug                                  Draw colliders, sensors, joints and ids over the screenshots
       --out screenshots                        Folder for screenshots, relative to the project (default: screenshots)
       --json                                   Machine-readable output
@@ -85,6 +87,7 @@ async function main(argv: string[]): Promise<number> {
       ascii: { type: "boolean" },
       columns: { type: "string" },
       screenshot: { type: "string" },
+      sheet: { type: "string" },
       debug: { type: "boolean" },
       out: { type: "string" },
       json: { type: "boolean" },

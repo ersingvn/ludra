@@ -45,6 +45,28 @@ describe("ludra CLI", () => {
     }
   });
 
+  test("play --sheet lays the run out as one labelled PNG", { skip: findBrowser() ? false : "no Chrome, Edge or Chromium installed" }, () => {
+    const { code, out } = ludra("play", game, "--inputs", "right:1s", "--sheet", "0.5s", "--out", "sheet-shots", "--json");
+    assert.equal(code, 0, out);
+    const sheet = JSON.parse(out).sheet as { file: string; columns: number; cells: { time: number }[] };
+    assert.deepEqual(
+      sheet.cells.map((c) => c.time.toFixed(2)),
+      ["0.00", "0.50", "1.00", "1.50", "2.00"],
+      "every 0.5s from the start, and the last frame",
+    );
+    assert.equal(sheet.columns, 3);
+    const png = readFileSync(join(game, "sheet-shots", "sheet.png"));
+    assert.deepEqual([...png.subarray(1, 4)], [...Buffer.from("PNG")]);
+    assert.equal(png.readUInt32BE(16), 3 * 677 + 4 * 4, "three cells across, scaled to fit 2048px");
+    assert.equal(existsSync(join(game, "sheet-shots", "t-0.50s.png")), false, "a sheet alone writes no single frames");
+  });
+
+  test("play --sheet refuses more frames than fit on a sheet", () => {
+    const { code, out } = ludra("play", game, "--duration", "10s", "--sheet", "0.1s");
+    assert.equal(code, 1);
+    assert.match(out, /at most 48\. Use --sheet 0\.25s or longer/);
+  });
+
   test("play --screenshot rejects a time after the run", () => {
     const { code, out } = ludra("play", game, "--duration", "1s", "--screenshot", "5s");
     assert.equal(code, 1);

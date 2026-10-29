@@ -13,7 +13,7 @@ import {
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { fixed, pad, padStart, paint } from "../format.ts";
-import { captureScreenshots } from "../headless.ts";
+import { captureScreenshots, sheetLayout } from "../headless.ts";
 import { CliError, loadProject, requireGame, type Project } from "../project.ts";
 
 export interface PlayOptions {
@@ -25,6 +25,7 @@ export interface PlayOptions {
   ascii?: boolean;
   columns?: string;
   screenshot?: string;
+  sheet?: string;
   debug?: boolean;
   out?: string;
   json?: boolean;
@@ -67,12 +68,12 @@ export async function play(dir: string, options: PlayOptions): Promise<number> {
   const columns = Number(options.columns ?? 80);
   if (!Number.isInteger(columns) || columns < 10) throw new CliError(`--columns must be a whole number of at least 10, got "${options.columns}".`);
   const ascii = options.ascii ? renderAscii(world, { columns }) : undefined;
-  const screenshots = options.screenshot ? await takeScreenshots(project, options, frames) : undefined;
+  const { screenshots, sheet } = options.screenshot || options.sheet ? await takeScreenshots(project, options, frames, world.events) : {};
 
   if (options.json) {
     console.log(
       JSON.stringify(
-        { duration: frames / 60, frames, inputs: options.inputs ?? "", timeline: rows, events: world.events, final: world.snapshot(), ascii, screenshots },
+        { duration: frames / 60, frames, inputs: options.inputs ?? "", timeline: rows, events: world.events, final: world.snapshot(), ascii, screenshots, sheet },
         null,
         2,
       ),
@@ -93,6 +94,10 @@ export async function play(dir: string, options: PlayOptions): Promise<number> {
     console.log(`\n${paint("bold", "Screenshots")} ${paint("dim", "(open these PNGs to see the frames)")}`);
     for (const shot of screenshots) console.log(`  ${pad(`${fixed(shot.time, 2)}s`, 7)} ${shot.file}`);
   }
+  if (sheet) {
+    console.log(`\n${paint("bold", "Contact sheet")} ${paint("dim", `(${sheet.cells.length} frames in one image, ${sheet.columns} per row)`)}`);
+    console.log(`  ${sheet.file}`);
+  }
   return 0;
 }
 
@@ -102,12 +107,63 @@ interface Screenshot {
   file: string;
 }
 
+interface Sheet {
+  file: string;
+  columns: number;
+  cells: { time: number; frame: number; events: string[] }[];
+}
+
+/** Most frames on one contact sheet; past this the cells get too small to read. */
+const MAX_SHEET_FRAMES = 48;
+
 /**
  * Renders moments of the same run in a headless browser and writes them as
- * PNGs. `--screenshot` is a comma list of times and/or "end".
+ * PNGs. `--screenshot` is a comma list of times and/or "end"; `--sheet` is an
+ * interval, and lays every frame at it (and the last one) out in one image.
  */
-async function takeScreenshots(project: Project, options: PlayOptions, lastFrame: number): Promise<Screenshot[]> {
-  const requested = options.screenshot!.split(",").map((part) => {
+async function takeScreenshots(
+  project: Project,
+  options: PlayOptions,
+  lastFrame: number,
+  events: readonly GameEvent[],
+): Promise<{ screenshots?: Screenshot[]; sheet?: Sheet }> {
+  const shots = options.screenshot ? screenshotFrames(options.screenshot, lastFrame) : [];
+  const sheetFrames = options.sheet ? sheetFramesAt(options.sheet, lastFrame) : [];
+  const sheetEvents = sheetFrames.map((frame, i) => eventsBetween(events, i === 0 ? -1 : sheetFrames[i - 1]!, frame));
+  const frames = [...new Set([...shots, ...sheetFrames])].sort((a, b) => a - b);
+
+  const outDir = resolve(project.dir, options.out ?? "screenshots");
+  mkdirSync(outDir, { recursive: true });
+  const captured = await captureScreenshots(project, {
+    scene: options.scene,
+    inputs: options.inputs ?? "",
+    frames,
+    debug: options.debug,
+    sheet: options.sheet
+      ? { frames: sheetFrames, labels: sheetFrames.map((frame, i) => `${fixed(frame / 60, 2)}s  ${sheetEvents[i]!.join(" ")}`.trimEnd()) }
+      : undefined,
+  });
+  const write = (name: string, png: string) => {
+    const path = join(outDir, name);
+    writeFileSync(path, Buffer.from(png.slice(png.indexOf(",") + 1), "base64"));
+    return relative(process.cwd(), path).replaceAll("\\", "/");
+  };
+
+  const screenshots = options.screenshot
+    ? captured.frames.filter((shot) => shots.includes(shot.frame)).map((shot) => ({ time: shot.time, frame: shot.frame, file: write(`t-${fixed(shot.time, 2)}s.png`, shot.png) }))
+    : undefined;
+  const sheet = captured.sheet
+    ? {
+        file: write("sheet.png", captured.sheet),
+        columns: sheetLayout(sheetFrames.length, project.config.window.width, project.config.window.height).columns,
+        cells: sheetFrames.map((frame, i) => ({ time: frame / 60, frame, events: sheetEvents[i]! })),
+      }
+    : undefined;
+  return { screenshots, sheet };
+}
+
+function screenshotFrames(list: string, lastFrame: number): number[] {
+  return list.split(",").map((part) => {
     const token = part.trim();
     if (token === "end") return lastFrame;
     const frame = secondsToFrames(parse(() => parseDuration(token)));
@@ -116,16 +172,32 @@ async function takeScreenshots(project: Project, options: PlayOptions, lastFrame
     }
     return frame;
   });
-  const frames = [...new Set(requested)].sort((a, b) => a - b);
+}
 
-  const outDir = resolve(project.dir, options.out ?? "screenshots");
-  mkdirSync(outDir, { recursive: true });
-  const captured = await captureScreenshots(project, { scene: options.scene, inputs: options.inputs ?? "", frames, debug: options.debug });
-  return captured.map((shot) => {
-    const path = join(outDir, `t-${fixed(shot.time, 2)}s.png`);
-    writeFileSync(path, Buffer.from(shot.png.slice(shot.png.indexOf(",") + 1), "base64"));
-    return { time: shot.time, frame: shot.frame, file: relative(process.cwd(), path).replaceAll("\\", "/") };
-  });
+/** Frame 0, every interval after it, and the last frame. */
+function sheetFramesAt(interval: string, lastFrame: number): number[] {
+  const step = secondsToFrames(parse(() => parseDuration(interval)));
+  if (step < 1) throw new CliError(`--sheet ${interval} is shorter than one frame. Use an interval like 0.5s.`);
+  const frames: number[] = [];
+  for (let frame = 0; frame < lastFrame; frame += step) frames.push(frame);
+  frames.push(lastFrame);
+  if (frames.length > MAX_SHEET_FRAMES) {
+    const fits = Math.ceil(lastFrame / 60 / (MAX_SHEET_FRAMES - 1) / 0.05) * 0.05;
+    throw new CliError(`--sheet ${interval} gives ${frames.length} frames; a sheet holds at most ${MAX_SHEET_FRAMES}. Use --sheet ${fixed(fits, 2)}s or longer, or a shorter --duration.`);
+  }
+  return frames;
+}
+
+/** Names of the events after frame `from` up to and including frame `to`, e.g. ["collect×2", "die"]. */
+function eventsBetween(events: readonly GameEvent[], from: number, to: number): string[] {
+  const counts = new Map<string, number>();
+  for (const event of events) {
+    const frame = secondsToFrames(event.time);
+    if (frame <= from || frame > to) continue;
+    const name = event.type === "custom" ? event.name : event.type;
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  return [...counts].map(([name, count]) => (count > 1 ? `${name}×${count}` : name));
 }
 
 function printTimeline(rows: Row[], watch: string[]): void {

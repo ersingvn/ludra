@@ -45,6 +45,41 @@ export interface ScreenshotRequest {
   scene?: string;
   inputs: string;
   frames: number[];
+  /** Also lay these frames out as one contact sheet, each with its label. */
+  sheet?: SheetRequest;
+}
+
+export interface SheetRequest {
+  frames: number[];
+  /** One line under each frame, in the same order. */
+  labels: string[];
+}
+
+export interface CaptureResult {
+  frames: CapturedFrame[];
+  /** The contact sheet as a PNG data URL, when one was asked for. */
+  sheet?: string;
+}
+
+/** Widest a contact sheet gets, so it stays readable as one image. */
+const SHEET_MAX_WIDTH = 2048;
+const SHEET_GAP = 4;
+const SHEET_LABEL = 22;
+
+/** Columns and cell size for `count` frames of a `width`×`height` window. */
+export function sheetLayout(count: number, width: number, height: number) {
+  const columns = Math.max(1, Math.ceil(Math.sqrt(count)));
+  const rows = Math.ceil(count / columns);
+  const cellWidth = Math.min(width, Math.floor((SHEET_MAX_WIDTH - SHEET_GAP * (columns + 1)) / columns));
+  const cellHeight = Math.round((height * cellWidth) / width);
+  return {
+    columns,
+    rows,
+    cellWidth,
+    cellHeight,
+    width: columns * cellWidth + SHEET_GAP * (columns + 1),
+    height: rows * (cellHeight + SHEET_LABEL) + SHEET_GAP * (rows + 1),
+  };
 }
 
 /**
@@ -55,7 +90,7 @@ function sceneUrl(scene: string | undefined): string {
   return scene ? `/__ludra/scene?path=${encodeURIComponent(scene)}` : "/__ludra/scene";
 }
 
-export async function captureScreenshots(project: Project, request: ScreenshotRequest): Promise<CapturedFrame[]> {
+export async function captureScreenshots(project: Project, request: ScreenshotRequest): Promise<CaptureResult> {
   const browserPath = findBrowser();
   if (!browserPath) {
     throw new CliError(
@@ -121,7 +156,42 @@ export async function captureScreenshots(project: Project, request: ScreenshotRe
         loadRenderer3D: async () => (await import(${JSON.stringify(threeModule)})).createRenderer3D,
       });
     })()`;
-    return await evaluate<CapturedFrame[]>(cdp, sessionId, script);
+    const frames = await evaluate<CapturedFrame[]>(cdp, sessionId, script);
+    if (!request.sheet) return { frames };
+    const layout = sheetLayout(request.sheet.frames.length, width, height);
+    const cells = request.sheet.frames.map((frame, i) => ({ png: frames.find((f) => f.frame === frame)!.png, label: request.sheet!.labels[i] ?? "" }));
+    // Drawn in the page, where decoding and scaling PNGs is built in.
+    const compose = `(async () => {
+      const layout = ${JSON.stringify(layout)};
+      const cells = ${JSON.stringify(cells)};
+      const gap = ${SHEET_GAP}, label = ${SHEET_LABEL};
+      const sheet = document.createElement("canvas");
+      sheet.width = layout.width;
+      sheet.height = layout.height;
+      const ctx = sheet.getContext("2d");
+      ctx.fillStyle = "#111318";
+      ctx.fillRect(0, 0, sheet.width, sheet.height);
+      ctx.imageSmoothingQuality = "high";
+      ctx.textBaseline = "middle";
+      for (const [i, cell] of cells.entries()) {
+        const image = new Image();
+        image.src = cell.png;
+        await image.decode();
+        const x = gap + (i % layout.columns) * (layout.cellWidth + gap);
+        const y = gap + Math.floor(i / layout.columns) * (layout.cellHeight + label + gap);
+        ctx.drawImage(image, x, y, layout.cellWidth, layout.cellHeight);
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x, y + layout.cellHeight, layout.cellWidth, label);
+        ctx.clip();
+        ctx.fillStyle = "#e8eaf0";
+        ctx.font = "13px ui-monospace, Consolas, monospace";
+        ctx.fillText(cell.label, x + 6, y + layout.cellHeight + label / 2);
+        ctx.restore();
+      }
+      return sheet.toDataURL("image/png");
+    })()`;
+    return { frames, sheet: await evaluate<string>(cdp, sessionId, compose) };
   } finally {
     await cdp?.send("Browser.close").catch(() => {});
     cdp?.close();
