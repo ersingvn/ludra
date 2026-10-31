@@ -445,6 +445,7 @@
         "sprite": {
           "color": "#5c4332",
           "image": "assets/rock.svg",
+          "variants": ["assets/rock2.svg", "assets/rock3.svg"],
           "tile": true
         }
       }
@@ -480,6 +481,7 @@
         "sprite": {
           "color": "#5c4332",
           "image": "assets/rock.svg",
+          "variants": ["assets/rock2.svg", "assets/rock3.svg"],
           "tile": true
         }
       }
@@ -515,6 +517,7 @@
         "sprite": {
           "color": "#5c4332",
           "image": "assets/rock.svg",
+          "variants": ["assets/rock2.svg", "assets/rock3.svg"],
           "tile": true
         }
       }
