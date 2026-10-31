@@ -53,6 +53,8 @@ export interface Renderer3D {
   settle?(): Promise<void>;
   /** Looks from somewhere other than the scene's camera3d. Leaves the game alone. */
   view?: CameraView;
+  /** Ids of entities to leave out of the drawing. */
+  hidden?: ReadonlySet<string>;
   /** Names to write over the frame at these canvas pixels: the map view labels its entities. */
   labels?(world: World): Label[];
 }
@@ -430,6 +432,8 @@ export interface CaptureOptions extends GameOptions {
   frames: readonly number[];
   /** A debugging view instead of the scene's camera (3D scenes only). */
   camera?: CameraView;
+  /** Also draws each frame once per group with those entities left out, to see what they add. */
+  hide?: readonly (readonly string[])[];
 }
 
 export interface CapturedFrame {
@@ -437,6 +441,12 @@ export interface CapturedFrame {
   time: number;
   /** PNG as a data URL. */
   png: string;
+  /**
+   * The same moment for each group in CaptureOptions.hide, in order, and a drawing of the whole
+   * frame right after it. Render hooks can move things on with every drawing, so only drawings
+   * next to each other can be compared.
+   */
+  without?: { png: string; after: string }[];
 }
 
 /**
@@ -454,6 +464,7 @@ export async function captureFrames(canvas: HTMLCanvasElement, scene: SceneDef, 
   if (error) throw new Error(error);
   const view = new View(scene, images, await useRenderer3D(scene, options, canvas.width, canvas.height));
   view.debug = options.debug ?? false;
+  view.steady = options.hide !== undefined;
   if (options.camera) {
     if (!view.renderer) throw new Error("A camera view only works on 3D scenes; 2D scenes always show the whole frame their camera sees.");
     view.renderer.view = options.camera;
@@ -474,8 +485,15 @@ export async function captureFrames(canvas: HTMLCanvasElement, scene: SceneDef, 
       view.draw(screen.ctx, world, false, false);
       // A map shows where things are, so it skips the scene's shader along with its lighting.
       if (options.camera?.mode !== "map") screen.present(world.time);
-      const output = options.camera?.mode === "map" ? canvas : screen.output;
-      captured.push({ frame, time: frame * FIXED_DT, png: output.toDataURL("image/png") });
+      const png = (options.camera?.mode === "map" ? canvas : screen.output).toDataURL("image/png");
+      const drawing = (hidden: readonly string[]) => {
+        view.hidden = new Set(hidden);
+        view.draw(screen.ctx, world, false, false);
+        screen.present(world.time);
+        return screen.output.toDataURL("image/png");
+      };
+      const without = options.hide?.map((ids) => ({ png: drawing(ids), after: drawing([]) }));
+      captured.push({ frame, time: frame * FIXED_DT, png, without });
     }
     if (frame >= last) break;
     world.step(script.at(frame));
@@ -546,6 +564,10 @@ class View {
   private readonly jointOrigins = new Map<string, { x: number; y: number }>();
   /** Draw colliders, sensors, joints and ids over the game. */
   debug = false;
+  /** Entities left out of the drawing. The game still runs them. */
+  hidden: ReadonlySet<string> = new Set();
+  /** Draw without shake, so two drawings of one moment differ only in what was hidden. */
+  steady = false;
   private shake = 0;
   private handledEvents = 0;
   /** Follows the player and blends between camera zones, one simulation step at a time. */
@@ -625,6 +647,7 @@ class View {
     const renderer = this.renderer!;
     const { width, height } = ctx.canvas;
     renderer.debug = this.debug;
+    renderer.hidden = this.hidden;
     renderer.render(world);
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(renderer.canvas, 0, 0, width, height);
@@ -675,7 +698,7 @@ class View {
     const zoom = camera.zoom;
     let cameraX = camera.x;
     let cameraY = camera.y;
-    if (this.shake > 0) {
+    if (this.shake > 0 && !this.steady) {
       cameraX += (this.particles.random() - 0.5) * 2 * this.shake;
       cameraY += (this.particles.random() - 0.5) * 2 * this.shake;
     }
@@ -685,7 +708,7 @@ class View {
     ctx.scale(zoom, zoom);
     ctx.translate(-cameraX, -cameraY);
     const layer = (e: Entity) => e.sprite?.layer ?? 0;
-    const visible = world.entities.filter((e) => e.sprite || e.script?.module.draw).sort((a, b) => layer(a) - layer(b));
+    const visible = world.entities.filter((e) => (e.sprite || e.script?.module.draw) && !this.hidden.has(e.id)).sort((a, b) => layer(a) - layer(b));
     for (const e of visible) {
       if (e.sprite && e.sprite.opacity > 0) {
         ctx.save();

@@ -79,6 +79,7 @@ export class ThreeRenderer implements Renderer3D {
   readonly canvas: HTMLCanvasElement;
   debug = false;
   view: CameraView | undefined;
+  hidden: ReadonlySet<string> | undefined;
   /** The map view's camera, fitted to the level every frame. */
   private readonly mapCamera = new THREE.OrthographicCamera();
   /** Lights the map evenly, so a night scene reads as well as a day one. */
@@ -235,9 +236,27 @@ export class ThreeRenderer implements Renderer3D {
     if (this.view?.mode === "free") this.placeFreeCamera(world, this.view);
     this.poseModels(world);
     this.runRenderHooks(world);
+    const concealed = this.conceal();
     if (this.view?.mode === "map") this.renderMap();
     else if (this.customRender) this.customRender();
     else this.renderer.render(this.scene, this.camera);
+    for (const object of concealed) object.visible = true;
+  }
+
+  /** Hides what the hidden entities show. Their lights stay on: what's behind them must look the same. */
+  private conceal(): THREE.Object3D[] {
+    const concealed: THREE.Object3D[] = [];
+    if (!this.hidden?.size) return concealed;
+    const roots = [...this.objects, ...this.hookGroups].filter(([e]) => this.hidden!.has(e.id));
+    for (const [, root] of roots) {
+      root.traverse((object) => {
+        const shape = object as Partial<THREE.Mesh & THREE.Line & THREE.Points & THREE.Sprite>;
+        if (!object.visible || !(shape.isMesh || shape.isLine || shape.isPoints || shape.isSprite)) return;
+        object.visible = false;
+        concealed.push(object);
+      });
+    }
+    return concealed;
   }
 
   /** In the map view: every entity with a body or mesh, at its place on the map. Ground-sized ones are left out. */

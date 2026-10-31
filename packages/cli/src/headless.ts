@@ -8,6 +8,8 @@ import { CliError, type Project } from "./project.ts";
 import { BLANK_PATH, createGameServer, PROJECT_PREFIX, SCRIPT_PREFIX } from "./server.ts";
 
 const TIMEOUT_MS = 60_000;
+/** Extra time per frame drawn: a heavy 3D scene on software WebGL takes seconds each. */
+const TIMEOUT_PER_DRAW_MS = 5_000;
 
 /**
  * Finds an installed Chromium-based browser: LUDRA_BROWSER if set, otherwise
@@ -49,6 +51,8 @@ export interface ScreenshotRequest {
   sheet?: SheetRequest;
   /** A debugging view instead of the scene's camera (3D). */
   camera?: CameraView;
+  /** Also draw each frame with each of these groups of entities left out. */
+  hide?: string[][];
 }
 
 export interface SheetRequest {
@@ -152,6 +156,7 @@ export async function captureScreenshots(project: Project, request: ScreenshotRe
         frames: ${JSON.stringify(request.frames)},
         debug: ${JSON.stringify(!!request.debug)},
         camera: ${JSON.stringify(request.camera ?? null)} ?? undefined,
+        hide: ${JSON.stringify(request.hide ?? null)} ?? undefined,
         loadPhysics: async (name) => {
           if (name === "rapier") await (await import(${JSON.stringify(physicsModule)})).loadRapierPhysics();
           if (name === "rapier3d") await (await import(${JSON.stringify(physicsModule)})).loadRapier3DPhysics();
@@ -159,7 +164,8 @@ export async function captureScreenshots(project: Project, request: ScreenshotRe
         loadRenderer3D: async () => (await import(${JSON.stringify(threeModule)})).createRenderer3D,
       });
     })()`;
-    const frames = await evaluate<CapturedFrame[]>(cdp, sessionId, script);
+    const draws = request.frames.length * (1 + 2 * (request.hide?.length ?? 0));
+    const frames = await evaluate<CapturedFrame[]>(cdp, sessionId, script, TIMEOUT_MS + draws * TIMEOUT_PER_DRAW_MS);
     if (!request.sheet) return { frames };
     const layout = sheetLayout(request.sheet.frames.length, width, height);
     const cells = request.sheet.frames.map((frame, i) => ({ png: frames.find((f) => f.frame === frame)!.png, label: request.sheet!.labels[i] ?? "" }));
@@ -260,11 +266,12 @@ async function waitFor(cdp: Cdp, sessionId: string, condition: string): Promise<
   }
 }
 
-async function evaluate<T>(cdp: Cdp, sessionId: string, expression: string): Promise<T> {
+async function evaluate<T>(cdp: Cdp, sessionId: string, expression: string, timeout = TIMEOUT_MS): Promise<T> {
   const result = await cdp.send<{ result: { value?: T }; exceptionDetails?: { exception?: { description?: string }; text?: string } }>(
     "Runtime.evaluate",
     { expression, awaitPromise: true, returnByValue: true },
     sessionId,
+    timeout,
   );
   if (result.exceptionDetails) {
     const details = result.exceptionDetails;
@@ -304,13 +311,13 @@ class Cdp {
     });
   }
 
-  send<T = unknown>(method: string, params: Record<string, unknown> = {}, sessionId?: string): Promise<T> {
+  send<T = unknown>(method: string, params: Record<string, unknown> = {}, sessionId?: string, timeout = TIMEOUT_MS): Promise<T> {
     const id = this.nextId++;
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new CliError(`The browser did not answer ${method} in time.`));
-      }, TIMEOUT_MS);
+      }, timeout);
       this.pending.set(id, {
         resolve: (value) => {
           clearTimeout(timer);

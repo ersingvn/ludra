@@ -215,6 +215,8 @@ Looks: does it have a style of its own?
 It also asks whether the game is **fair**:
 - It replays the test that wins and times every jump: a press that only works on one or two exact frames is an issue (`R_FRAME_PERFECT`), and one inside 0.1 s is worth a look (`R_TIGHT_TIMING`).
 - It plays a few seconds of random sessions per scene. Any script crash (`R_CRASH`) or softlock (`R_SOFTLOCK`) is an issue.
+
+And it asks whether the game is **readable**, from real frames: it draws moments along the winning route with and without the player, the hazards, the goal and the collectibles, so the difference shows exactly where each one is and what is behind it. A player or hazard that blends in at half the moments it's on screen or more is an issue (`R_LOW_CONTRAST`), so is a player that can't be seen at all (`R_PLAYER_NOT_DRAWN`); a goal or collectible that blends in, or a tiny player (`R_TINY_PLAYER`), is an idea. This needs Chrome, Edge or Chromium; without one, review says it didn't look (`R_NOT_LOOKED`). A thing another entity's hook draws can't be left out on its own, so it isn't measured. `--fast` skips this too.
 - `--fast` skips the random play.
 
 The skill treats issues like failing tests, and every template reviews clean (`--strict` makes issues fail CI).

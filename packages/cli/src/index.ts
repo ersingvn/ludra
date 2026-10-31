@@ -71,7 +71,7 @@ Usage
   ludra review [folder] [--json] [--strict]    Find what makes a game feel unfinished: untested mechanics,
                                                frame-perfect jumps, crashes and softlocks found by random play,
                                                silent events, default HUD, flat looks (--strict: exit 1 on issues)
-      --fast                                   Skip the random play (a few seconds per scene)
+      --fast                                   Skip the random play and the frames (a few seconds per scene)
   ludra components [name] [--json]             Reference for every component and field
   ludra inspect <file> [--json]                What a .glb/.gltf model holds (size in metres, triangles, animations,
                                                bones), or an image's size or a WAV's duration
