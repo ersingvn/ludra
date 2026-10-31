@@ -1,13 +1,86 @@
 {
-  "name": "Level 1",
-  "world": { "width": 960, "height": 540, "gravity": 1800, "background": "#1d2333" },
+  "name": "Coin Climb",
+  "world": { "width": 960, "height": 540, "gravity": 1800, "background": "#8a2f6b" },
+  "fonts": { "Cinzel": "google" },
+  "effects": {
+    "jump": { "sound": "hop", "particles": { "count": 6, "color": "#ffe2b0", "speed": 60, "direction": 90, "spread": 150, "life": 0.25, "size": 3, "gravity": 0 } },
+    "land": { "sound": "scuff", "particles": { "count": 6, "color": "#e8b47a", "speed": 55, "direction": -90, "spread": 160, "life": 0.3, "size": 2, "gravity": 300 } },
+    "collect": { "sound": "sun-chime", "shake": 2, "particles": { "count": 16, "color": "#ffcf4a", "speed": 150, "life": 0.5, "size": 3, "gravity": 200 } },
+    "win": { "sound": "horn", "shake": 3, "particles": { "count": 60, "color": "#ffe39a", "speed": 240, "life": 1.3, "size": 4, "gravity": 120 } }
+  },
+  "sounds": {
+    "hop": {
+      "tones": [{ "wave": "triangle", "from": 330, "to": 660, "duration": 0.1, "volume": 0.15 }],
+      "noise": [{ "filter": "bandpass", "from": 3000, "to": 5000, "duration": 0.06, "volume": 0.04 }],
+      "vary": 0.07
+    },
+    "scuff": {
+      "tones": [{ "wave": "sine", "from": 130, "to": 70, "duration": 0.07, "volume": 0.16 }],
+      "noise": [{ "filter": "bandpass", "from": 2600, "to": 1200, "duration": 0.09, "volume": 0.09 }],
+      "vary": 0.2
+    },
+    "sun-chime": {
+      "tones": [
+        { "wave": "sine", "from": 880, "duration": 0.35, "volume": 0.1 },
+        { "wave": "sine", "from": 1320, "start": 0.06, "duration": 0.45, "volume": 0.09 },
+        { "wave": "sine", "from": 1760, "start": 0.12, "duration": 0.6, "volume": 0.07 },
+        { "wave": "triangle", "from": 2640, "start": 0.12, "duration": 0.2, "volume": 0.025 }
+      ],
+      "vary": 0.04
+    },
+    "horn": {
+      "tones": [
+        { "wave": "sawtooth", "from": 220, "duration": 0.35, "volume": 0.05, "attack": 0.05 },
+        { "wave": "sawtooth", "from": 330, "start": 0.35, "duration": 0.9, "volume": 0.06, "attack": 0.05 },
+        { "wave": "sine", "from": 440, "start": 0.35, "duration": 1, "volume": 0.1 },
+        { "wave": "sine", "from": 110, "duration": 1.3, "volume": 0.14 }
+      ]
+    }
+  },
+  "music": {
+    "tempo": 96,
+    "steps": 2,
+    "volume": 0.55,
+    "tracks": [
+      { "wave": "triangle", "volume": 0.12, "decay": 0.7, "notes": "E5 ~ F5 G#5 | A5 ~ G#5 F5 | E5 ~ ~ - | B4 C5 D5 ~ | C5 ~ B4 A4 | B4 ~ G#4 B4 | A4 ~ ~ ~ | - - - -" },
+      { "wave": "sine", "volume": 0.24, "decay": 0.9, "notes": "A2 ~ ~ ~ | A2 ~ E2 ~ | A2 ~ ~ ~ | G2 ~ ~ ~ | F2 ~ ~ ~ | E2 ~ ~ ~ | A2 ~ ~ ~ | E2 ~ ~ ~" },
+      {
+        "wave": "sawtooth",
+        "volume": 0.02,
+        "decay": 1,
+        "attack": 0.6,
+        "filter": 800,
+        "notes": "A3+C4+E4 ~ ~ ~ | A3+C4+E4 ~ ~ ~ | A3+C4+E4 ~ ~ ~ | G3+B3+D4 ~ ~ ~ | F3+A3+C4 ~ ~ ~ | E3+G#3+B3 ~ ~ ~ | A3+C4+E4 ~ ~ ~ | E3+G#3+B3 ~ ~ ~"
+      },
+      { "wave": "noise", "filter": 180, "volume": 0.22, "decay": 0.4, "notes": "X - - x - - x -" },
+      { "wave": "noise", "filter": 6000, "volume": 0.03, "decay": 0.15, "notes": "- - x - - x - x" }
+    ]
+  },
   "entities": [
+    {
+      "id": "sunset",
+      "components": {
+        "transform": { "x": 0, "y": 0 },
+        "script": { "src": "scripts/sunset.ts" }
+      }
+    },
     {
       "id": "player",
       "components": {
         "transform": { "x": 80, "y": 482 },
         "body": { "type": "dynamic", "width": 28, "height": 36 },
-        "sprite": { "color": "#7cf29c", "layer": 2 },
+        "sprite": {
+          "color": "#4f7c6b",
+          "image": "assets/explorer.svg",
+          "frameWidth": 28,
+          "frameHeight": 36,
+          "idle": "0",
+          "run": "1-2",
+          "jump": "3",
+          "fall": "4",
+          "fps": 10,
+          "layer": 2
+        },
         "platformer": { "speed": 240, "jumpSpeed": 680 }
       }
     },
@@ -16,7 +89,7 @@
       "components": {
         "transform": { "x": 480, "y": 520 },
         "body": { "type": "static", "width": 960, "height": 40 },
-        "sprite": { "color": "#3b4766" }
+        "sprite": { "color": "#c98a52", "image": "assets/sandstone.svg", "tile": true }
       }
     },
     {
@@ -38,7 +111,7 @@
       "components": {
         "transform": { "x": 360, "y": 410 },
         "body": { "type": "static", "width": 160, "height": 20 },
-        "sprite": { "color": "#56658f" }
+        "sprite": { "color": "#d49a5e", "image": "assets/step.svg", "tile": true }
       }
     },
     {
@@ -46,7 +119,7 @@
       "components": {
         "transform": { "x": 600, "y": 320 },
         "body": { "type": "static", "width": 160, "height": 20 },
-        "sprite": { "color": "#56658f" }
+        "sprite": { "color": "#d49a5e", "image": "assets/step.svg", "tile": true }
       }
     },
     {
@@ -54,7 +127,7 @@
       "components": {
         "transform": { "x": 840, "y": 230 },
         "body": { "type": "static", "width": 160, "height": 20 },
-        "sprite": { "color": "#56658f" }
+        "sprite": { "color": "#d49a5e", "image": "assets/step.svg", "tile": true }
       }
     },
     {
@@ -62,7 +135,7 @@
       "components": {
         "transform": { "x": 360, "y": 370 },
         "body": { "type": "static", "width": 20, "height": 20, "sensor": true },
-        "sprite": { "shape": "circle", "color": "#ffd166", "layer": 1 },
+        "sprite": { "shape": "circle", "color": "#ffcf4a", "image": "assets/sun-coin.svg", "frameWidth": 20, "idle": "0-3", "fps": 8, "layer": 1 },
         "collectible": { "score": 1 }
       }
     },
@@ -71,7 +144,7 @@
       "components": {
         "transform": { "x": 600, "y": 280 },
         "body": { "type": "static", "width": 20, "height": 20, "sensor": true },
-        "sprite": { "shape": "circle", "color": "#ffd166", "layer": 1 },
+        "sprite": { "shape": "circle", "color": "#ffcf4a", "image": "assets/sun-coin.svg", "frameWidth": 20, "idle": "0-3", "fps": 8, "layer": 1 },
         "collectible": { "score": 1 }
       }
     },
@@ -80,8 +153,25 @@
       "components": {
         "transform": { "x": 840, "y": 190 },
         "body": { "type": "static", "width": 20, "height": 20, "sensor": true },
-        "sprite": { "shape": "circle", "color": "#ffd166", "layer": 1 },
+        "sprite": { "shape": "circle", "color": "#ffcf4a", "image": "assets/sun-coin.svg", "frameWidth": 20, "idle": "0-3", "fps": 8, "layer": 1 },
         "collectible": { "score": 1 }
+      }
+    },
+    {
+      "id": "shrine",
+      "components": {
+        "transform": { "x": 890, "y": 180 },
+        "body": { "type": "static", "width": 40, "height": 80, "sensor": true },
+        "sprite": { "color": "#d49a5e", "image": "assets/shrine.svg", "layer": 1 },
+        "goal": { "requireScore": 3 },
+        "script": { "src": "scripts/shrine.ts", "params": { "coins": 3 } }
+      }
+    },
+    {
+      "id": "hud",
+      "components": {
+        "transform": { "x": 0, "y": 0 },
+        "script": { "src": "scripts/hud.ts", "params": { "coins": 3 } }
       }
     }
   ]

@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="140" height="36" viewBox="0 0 140 36">
+  <!-- Spritesheet: 5 frames of 28x36, facing right. 0 idle, 1-2 run, 3 jump, 4 fall.
+       A small explorer: pith hat, red scarf, satchel. -->
+  <defs>
+    <g id="head">
+      <ellipse cx="15" cy="6.5" rx="10" ry="2.6" fill="#c9a46a"/>
+      <path d="M8 6.5 q 7 -9 14 0 z" fill="#e3c28a"/>
+      <rect x="8" y="5.4" width="14" height="1.6" fill="#8a6a3c"/>
+      <rect x="9" y="7.5" width="12" height="9" rx="4" fill="#f2c9a0"/>
+      <circle cx="17.6" cy="11.6" r="1.4" fill="#2b1d14"/>
+      <rect x="19.5" y="13.6" width="2" height="1" rx="0.5" fill="#d68b6b"/>
+    </g>
+    <g id="body">
+      <rect x="8" y="16" width="13" height="11" rx="3" fill="#6cb596"/>
+      <path d="M8 16.5 h13 v2.5 h-13 z" fill="#d94a3d"/>
+      <path d="M9 18 l-4 5 l2 1 l3 -4 z" fill="#d94a3d"/>
+      <rect x="7" y="21" width="5" height="5" rx="1.5" fill="#8a5a33"/>
+      <rect x="8" y="25" width="13" height="2" fill="#4f8a73"/>
+    </g>
+  </defs>
+
+  <!-- 0: idle -->
+  <g>
+    <rect x="10" y="27" width="4" height="8" rx="1.5" fill="#6b4a2f"/>
+    <rect x="16" y="27" width="4" height="8" rx="1.5" fill="#6b4a2f"/>
+    <use href="#body"/>
+    <rect x="20" y="18" width="3.5" height="7" rx="1.7" fill="#f2c9a0"/>
+    <use href="#head"/>
+  </g>
+
+  <!-- 1: run, legs apart, arm forward -->
+  <g transform="translate(28 0)">
+    <rect x="6" y="26" width="4" height="8" rx="1.5" fill="#6b4a2f" transform="rotate(25 8 27)"/>
+    <rect x="18" y="26" width="4" height="8" rx="1.5" fill="#6b4a2f" transform="rotate(-25 20 27)"/>
+    <g transform="translate(0 -1)">
+      <use href="#body"/>
+      <rect x="20" y="17" width="3.5" height="7" rx="1.7" fill="#f2c9a0" transform="rotate(-40 21.7 18)"/>
+      <use href="#head"/>
+    </g>
+  </g>
+
+  <!-- 2: run, legs passing -->
+  <g transform="translate(56 0)">
+    <rect x="11" y="27" width="4" height="8" rx="1.5" fill="#6b4a2f"/>
+    <rect x="14" y="27" width="4" height="7" rx="1.5" fill="#57391f"/>
+    <use href="#body"/>
+    <rect x="18" y="18" width="3.5" height="7" rx="1.7" fill="#f2c9a0" transform="rotate(20 19.7 18)"/>
+    <use href="#head"/>
+  </g>
+
+  <!-- 3: jump, knees up, arm raised -->
+  <g transform="translate(84 0)">
+    <rect x="9" y="25" width="4" height="7" rx="1.5" fill="#6b4a2f" transform="rotate(-30 11 26)"/>
+    <rect x="16" y="25" width="4" height="7" rx="1.5" fill="#6b4a2f" transform="rotate(20 18 26)"/>
+    <g transform="translate(0 -2)">
+      <use href="#body"/>
+      <rect x="20" y="10" width="3.5" height="8" rx="1.7" fill="#f2c9a0"/>
+      <use href="#head"/>
+    </g>
+  </g>
+
+  <!-- 4: fall, legs down, arms out -->
+  <g transform="translate(112 0)">
+    <rect x="9" y="27" width="4" height="8" rx="1.5" fill="#6b4a2f" transform="rotate(10 11 27)"/>
+    <rect x="16" y="27" width="4" height="8" rx="1.5" fill="#6b4a2f" transform="rotate(-10 18 27)"/>
+    <use href="#body"/>
+    <rect x="20" y="16" width="3.5" height="7" rx="1.7" fill="#f2c9a0" transform="rotate(-70 21.7 17)"/>
+    <rect x="4" y="16" width="3.5" height="7" rx="1.7" fill="#f2c9a0" transform="rotate(70 5.7 17)"/>
+    <use href="#head"/>
+  </g>
+</svg>

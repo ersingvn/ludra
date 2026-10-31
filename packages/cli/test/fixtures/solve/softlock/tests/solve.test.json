@@ -1,0 +1,23 @@
+{
+  "tests": [
+    {
+      "name": "jumping the pit wins",
+      "inputs": "right:0.85s, right+jump:0.5s, right:3s",
+      "assert": [
+        "won == true",
+        "deaths == 0"
+      ]
+    },
+    {
+      "name": "falling into the pit is permanent: no death, no way out",
+      "inputs": "right:1.5s, right+jump:0.5s, left+jump:0.5s, wait:0.2s, right+jump:0.5s, wait:0.2s, jump:0.5s, right:2s",
+      "assert": [
+        "won == false",
+        "deaths == 0",
+        "player.y > 690",
+        "player.x > 300",
+        "player.x < 420"
+      ]
+    }
+  ]
+}

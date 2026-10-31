@@ -194,6 +194,67 @@ const FALL_MARGIN = 100;
 const TOUCH_MARGIN = 1;
 const EPSILON = 1e-4;
 
+const SAVED = Symbol("saved");
+
+/** A moment of a world, from `World.save`. Its contents are the engine's own business. */
+export interface WorldSave {
+  readonly frame: number;
+  readonly time: number;
+  readonly [SAVED]: {
+    entities: Entity[];
+    events: GameEvent[];
+    score: number;
+    deaths: number;
+    won: boolean;
+    lost: boolean;
+    lives: number | undefined;
+    exit: string | undefined;
+    reached: string[];
+    previousInput: Action[];
+    tweenEvents: number;
+    seed: number;
+    spawnCount: number;
+    physics: unknown;
+  };
+}
+
+/**
+ * Deep copies of the entities. References between them (what a body stands on) point at the
+ * copies; script modules (code, not state) are shared.
+ */
+function cloneEntities(entities: readonly Entity[]): Entity[] {
+  const memo = new Map<object, unknown>();
+  const copy = (value: unknown, key?: string): unknown => {
+    if (value === null || typeof value !== "object" || key === "module") return value;
+    const known = memo.get(value);
+    if (known !== undefined) return known;
+    if (Array.isArray(value)) {
+      const out: unknown[] = [];
+      memo.set(value, out);
+      for (const item of value) out.push(copy(item));
+      return out;
+    }
+    if (value instanceof Set) {
+      const out = new Set<unknown>();
+      memo.set(value, out);
+      for (const item of value) out.add(copy(item));
+      return out;
+    }
+    if (value instanceof Map) {
+      const out = new Map<unknown, unknown>();
+      memo.set(value, out);
+      for (const [k, v] of value) out.set(k, copy(v));
+      return out;
+    }
+    if (ArrayBuffer.isView(value)) return (value as unknown as { slice(): unknown }).slice();
+    const out: Record<string, unknown> = {};
+    memo.set(value, out);
+    for (const [k, v] of Object.entries(value)) out[k] = copy(v, k);
+    return out;
+  };
+  return entities.map((e) => copy(e) as Entity);
+}
+
 /**
  * The simulation. It advances only through `step`, one fixed frame at a time,
  * and contains no randomness or wall-clock time, so the same scene and inputs
@@ -333,6 +394,67 @@ export class World {
       if (Object.keys(e.state).length > 0) entities[e.id]!.state = JSON.parse(JSON.stringify(e.state));
     }
     return { frame: this.frame, time: this.time, score: this.score, deaths: this.deaths, won: this.won, lost: this.lost, lives: this.lives, entities };
+  }
+
+  /** True when this world's physics engine can save its state, so `save` works. */
+  get canSave(): boolean {
+    return typeof this.physics.save === "function" && typeof this.physics.restore === "function";
+  }
+
+  /**
+   * Everything that decides what happens next: the entities, counters, events and the physics
+   * engine's own state. `restore` brings it back any number of times, and the world then goes on
+   * exactly, bit for bit, as it did from here: a search can try many futures from one moment
+   * instead of replaying the past each time. Script modules' own variables aren't saved, which is
+   * why scripts keep their data in `state`.
+   */
+  save(): WorldSave {
+    if (!this.canSave) throw new Error(`The "${this.physics.name}" physics engine can't save its state, so this world can't be saved.`);
+    if (this.current || this.drawing) throw new Error("A world can't be saved while one of its hooks runs.");
+    return {
+      frame: this.frame,
+      time: this.time,
+      [SAVED]: {
+        entities: cloneEntities(this.entities),
+        events: this.events.slice(),
+        score: this.score,
+        deaths: this.deaths,
+        won: this.won,
+        lost: this.lost,
+        lives: this.lives,
+        exit: this.exit,
+        reached: [...this.reached],
+        previousInput: [...this.previousInput],
+        tweenEvents: this.tweenEvents,
+        seed: this.seed,
+        spawnCount: this.spawnCount,
+        physics: this.physics.save!(),
+      },
+    };
+  }
+
+  /** Goes back to a moment `save` returned. The entities become new objects with the same ids. */
+  restore(save: WorldSave): void {
+    if (this.current || this.drawing) throw new Error("A world can't be restored while one of its hooks runs.");
+    const s = save[SAVED];
+    this.entities.length = 0;
+    for (const e of cloneEntities(s.entities)) this.entities.push(e);
+    this.events.length = 0;
+    for (const event of s.events) this.events.push(event);
+    this.frame = save.frame;
+    this.score = s.score;
+    this.deaths = s.deaths;
+    this.won = s.won;
+    this.lost = s.lost;
+    this.lives = s.lives;
+    this.exit = s.exit;
+    this.reached.clear();
+    for (const id of s.reached) this.reached.add(id);
+    this.previousInput = new Set(s.previousInput);
+    this.tweenEvents = s.tweenEvents;
+    this.seed = s.seed;
+    this.spawnCount = s.spawnCount;
+    this.physics.restore!(s.physics, this.physicsHost);
   }
 
   private emit(event: EventPayload): void {

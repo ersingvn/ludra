@@ -1,0 +1,30 @@
+{
+  "tests": [
+    {
+      "name": "the longest possible jump, from the last frame on the ledge, falls short",
+      "inputs": "right:1.483s, right+jump:0.5s, right:1s",
+      "duration": "3s",
+      "assert": [
+        "won == false",
+        "deaths >= 1"
+      ]
+    },
+    {
+      "name": "jumping earlier falls short too",
+      "inputs": "right:1.2s, right+jump:0.5s, right:1s",
+      "duration": "3s",
+      "assert": [
+        "won == false",
+        "deaths >= 1"
+      ]
+    },
+    {
+      "name": "running straight in falls",
+      "inputs": "right:3s",
+      "assert": [
+        "won == false",
+        "deaths >= 1"
+      ]
+    }
+  ]
+}

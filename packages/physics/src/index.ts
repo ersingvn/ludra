@@ -21,6 +21,7 @@ import {
   type RayHit,
   type RayOptions,
 } from "@ludra/core";
+import { restoreLinks, saveEngine, type SavedEngine } from "./saving.ts";
 
 /**
  * Rapier works in any unit; this tells it how big "one meter" is in pixels, so its
@@ -106,7 +107,7 @@ export async function loadRapier3DPhysics(): Promise<void> {
 }
 
 // Rapier's memory lives in WebAssembly; free it when a world is garbage collected.
-const cleanup = new FinalizationRegistry<RapierWorld>((world) => world.free());
+const cleanup = new FinalizationRegistry<{ world: RapierWorld }>((box) => box.world.free());
 
 /**
  * Ludra's real physics engine: Rapier's deterministic build, so a simulation is
@@ -115,8 +116,9 @@ const cleanup = new FinalizationRegistry<RapierWorld>((world) => world.free());
  */
 export class RapierPhysics implements PhysicsEngine {
   readonly name = "rapier";
-  /** The Rapier world itself, for anything the components don't cover. */
-  readonly world: RapierWorld;
+  /** The Rapier world itself, for anything the components don't cover. Replaced when a saved state is restored. */
+  world: RapierWorld;
+  private readonly box: { world: RapierWorld };
   private readonly events = new RAPIER.EventQueue(true);
   private readonly links = new Map<Entity, Link>();
   private readonly byCollider = new Map<number, Link>();
@@ -127,7 +129,8 @@ export class RapierPhysics implements PhysicsEngine {
     this.world = new RAPIER.World(toRapier(0, settings.gravity));
     this.world.timestep = FIXED_DT;
     this.world.integrationParameters.lengthUnit = PIXELS_PER_METER;
-    cleanup.register(this, this.world);
+    this.box = { world: this.world };
+    cleanup.register(this, this.box);
   }
 
   add(entity: Entity): void {
@@ -169,6 +172,26 @@ export class RapierPhysics implements PhysicsEngine {
     entity.joints?.forEach((_, index) => this.pendingJoints.push({ entity, index }));
     this.links.set(entity, link);
     this.byCollider.set(collider.handle, link);
+  }
+
+  save(): SavedEngine {
+    return saveEngine(this.world.takeSnapshot(), this.links.values(), this.pendingJoints);
+  }
+
+  restore(state: unknown, host: PhysicsHost): void {
+    const saved = state as SavedEngine;
+    const old = this.world;
+    this.world = RAPIER.World.restoreSnapshot(saved.snapshot);
+    this.box.world = this.world;
+    old.free();
+    const { links, pendingJoints } = restoreLinks<RigidBody, Collider, ImpulseJoint, Link>(saved, host.entities, this.world, (entity) => this.createController(entity));
+    this.links.clear();
+    this.byCollider.clear();
+    for (const link of links) {
+      this.links.set(link.entity, link);
+      this.byCollider.set(link.collider.handle, link);
+    }
+    this.pendingJoints = pendingJoints;
   }
 
   remove(entity: Entity): void {

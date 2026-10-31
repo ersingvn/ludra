@@ -32,8 +32,12 @@ Repeat until the game does what the user asked:
 3. **Play**: `npx @ludra/cli play --inputs "<script>" --ascii`. Read the timeline (position, velocity, grounded per sample), the events (jump, land, collect, stomp, die, win, bounce, checkpoint, gameover, goto) and the ASCII map of the final frame. `--scene scenes/level-2.scene.json` plays another scene. Use `--watch player,lift,enemy` to time moving things, `--every 0.1s` for finer timing and `--columns 160` for wide worlds.
 4. **Look**: add `--screenshot 1s,end` (any times, or `end`) to `play` to render real frames as PNGs into `screenshots/`, then open them with your image-reading tool. The ASCII map shows layout; screenshots show what players see: art, animation, particles, overlaps, readability. Do this after every visual change. It needs Chrome, Edge or Chromium installed; if none is found, say so and rely on the ASCII map.
 5. **Test**: encode the requirement in `tests/<name>.test.json` and run `npx @ludra/cli test`.
-6. **Review**: `npx @ludra/cli review` lists what makes a game feel unfinished: untested mechanics, events nothing answers, the default HUD, a flat backdrop, plain shapes. Fix every issue (✗) and consider the ideas (○). A game with review issues is not done, even if its tests pass.
-7. **Hand off**: tell the user to run `npx @ludra/cli dev` to play it.
+6. **Prove**: let the engine do the searching. Your tests prove the routes you thought of; these find the ones you didn't.
+   - `npx @ludra/cli solve` searches the inputs for a way to win. It proves the level can be beaten and prints the route as a test to paste into `tests/`. It also shows how wide each jump's timing window is: "tight" (0.1 s or less) is hard for a person, so shorten the gap, widen the landing or slow the hazard, unless that is the point.
+   - `npx @ludra/cli fuzz` plays hundreds of random sessions and reports script crashes and softlocks (places a player gets into but never out of), each with the `--inputs` that reproduce it, plus a map of where players die.
+   - Fix every crash and softlock (fuzz exits 1 on them, and on a level that can't be won). An unsolved level is a bug unless the user asked for one.
+7. **Review**: `npx @ludra/cli review` lists what makes a game feel unfinished: untested mechanics, events nothing answers, the default HUD, a flat backdrop, plain shapes. Fix every issue (✗) and consider the ideas (○). A game with review issues is not done, even if its tests pass.
+8. **Hand off**: tell the user to run `npx @ludra/cli dev` to play it.
 
 ## Input scripts
 

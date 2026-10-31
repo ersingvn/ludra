@@ -1,0 +1,83 @@
+{
+  "name": "easy-walk",
+  "world": {
+    "width": 800,
+    "height": 540,
+    "gravity": 1800
+  },
+  "entities": [
+    {
+      "id": "player",
+      "components": {
+        "transform": {
+          "x": 80,
+          "y": 482
+        },
+        "body": {
+          "type": "dynamic",
+          "width": 28,
+          "height": 36
+        },
+        "platformer": {}
+      }
+    },
+    {
+      "id": "ground",
+      "components": {
+        "transform": {
+          "x": 400,
+          "y": 520
+        },
+        "body": {
+          "type": "static",
+          "width": 800,
+          "height": 40
+        }
+      }
+    },
+    {
+      "id": "goal",
+      "components": {
+        "transform": {
+          "x": 700,
+          "y": 460
+        },
+        "body": {
+          "type": "static",
+          "width": 40,
+          "height": 80,
+          "sensor": true
+        },
+        "goal": {}
+      }
+    },
+    {
+      "id": "wall-left",
+      "components": {
+        "transform": {
+          "x": -10,
+          "y": 270
+        },
+        "body": {
+          "type": "static",
+          "width": 20,
+          "height": 540
+        }
+      }
+    },
+    {
+      "id": "wall-right",
+      "components": {
+        "transform": {
+          "x": 810,
+          "y": 270
+        },
+        "body": {
+          "type": "static",
+          "width": 20,
+          "height": 540
+        }
+      }
+    }
+  ]
+}

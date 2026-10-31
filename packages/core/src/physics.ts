@@ -82,6 +82,17 @@ export interface PhysicsEngine {
    * `resolve` turns what a script passes (an entity handle or id) into an entity.
    */
   raw?(resolve: (target: unknown) => Entity | undefined): unknown;
+  /**
+   * The engine's own state beyond the entities (its bodies, contacts and solver caches), as a
+   * value `restore` can bring back any number of times. Engines without it can't be saved, and
+   * World.save throws for them. An engine that keeps nothing outside the entities returns null.
+   */
+  save?(): unknown;
+  /**
+   * Goes back to a state `save` returned. `host.entities` are by then the restored entities:
+   * new objects with the same ids as when it was saved, which the engine links its bodies to again.
+   */
+  restore?(state: unknown, host: PhysicsHost): void;
 }
 
 /** A body's mass for engines without their own: density × width × height. */

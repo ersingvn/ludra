@@ -1,5 +1,5 @@
 {
-  "name": "coin-climb",
+  "name": "Coin Climb",
   "entry": "scenes/main.scene.json",
   "window": { "width": 960, "height": 540 }
 }

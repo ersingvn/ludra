@@ -1,0 +1,97 @@
+{
+  "name": "narrow-window",
+  "world": {
+    "width": 900,
+    "height": 540,
+    "gravity": 1800
+  },
+  "entities": [
+    {
+      "id": "player",
+      "components": {
+        "transform": {
+          "x": 80,
+          "y": 482
+        },
+        "body": {
+          "type": "dynamic",
+          "width": 28,
+          "height": 36
+        },
+        "platformer": {}
+      }
+    },
+    {
+      "id": "ground-start",
+      "components": {
+        "transform": {
+          "x": 200,
+          "y": 520
+        },
+        "body": {
+          "type": "static",
+          "width": 400,
+          "height": 40
+        }
+      }
+    },
+    {
+      "id": "ground-end",
+      "components": {
+        "transform": {
+          "x": 754,
+          "y": 520
+        },
+        "body": {
+          "type": "static",
+          "width": 292,
+          "height": 40
+        }
+      }
+    },
+    {
+      "id": "goal",
+      "components": {
+        "transform": {
+          "x": 820,
+          "y": 460
+        },
+        "body": {
+          "type": "static",
+          "width": 40,
+          "height": 80,
+          "sensor": true
+        },
+        "goal": {}
+      }
+    },
+    {
+      "id": "wall-left",
+      "components": {
+        "transform": {
+          "x": -10,
+          "y": 270
+        },
+        "body": {
+          "type": "static",
+          "width": 20,
+          "height": 540
+        }
+      }
+    },
+    {
+      "id": "wall-right",
+      "components": {
+        "transform": {
+          "x": 910,
+          "y": 270
+        },
+        "body": {
+          "type": "static",
+          "width": 20,
+          "height": 540
+        }
+      }
+    }
+  ]
+}
