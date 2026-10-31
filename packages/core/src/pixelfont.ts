@@ -42,15 +42,17 @@ export interface PixelTextOptions {
   align?: "left" | "center" | "right";
   /** Color of a hard one-pixel drop shadow, or false for none. Default a dark one. */
   shadow?: string | false;
+  /** The language of the text, for its capitals: in "tr", i becomes İ and ı becomes I. */
+  locale?: string;
 }
 
-function capitals(text: string): string[] {
-  return [...text.toUpperCase()];
+function capitals(text: string, locale?: string): string[] {
+  return [...text.toLocaleUpperCase(locale ?? "en")];
 }
 
 /** Width of `text` in canvas pixels, without the gap after the last letter. */
-export function pixelTextWidth(text: string, scale = 1): number {
-  const length = capitals(text).length;
+export function pixelTextWidth(text: string, scale = 1, locale?: string): number {
+  const length = capitals(text, locale).length;
   return length === 0 ? 0 : (length * ADVANCE - 1) * scale;
 }
 
@@ -66,13 +68,13 @@ function letter(g: CanvasRenderingContext2D, char: string, x: number, y: number,
 
 /** Draws `text` with its top-left at (x, y), or its top-center or top-right with `align`. */
 export function pixelText(g: CanvasRenderingContext2D, text: string, x: number, y: number, options: PixelTextOptions = {}): void {
-  const { scale = 1, color = "#ffffff", align = "left", shadow = "rgba(0, 0, 0, 0.75)" } = options;
+  const { scale = 1, color = "#ffffff", align = "left", shadow = "rgba(0, 0, 0, 0.75)", locale } = options;
   const s = Math.max(1, Math.round(scale));
-  const width = pixelTextWidth(text, s);
+  const width = pixelTextWidth(text, s, locale);
   const left = Math.round(align === "center" ? x - width / 2 : align === "right" ? x - width : x);
   const top = Math.round(y);
   const fill = g.fillStyle;
-  const each = (dx: number, dy: number) => capitals(text).forEach((char, i) => letter(g, char, left + i * ADVANCE * s + dx, top + dy, s));
+  const each = (dx: number, dy: number) => capitals(text, locale).forEach((char, i) => letter(g, char, left + i * ADVANCE * s + dx, top + dy, s));
   if (shadow !== false) {
     g.fillStyle = shadow;
     each(s, s);

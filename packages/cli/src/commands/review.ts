@@ -163,7 +163,7 @@ function reviewScene(project: Project, info: SceneInfo, hasTests: boolean, add: 
   // ---------------------------------------------------------------- looks
   if (!uses("drawUI")) {
     add("issue", "looks", "R_DEFAULT_HUD", label, "It uses the engine's default HUD and end screens.", "Write a drawUI hook: show what matters in this game (lives as hearts, crystals as icons, a meter), a title card and a win screen, in a font that fits the mood.");
-  } else if (!scene.fonts || Object.keys(scene.fonts).length === 0) {
+  } else if ((!scene.fonts || Object.keys(scene.fonts).length === 0) && ![...sources.values()].some((code) => code.includes("pixelText"))) {
     add("idea", "looks", "R_SYSTEM_FONT", label, "The interface uses the system font.", 'Load a display font that fits the mood: "fonts": { "<Family>": "google" }.');
   }
   if (scene.world?.dimensions === 3) {

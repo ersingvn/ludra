@@ -352,7 +352,7 @@ ctx.view      width, height, cameraX, cameraY, zoom
 ctx.recent(name?, seconds = 0.5)   recent events [{ name, time, x, y, entity, data }]: flash on hit, pop scores
 ctx.image(path)   a loaded image (sprite images and string params ending in .svg/.png/... are preloaded)
 ctx.burst(x, y, particles?)  ctx.shake(px)  ctx.random()   presentation-only helpers
-ctx.pixelText(text, x, y, { scale, color, align, shadow })   sharp 5×7 capitals with Turkish and Latin marks
+ctx.pixelText(text, x, y, { scale, color, align, shadow, locale })   sharp 5×7 capitals with Turkish and Latin marks; "tr" gives İ and I their place
 self/world/params as in update, but read-only: changing the game in a draw hook is an error.
 
 Sound: the sound hook gets the real Web Audio API, so there are no limits on sound either.

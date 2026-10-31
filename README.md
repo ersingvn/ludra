@@ -240,7 +240,7 @@ Without it, or with a part undecided, review has an issue (`R_NO_DIRECTION`, `R_
 For a tighter look, three small pieces go together:
 
 - `"window": { "width": 480, "height": 270, "pixelated": true }` in `ludra.json` draws at low resolution and shows it at a whole multiple, with hard pixels.
-- `ctx.pixelText("Bölüm 1", x, y, { scale: 2, color: "#ffcf70", align: "center" })` in a draw hook writes sharp 5×7 capitals, with Turkish and Latin marks.
+- `ctx.pixelText("Bölüm 1", x, y, { scale: 2, color: "#ffcf70", align: "center", locale: "tr" })` in a draw hook writes sharp 5×7 capitals, with Turkish and Latin marks.
 - `"variants": ["assets/rock2.svg", "assets/rock3.svg"]` on a tiled sprite or a tilemap legend entry mixes in more cells of the same size, so the grid doesn't show.
 
 The skill treats issues like failing tests, and every template reviews clean (`--strict` makes issues fail CI).

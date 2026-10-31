@@ -49,6 +49,17 @@ describe("pixelText", () => {
     assert.ok(shape("Ö").some((c) => c.y < 0), "the dots sit over it");
   });
 
+  test("a language has its own capitals", () => {
+    const drawn = (text: string, locale?: string) => {
+      const { g, cells } = canvas();
+      pixelText(g, text, 0, 0, { shadow: false, locale });
+      return cells;
+    };
+    assert.deepEqual(drawn("kiriş", "tr"), drawn("KİRİŞ"));
+    assert.deepEqual(drawn("ışık", "tr"), drawn("IŞIK"));
+    assert.deepEqual(drawn("kiriş"), drawn("KIRIŞ"));
+  });
+
   test("every position lands on the pixel grid, whatever it was given", () => {
     const { g, cells } = canvas();
     pixelText(g, "A", 10.4, 20.6, { scale: 2.4, align: "center" });
