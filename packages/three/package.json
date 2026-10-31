@@ -1,6 +1,6 @@
 {
   "name": "@ludra/three",
-  "version": "0.93.0",
+  "version": "0.94.0",
   "description": "The 3D renderer for Ludra: Three.js meshes, PBR materials, lights, shadows, cameras and environments for 3D scenes.",
   "license": "MIT",
   "repository": {
@@ -31,7 +31,7 @@
     "src"
   ],
   "dependencies": {
-    "@ludra/core": "0.93.0",
+    "@ludra/core": "0.94.0",
     "three": "0.186.1"
   },
   "devDependencies": {

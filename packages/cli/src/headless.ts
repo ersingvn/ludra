@@ -3,11 +3,13 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
-import type { CapturedFrame } from "@ludra/core/browser";
+import type { CameraView, CapturedFrame } from "@ludra/core/browser";
 import { CliError, type Project } from "./project.ts";
 import { BLANK_PATH, createGameServer, PROJECT_PREFIX, SCRIPT_PREFIX } from "./server.ts";
 
 const TIMEOUT_MS = 60_000;
+/** Extra time per frame drawn: a heavy 3D scene on software WebGL takes seconds each. */
+const TIMEOUT_PER_DRAW_MS = 5_000;
 
 /**
  * Finds an installed Chromium-based browser: LUDRA_BROWSER if set, otherwise
@@ -45,6 +47,45 @@ export interface ScreenshotRequest {
   scene?: string;
   inputs: string;
   frames: number[];
+  /** Also lay these frames out as one contact sheet, each with its label. */
+  sheet?: SheetRequest;
+  /** A debugging view instead of the scene's camera (3D). */
+  camera?: CameraView;
+  /** Also draw each frame with each of these groups of entities left out. */
+  hide?: string[][];
+}
+
+export interface SheetRequest {
+  frames: number[];
+  /** One line under each frame, in the same order. */
+  labels: string[];
+}
+
+export interface CaptureResult {
+  frames: CapturedFrame[];
+  /** The contact sheet as a PNG data URL, when one was asked for. */
+  sheet?: string;
+}
+
+/** Widest a contact sheet gets, so it stays readable as one image. */
+const SHEET_MAX_WIDTH = 2048;
+const SHEET_GAP = 4;
+const SHEET_LABEL = 22;
+
+/** Columns and cell size for `count` frames of a `width`×`height` window. */
+export function sheetLayout(count: number, width: number, height: number) {
+  const columns = Math.max(1, Math.ceil(Math.sqrt(count)));
+  const rows = Math.ceil(count / columns);
+  const cellWidth = Math.min(width, Math.floor((SHEET_MAX_WIDTH - SHEET_GAP * (columns + 1)) / columns));
+  const cellHeight = Math.round((height * cellWidth) / width);
+  return {
+    columns,
+    rows,
+    cellWidth,
+    cellHeight,
+    width: columns * cellWidth + SHEET_GAP * (columns + 1),
+    height: rows * (cellHeight + SHEET_LABEL) + SHEET_GAP * (rows + 1),
+  };
 }
 
 /**
@@ -55,7 +96,7 @@ function sceneUrl(scene: string | undefined): string {
   return scene ? `/__ludra/scene?path=${encodeURIComponent(scene)}` : "/__ludra/scene";
 }
 
-export async function captureScreenshots(project: Project, request: ScreenshotRequest): Promise<CapturedFrame[]> {
+export async function captureScreenshots(project: Project, request: ScreenshotRequest): Promise<CaptureResult> {
   const browserPath = findBrowser();
   if (!browserPath) {
     throw new CliError(
@@ -114,6 +155,8 @@ export async function captureScreenshots(project: Project, request: ScreenshotRe
         inputs: ${JSON.stringify(request.inputs)},
         frames: ${JSON.stringify(request.frames)},
         debug: ${JSON.stringify(!!request.debug)},
+        camera: ${JSON.stringify(request.camera ?? null)} ?? undefined,
+        hide: ${JSON.stringify(request.hide ?? null)} ?? undefined,
         loadPhysics: async (name) => {
           if (name === "rapier") await (await import(${JSON.stringify(physicsModule)})).loadRapierPhysics();
           if (name === "rapier3d") await (await import(${JSON.stringify(physicsModule)})).loadRapier3DPhysics();
@@ -121,7 +164,43 @@ export async function captureScreenshots(project: Project, request: ScreenshotRe
         loadRenderer3D: async () => (await import(${JSON.stringify(threeModule)})).createRenderer3D,
       });
     })()`;
-    return await evaluate<CapturedFrame[]>(cdp, sessionId, script);
+    const draws = request.frames.length * (1 + 2 * (request.hide?.length ?? 0));
+    const frames = await evaluate<CapturedFrame[]>(cdp, sessionId, script, TIMEOUT_MS + draws * TIMEOUT_PER_DRAW_MS);
+    if (!request.sheet) return { frames };
+    const layout = sheetLayout(request.sheet.frames.length, width, height);
+    const cells = request.sheet.frames.map((frame, i) => ({ png: frames.find((f) => f.frame === frame)!.png, label: request.sheet!.labels[i] ?? "" }));
+    // Drawn in the page, where decoding and scaling PNGs is built in.
+    const compose = `(async () => {
+      const layout = ${JSON.stringify(layout)};
+      const cells = ${JSON.stringify(cells)};
+      const gap = ${SHEET_GAP}, label = ${SHEET_LABEL};
+      const sheet = document.createElement("canvas");
+      sheet.width = layout.width;
+      sheet.height = layout.height;
+      const ctx = sheet.getContext("2d");
+      ctx.fillStyle = "#111318";
+      ctx.fillRect(0, 0, sheet.width, sheet.height);
+      ctx.imageSmoothingQuality = "high";
+      ctx.textBaseline = "middle";
+      for (const [i, cell] of cells.entries()) {
+        const image = new Image();
+        image.src = cell.png;
+        await image.decode();
+        const x = gap + (i % layout.columns) * (layout.cellWidth + gap);
+        const y = gap + Math.floor(i / layout.columns) * (layout.cellHeight + label + gap);
+        ctx.drawImage(image, x, y, layout.cellWidth, layout.cellHeight);
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x, y + layout.cellHeight, layout.cellWidth, label);
+        ctx.clip();
+        ctx.fillStyle = "#e8eaf0";
+        ctx.font = "13px ui-monospace, Consolas, monospace";
+        ctx.fillText(cell.label, x + 6, y + layout.cellHeight + label / 2);
+        ctx.restore();
+      }
+      return sheet.toDataURL("image/png");
+    })()`;
+    return { frames, sheet: await evaluate<string>(cdp, sessionId, compose) };
   } finally {
     await cdp?.send("Browser.close").catch(() => {});
     cdp?.close();
@@ -187,11 +266,12 @@ async function waitFor(cdp: Cdp, sessionId: string, condition: string): Promise<
   }
 }
 
-async function evaluate<T>(cdp: Cdp, sessionId: string, expression: string): Promise<T> {
+async function evaluate<T>(cdp: Cdp, sessionId: string, expression: string, timeout = TIMEOUT_MS): Promise<T> {
   const result = await cdp.send<{ result: { value?: T }; exceptionDetails?: { exception?: { description?: string }; text?: string } }>(
     "Runtime.evaluate",
     { expression, awaitPromise: true, returnByValue: true },
     sessionId,
+    timeout,
   );
   if (result.exceptionDetails) {
     const details = result.exceptionDetails;
@@ -231,13 +311,13 @@ class Cdp {
     });
   }
 
-  send<T = unknown>(method: string, params: Record<string, unknown> = {}, sessionId?: string): Promise<T> {
+  send<T = unknown>(method: string, params: Record<string, unknown> = {}, sessionId?: string, timeout = TIMEOUT_MS): Promise<T> {
     const id = this.nextId++;
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new CliError(`The browser did not answer ${method} in time.`));
-      }, TIMEOUT_MS);
+      }, timeout);
       this.pending.set(id, {
         resolve: (value) => {
           clearTimeout(timer);

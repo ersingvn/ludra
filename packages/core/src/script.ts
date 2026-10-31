@@ -1,3 +1,4 @@
+import type { PixelTextOptions } from "./pixelfont.ts";
 import type { Action, Diagnostic } from "./types.ts";
 import type { Ease } from "./tween.ts";
 import { closestName } from "./validate.ts";
@@ -194,6 +195,8 @@ export interface DrawContext {
   shake(amount: number): void;
   /** A number in [0, 1) for visual variety. Seeded, independent of world.random, so it never affects the game. */
   random(): number;
+  /** Sharp bitmap text with Turkish and Latin marks, for a low-resolution look. (x, y) is its top. */
+  pixelText(text: string, x: number, y: number, options?: PixelTextOptions): void;
 }
 
 /**
@@ -349,6 +352,7 @@ ctx.view      width, height, cameraX, cameraY, zoom
 ctx.recent(name?, seconds = 0.5)   recent events [{ name, time, x, y, entity, data }]: flash on hit, pop scores
 ctx.image(path)   a loaded image (sprite images and string params ending in .svg/.png/... are preloaded)
 ctx.burst(x, y, particles?)  ctx.shake(px)  ctx.random()   presentation-only helpers
+ctx.pixelText(text, x, y, { scale, color, align, shadow, locale })   sharp 5×7 capitals with Turkish and Latin marks; "tr" gives İ and I their place
 self/world/params as in update, but read-only: changing the game in a draw hook is an error.
 
 Sound: the sound hook gets the real Web Audio API, so there are no limits on sound either.

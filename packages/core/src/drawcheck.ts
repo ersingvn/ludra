@@ -81,6 +81,7 @@ export function checkDrawHooks(scene: SceneDef, scripts: ScriptModules, options:
               burst: () => {},
               shake: () => {},
               random: () => 0.5,
+              pixelText: () => {},
             });
           } catch (err) {
             const key = `${e.script.src}:${hook}`;

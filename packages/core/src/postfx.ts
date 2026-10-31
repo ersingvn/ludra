@@ -20,6 +20,9 @@ void main() {
  * into an offscreen 2D canvas; this uploads it as a texture and draws it
  * through the shader onto a WebGL canvas.
  */
+/** No WebGL on this machine: not the game's fault, and a finish a game can go without. */
+export class NoWebGL extends Error {}
+
 export class PostFx {
   readonly canvas: HTMLCanvasElement;
   private readonly gl: WebGLRenderingContext;
@@ -35,7 +38,7 @@ export class PostFx {
     this.canvas.height = height;
     // preserveDrawingBuffer keeps the frame readable for screenshots.
     const gl = this.canvas.getContext("webgl", { preserveDrawingBuffer: true, premultipliedAlpha: false });
-    if (!gl) throw new Error("postfx needs WebGL, which this browser doesn't provide.");
+    if (!gl) throw new NoWebGL("postfx needs WebGL, which this browser doesn't provide.");
     this.gl = gl;
 
     const custom = Object.keys(def.uniforms ?? {});

@@ -147,6 +147,7 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       fps: { type: "number", min: 0, default: 8, description: "Animation speed in frames per second." },
       flip: { type: "boolean", default: true, description: "Mirror the image while moving left. Draw images facing right." },
       tile: { type: "boolean", default: false, description: "Repeat the image to fill the sprite instead of stretching it (ground, walls, spikes)." },
+      variants: { type: "strings", default: [], description: 'With tile: more images of the same size, mixed in cell by cell so the repetition doesn\'t show, e.g. ["assets/rock2.svg", "assets/rock3.svg"].' },
       width: { type: "number", min: 0, default: 0, description: "Draw width in pixels. 0 = use the body width." },
       height: { type: "number", min: 0, default: 0, description: "Draw height in pixels. 0 = use the body height." },
       layer: { type: "number", default: 0, description: "Higher layers are drawn on top." },
@@ -495,6 +496,7 @@ export interface Sprite {
   fps: number;
   flip: boolean;
   tile: boolean;
+  variants: string[];
   width: number;
   height: number;
   layer: number;

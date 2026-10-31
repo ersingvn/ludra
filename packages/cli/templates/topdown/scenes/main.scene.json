@@ -205,6 +205,7 @@
         "sprite": {
           "color": "#2f5a3a",
           "image": "assets/grass.svg",
+          "variants": ["assets/grass2.svg", "assets/grass3.svg"],
           "tile": true,
           "width": 960,
           "height": 540,

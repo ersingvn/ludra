@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
+  <!-- Tile: rock.svg's strata, nearly bare, with one large stone. -->
+  <rect width="40" height="40" fill="#5c4332"/>
+  <path d="M0 13 Q 10 10 20 13 T 40 13 M0 31 Q 12 28 22 31 T 40 31" stroke="#533c2d" stroke-width="3" fill="none"/>
+  <ellipse cx="18" cy="22" rx="7" ry="4" fill="#735742"/>
+  <ellipse cx="17" cy="20.5" rx="4" ry="1.5" fill="#86684f"/>
+  <circle cx="33" cy="7" r="1.4" fill="#4a3427"/>
+  <circle cx="6" cy="5" r="1.2" fill="#4a3427"/>
+</svg>

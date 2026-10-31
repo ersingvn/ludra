@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { collectAssetPaths, InputScript, isFrameList, parseFrames, simulate, validateScene, World, type EntityDef, type SceneDef } from "../src/index.ts";
+import { LABEL_HEIGHT, layoutLabels } from "../src/labels.ts";
 import { ParticleSystem } from "../src/particles.ts";
 
 const ground: EntityDef = {
@@ -120,5 +121,32 @@ describe("ParticleSystem", () => {
     a.update(0.3);
     assert.equal(a.count, 0);
     assert.equal(make().random(), make().random());
+  });
+});
+
+describe("map labels", () => {
+  const measure = (text: string) => text.length * 7;
+  const boxes = (placed: ReturnType<typeof layoutLabels>) =>
+    placed.map((l) => ({ left: l.textX, top: l.textY, right: l.textX + l.width, bottom: l.textY + LABEL_HEIGHT }));
+
+  test("points in the same spot share one label", () => {
+    const placed = layoutLabels([{ text: "plaza", x: 100, y: 100 }, { text: "plaza-rock", x: 102, y: 101 }, { text: "gate", x: 300, y: 100 }], measure, 960, 540);
+    assert.deepEqual(placed.map((l) => l.text).sort(), ["gate", "plaza, plaza-rock"]);
+  });
+
+  test("a crowded column of points gets labels that don't overlap and stay on the frame", () => {
+    const labels = Array.from({ length: 14 }, (_, i) => ({ text: `shard-number-${i}`, x: 480, y: 100 + i * 9 }));
+    const placed = boxes(layoutLabels(labels, measure, 960, 540));
+    assert.equal(placed.length, 14);
+    for (const [i, a] of placed.entries()) {
+      assert.ok(a.left >= 0 && a.top >= 0 && a.right <= 960 && a.bottom <= 540, "inside the frame");
+      for (const b of placed.slice(i + 1)) assert.ok(a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top, "no two overlap");
+    }
+  });
+
+  test("a point at the frame's edge keeps its label on the frame, and a full frame drops nothing", () => {
+    assert.ok(boxes(layoutLabels([{ text: "corner", x: 2, y: 2 }], measure, 960, 540)).every((b) => b.left >= 0 && b.top >= 0));
+    const labels = Array.from({ length: 60 }, (_, i) => ({ text: `entity-${i}`, x: 20 + i * 8, y: 20 }));
+    assert.equal(layoutLabels(labels, measure, 100, 40).length, labels.length);
   });
 });

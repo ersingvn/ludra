@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
+  <!-- Tile: plain grass, only blades. -->
+  <rect width="40" height="40" fill="#2f5a3a"/>
+  <path d="M7 16 l1 -3 l1 3 M26 11 l1 -3 l1 3 M14 34 l1 -3 l1 3 M33 29 l1 -3 l1 3" stroke="#3f7a4c" stroke-width="1.2" fill="none"/>
+</svg>

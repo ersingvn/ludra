@@ -4,8 +4,10 @@ import { physicsEngineName } from "./engines.ts";
 import { parseFrames, type Sprite } from "./components.ts";
 import { collectAssetPaths } from "./effects.ts";
 import { InputScript } from "./input.ts";
+import { LABEL_HEIGHT, layoutLabels, type Label } from "./labels.ts";
 import { ParticleSystem } from "./particles.ts";
-import { PostFx } from "./postfx.ts";
+import { pixelText } from "./pixelfont.ts";
+import { NoWebGL, PostFx } from "./postfx.ts";
 import type { DrawContext, DrawEvent, Script } from "./script.ts";
 import { FIXED_DT } from "./time.ts";
 import type { Body } from "./components.ts";
@@ -50,7 +52,19 @@ export interface Renderer3D {
   dispose(): void;
   /** Waits for anything still loading (render hooks' addons), so a screenshot shows the finished frame. */
   settle?(): Promise<void>;
+  /** Looks from somewhere other than the scene's camera3d. Leaves the game alone. */
+  view?: CameraView;
+  /** Ids of entities to leave out of the drawing. */
+  hidden?: ReadonlySet<string>;
+  /** Names to write over the frame at these canvas pixels: the map view labels its entities. */
+  labels?(world: World): Label[];
 }
+
+/**
+ * A debugging view of a 3D scene: `map` looks straight down on the whole level, `free`
+ * looks from a point at another point or at an entity (by id), followed as it moves.
+ */
+export type CameraView = { mode: "map" } | { mode: "free"; from: { x: number; y: number; z: number }; at: { x: number; y: number; z: number } | string };
 
 export type Renderer3DFactory = (scene: SceneDef, options: { width: number; height: number; assetBase: string }) => Promise<Renderer3D>;
 
@@ -169,8 +183,13 @@ class Screen {
         if (shader instanceof Error) throw shader;
         fx = new PostFx(this.canvas.width, this.canvas.height, shader, postfx);
       } catch (err) {
-        error = `postfx: ${message(err)}`;
-        console.error("[ludra]", err);
+        if (err instanceof NoWebGL) {
+          // The player can't fix this and the game works without it: play on, unfinished by a shader.
+          console.warn("[ludra]", err.message);
+        } else {
+          error = `postfx: ${message(err)}`;
+          console.error("[ludra]", err);
+        }
       }
     }
     const target = fx?.canvas ?? this.canvas;
@@ -417,6 +436,10 @@ export interface CaptureOptions extends GameOptions {
   inputs?: string;
   /** Simulation frames to capture (60 per second). Frame 0 is the starting state. */
   frames: readonly number[];
+  /** A debugging view instead of the scene's camera (3D scenes only). */
+  camera?: CameraView;
+  /** Also draws each frame once per group with those entities left out, to see what they add. */
+  hide?: readonly (readonly string[])[];
 }
 
 export interface CapturedFrame {
@@ -424,6 +447,12 @@ export interface CapturedFrame {
   time: number;
   /** PNG as a data URL. */
   png: string;
+  /**
+   * The same moment for each group in CaptureOptions.hide, in order, and a drawing of the whole
+   * frame right after it. Render hooks can move things on with every drawing, so only drawings
+   * next to each other can be compared.
+   */
+  without?: { png: string; after: string }[];
 }
 
 /**
@@ -441,6 +470,11 @@ export async function captureFrames(canvas: HTMLCanvasElement, scene: SceneDef, 
   if (error) throw new Error(error);
   const view = new View(scene, images, await useRenderer3D(scene, options, canvas.width, canvas.height));
   view.debug = options.debug ?? false;
+  view.steady = options.hide !== undefined;
+  if (options.camera) {
+    if (!view.renderer) throw new Error("A camera view only works on 3D scenes; 2D scenes always show the whole frame their camera sees.");
+    view.renderer.view = options.camera;
+  }
   const world = new World(scene, { scripts });
   const script = InputScript.parse(options.inputs ?? "");
   const wanted = new Set(options.frames);
@@ -455,8 +489,17 @@ export async function captureFrames(canvas: HTMLCanvasElement, scene: SceneDef, 
         await view.renderer.settle();
       }
       view.draw(screen.ctx, world, false, false);
-      screen.present(world.time);
-      captured.push({ frame, time: frame * FIXED_DT, png: screen.output.toDataURL("image/png") });
+      // A map shows where things are, so it skips the scene's shader along with its lighting.
+      if (options.camera?.mode !== "map") screen.present(world.time);
+      const png = (options.camera?.mode === "map" ? canvas : screen.output).toDataURL("image/png");
+      const drawing = (hidden: readonly string[]) => {
+        view.hidden = new Set(hidden);
+        view.draw(screen.ctx, world, false, false);
+        screen.present(world.time);
+        return screen.output.toDataURL("image/png");
+      };
+      const without = options.hide?.map((ids) => ({ png: drawing(ids), after: drawing([]) }));
+      captured.push({ frame, time: frame * FIXED_DT, png, without });
     }
     if (frame >= last) break;
     world.step(script.at(frame));
@@ -521,12 +564,18 @@ class View {
   private readonly frameCache = new Map<string, number[]>();
   /** ctx.local for each entity's draw hooks. */
   private readonly local = new Map<string, Record<string, unknown>>();
+  /** Blocks with tile variants, painted once. */
+  private readonly tiled = new Map<string, HTMLCanvasElement>();
   /** Frames each platformer has been off the ground, so a one-frame bump doesn't flash the fall pose. */
   private readonly airborne = new Map<string, number>();
   /** Where joints to a point in the world were first seen, to draw them in the debug view. */
   private readonly jointOrigins = new Map<string, { x: number; y: number }>();
   /** Draw colliders, sensors, joints and ids over the game. */
   debug = false;
+  /** Entities left out of the drawing. The game still runs them. */
+  hidden: ReadonlySet<string> = new Set();
+  /** Draw without shake, so two drawings of one moment differ only in what was hidden. */
+  steady = false;
   private shake = 0;
   private handledEvents = 0;
   /** Follows the player and blends between camera zones, one simulation step at a time. */
@@ -597,7 +646,8 @@ class View {
   draw(ctx: CanvasRenderingContext2D, world: World, muted: boolean, continues: boolean): void {
     const { width: viewWidth, height: viewHeight } = ctx.canvas;
     const viewInfo = this.renderer ? this.drawWorld3D(ctx, world) : this.drawWorld(ctx, world);
-    this.drawInterface(ctx, world, muted, continues, viewInfo);
+    // The HUD belongs to the game's camera: over a debugging view it only hides what's being looked at.
+    if (!this.renderer?.view) this.drawInterface(ctx, world, muted, continues, viewInfo);
   }
 
   /** A 3D frame from the renderer, copied in so the interface and postfx go on top. */
@@ -605,10 +655,42 @@ class View {
     const renderer = this.renderer!;
     const { width, height } = ctx.canvas;
     renderer.debug = this.debug;
+    renderer.hidden = this.hidden;
     renderer.render(world);
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(renderer.canvas, 0, 0, width, height);
+    this.drawLabels(ctx, renderer.labels?.(world) ?? []);
     return { width, height, cameraX: 0, cameraY: 0, zoom: 1 };
+  }
+
+  /** Each name beside its point, with a line back to it when the label had to move away. */
+  private drawLabels(ctx: CanvasRenderingContext2D, labels: readonly Label[]): void {
+    if (labels.length === 0) return;
+    ctx.save();
+    ctx.font = "600 12px ui-monospace, Consolas, monospace";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    const placed = layoutLabels(labels, (text) => ctx.measureText(text).width, ctx.canvas.width, ctx.canvas.height);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+    for (const label of placed) {
+      const x = Math.max(label.textX, Math.min(label.x, label.textX + label.width));
+      const y = Math.max(label.textY, Math.min(label.y, label.textY + LABEL_HEIGHT));
+      if (Math.hypot(x - label.x, y - label.y) < 12) continue;
+      ctx.beginPath();
+      ctx.moveTo(label.x, label.y);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+    }
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.85)";
+    ctx.fillStyle = "#ffffff";
+    for (const label of placed) {
+      ctx.strokeText(label.text, label.textX, label.textY);
+      ctx.fillText(label.text, label.textX, label.textY);
+      ctx.fillRect(label.x - 1.5, label.y - 1.5, 3, 3);
+    }
+    ctx.restore();
   }
 
   /** The 2D world: backdrop color, sprites and draw hooks under the camera, particles, debug. */
@@ -624,7 +706,7 @@ class View {
     const zoom = camera.zoom;
     let cameraX = camera.x;
     let cameraY = camera.y;
-    if (this.shake > 0) {
+    if (this.shake > 0 && !this.steady) {
       cameraX += (this.particles.random() - 0.5) * 2 * this.shake;
       cameraY += (this.particles.random() - 0.5) * 2 * this.shake;
     }
@@ -634,7 +716,7 @@ class View {
     ctx.scale(zoom, zoom);
     ctx.translate(-cameraX, -cameraY);
     const layer = (e: Entity) => e.sprite?.layer ?? 0;
-    const visible = world.entities.filter((e) => e.sprite || e.script?.module.draw).sort((a, b) => layer(a) - layer(b));
+    const visible = world.entities.filter((e) => (e.sprite || e.script?.module.draw) && !this.hidden.has(e.id)).sort((a, b) => layer(a) - layer(b));
     for (const e of visible) {
       if (e.sprite && e.sprite.opacity > 0) {
         ctx.save();
@@ -711,11 +793,37 @@ class View {
           this.shake = Math.max(this.shake, amount);
         },
         random: () => this.particles.random(),
+        pixelText: (text, x, y, options) => pixelText(ctx, text, x, y, options),
       });
     } finally {
       // Whatever the hook changed (transform, alpha, blend mode, filter) ends with it.
       ctx.restore();
     }
+  }
+
+  /** The image to repeat. With `variants`, the block once painted cell by cell, so no pattern shows; the cell's place picks its variant. */
+  private tiledImage(e: Entity, image: HTMLImageElement, width: number, height: number): HTMLImageElement | HTMLCanvasElement {
+    const sprite = e.sprite!;
+    if (sprite.variants.length === 0) return image;
+    const key = `${e.id}|${width}x${height}`;
+    const painted = this.tiled.get(key);
+    if (painted) return painted;
+    const choices = [image, ...sprite.variants.flatMap((path) => this.images.get(path) ?? [])];
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.ceil(width);
+    canvas.height = Math.ceil(height);
+    const g = canvas.getContext("2d")!;
+    g.imageSmoothingEnabled = false;
+    const left = Math.floor((e.transform.x - width / 2) / image.naturalWidth);
+    const top = Math.floor((e.transform.y - height / 2) / image.naturalHeight);
+    for (let row = 0; row * image.naturalHeight < height; row++) {
+      for (let column = 0; column * image.naturalWidth < width; column++) {
+        const pick = tileHash(left + column, top + row) % choices.length;
+        g.drawImage(choices[pick]!, column * image.naturalWidth, row * image.naturalHeight);
+      }
+    }
+    this.tiled.set(key, canvas);
+    return canvas;
   }
 
   private drawSprite(ctx: CanvasRenderingContext2D, e: Entity, time: number): void {
@@ -748,7 +856,7 @@ class View {
     }
 
     if (sprite.tile) {
-      const pattern = ctx.createPattern(image, "repeat");
+      const pattern = ctx.createPattern(this.tiledImage(e, image, width, height), "repeat");
       if (!pattern) return;
       ctx.save();
       ctx.translate(e.transform.x, e.transform.y);
@@ -897,6 +1005,13 @@ class View {
 }
 
 type AnimationState = "idle" | "run" | "jump" | "fall";
+
+/** The same number for the same cell, with no pattern a player could see between neighbors. */
+function tileHash(column: number, row: number): number {
+  let h = Math.imul(column, 73856093) ^ Math.imul(row, 19349663);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return (h ^ (h >>> 16)) >>> 0;
+}
 
 function recentEvents(world: World, name: string | undefined, seconds: number): DrawEvent[] {
   const since = world.time - seconds;

@@ -4,11 +4,16 @@ A game built with Ludra, a game engine designed for AI agents.
 
 ## Layout
 
+- `game.md`: what this game means to be and look like
 - `ludra.json`: project config (name, entry scene, window size)
 - `scenes/main.scene.json`: the level. Entities are made of components; `effects` adds particles, sound and shake to game events, and `sounds` and `music` are the game's own.
-- `assets/`: SVG art. Spritesheets are frames side by side; tiles repeat.
+- `assets/`: SVG art. Spritesheets are frames side by side; tiles repeat, and `"variants"` mixes in more cells so the grid doesn't show.
 - `scripts/`: `sunset.ts` (the desert backdrop), `shrine.ts` (the shrine's glow once all coins are found) and `hud.ts` (coin slots, title card, end screen). All presentation: tests never depend on them.
 - `tests/*.test.json`: gameplay tests, run headlessly
+
+## Before any art
+
+Decide the look in `game.md` first, and make it this game's own: what comes with a project is only an example, and the easy path gives a game that looks like every other. `## Promise` says what a player remembers; `## Look` has `- style:`, `- type:` and `- palette:`. One strong constraint does more than many effects: for example `"window": { "width": 480, "height": 270, "pixelated": true }` in `ludra.json` with `ctx.pixelText` for text gives hard pixels throughout, and a theme per level (walls, accent, light) tells a player where they are from one frame.
 
 ## Loop
 

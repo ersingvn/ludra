@@ -4,6 +4,7 @@ import { add, blocks } from "./commands/blocks.ts";
 import { check } from "./commands/check.ts";
 import { components } from "./commands/components.ts";
 import { dev } from "./commands/dev.ts";
+import { diff } from "./commands/diff.ts";
 import { fuzz } from "./commands/fuzz.ts";
 import { inspect } from "./commands/inspect.ts";
 import { create } from "./commands/new.ts";
@@ -36,10 +37,20 @@ Usage
       --ascii                                  Print the final frame as a text map
       --columns 120                            Width of the text map (default: 80)
       --screenshot 1s,2.5s,end                 Save real rendered frames as PNGs (needs Chrome, Edge or Chromium)
+      --sheet 0.5s                             One PNG of the whole run: a frame every 0.5s and the last, each
+                                               labelled with its time and the events since the one before
+      --camera map                             3D: draw the frames as a map, the whole level from above with
+                                               each entity's id; or 0,20,12@0,0,0 from a point at a point,
+                                               or 0,20,12@player from a point at an entity
       --debug                                  Draw colliders, sensors, joints and ids over the screenshots
       --out screenshots                        Folder for screenshots, relative to the project (default: screenshots)
       --json                                   Machine-readable output
-  ludra test [folder] [--json]                 Run tests/*.test.json (a test can pick its "scene")
+  ludra diff <before> <after> [options]        What changed between two screenshots, or two folders of them by
+                                               file name: share of pixels, regions and where, an image of each
+      --out screenshots/diff                   Folder for the diff images (default: screenshots/diff)
+      --threshold 24                           How much a colour channel must move to count (0-255)
+      --json                                   Machine-readable output
+  ludra test [folder] [--json]               Run tests/*.test.json (a test can pick its "scene")
   ludra solve [folder] [options]               Search the inputs for a way to win; exit 1 when none is found
       --scene scenes/level-2.scene.json        Scene to solve (default: the entry scene)
       --goal "player.x > 900"                  What counts as done, as a test assertion (default: won == true)
@@ -60,7 +71,7 @@ Usage
   ludra review [folder] [--json] [--strict]    Find what makes a game feel unfinished: untested mechanics,
                                                frame-perfect jumps, crashes and softlocks found by random play,
                                                silent events, default HUD, flat looks (--strict: exit 1 on issues)
-      --fast                                   Skip the random play (a few seconds per scene)
+      --fast                                   Skip the random play and the frames (a few seconds per scene)
   ludra components [name] [--json]             Reference for every component and field
   ludra inspect <file> [--json]                What a .glb/.gltf model holds (size in metres, triangles, animations,
                                                bones), or an image's size or a WAV's duration
@@ -85,6 +96,8 @@ async function main(argv: string[]): Promise<number> {
       ascii: { type: "boolean" },
       columns: { type: "string" },
       screenshot: { type: "string" },
+      sheet: { type: "string" },
+      camera: { type: "string" },
       debug: { type: "boolean" },
       out: { type: "string" },
       json: { type: "boolean" },
@@ -99,6 +112,7 @@ async function main(argv: string[]): Promise<number> {
       budget: { type: "string" },
       "allow-deaths": { type: "boolean" },
       seed: { type: "string" },
+      threshold: { type: "string" },
       goal: { type: "string" },
       sessions: { type: "string" },
       seconds: { type: "string" },
@@ -133,6 +147,8 @@ async function main(argv: string[]): Promise<number> {
       return dev(target ?? ".", values);
     case "inspect":
       return inspect(target, values);
+    case "diff":
+      return diff(target, extra, values);
     case "blocks":
       return blocks(values);
     case "add":

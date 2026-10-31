@@ -1,8 +1,13 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
-import { fuzz, InputScript, isSoundPreset, measureWindows, runTest, World, type SceneDef, type Script, type TestCase, type TestResult } from "@ludra/core";
+import { findPlayer, fuzz, InputScript, isSoundPreset, measureWindows, runTest, World, type SceneDef, type Script, type TestCase, type TestResult } from "@ludra/core";
+import { colorsOfProject, hasLeftPalette, missingFromDirection, offPalette, readDirection } from "../direction.ts";
 import { paint } from "../format.ts";
+import { captureScreenshots, findBrowser } from "../headless.ts";
+import { decodePng } from "../png.ts";
+import { closeEnough, isClear, measurePresence, TINY_SHARE, type Presence } from "../readability.ts";
 import { listScenes, loadGame, loadProject, type Game, type Project } from "../project.ts";
+import { areAlike, averageProfile, hueOverlap, hueProfile, repeatedTiles } from "../variety.ts";
 
 /**
  * `ludra review`: the signs of a slop game, found automatically. Where `check`
@@ -11,7 +16,7 @@ import { listScenes, loadGame, loadProject, type Game, type Project } from "../p
  * game is called done; ideas are worth considering.
  */
 
-type Area = "proof" | "fair" | "feel" | "looks" | "identity";
+type Area = "proof" | "fair" | "feel" | "looks" | "readable" | "identity";
 type Level = "issue" | "idea";
 
 export interface Finding {
@@ -29,6 +34,7 @@ const AREAS: Record<Area, string> = {
   fair: "Fair: can a person beat it, and can it never trap them?",
   feel: "Feel: does every moment answer the player?",
   looks: "Looks: does it have a style of its own?",
+  readable: "Readable: can a player see what matters?",
   identity: "Identity: is it a game, or a project folder?",
 };
 
@@ -83,6 +89,8 @@ export async function review(dir: string, options: { json?: boolean; strict?: bo
     reviewScene(project, scene, tests.cases.length > 0, add);
     reviewFairness(scene, add, !options.fast);
   }
+  if (!options.fast) await reviewReadability(project, scenes, add);
+  reviewDirection(project, add);
 
   // Identity.
   const folder = basename(project.dir);
@@ -155,13 +163,16 @@ function reviewScene(project: Project, info: SceneInfo, hasTests: boolean, add: 
   // ---------------------------------------------------------------- looks
   if (!uses("drawUI")) {
     add("issue", "looks", "R_DEFAULT_HUD", label, "It uses the engine's default HUD and end screens.", "Write a drawUI hook: show what matters in this game (lives as hearts, crystals as icons, a meter), a title card and a win screen, in a font that fits the mood.");
-  } else if (!scene.fonts || Object.keys(scene.fonts).length === 0) {
+  } else if ((!scene.fonts || Object.keys(scene.fonts).length === 0) && ![...sources.values()].some((code) => code.includes("pixelText"))) {
     add("idea", "looks", "R_SYSTEM_FONT", label, "The interface uses the system font.", 'Load a display font that fits the mood: "fonts": { "<Family>": "google" }.');
   }
   if (scene.world?.dimensions === 3) {
     review3DLooks(scene, uses("render"), hooksOf, label, add);
   } else {
     review2DLooks(scene, hooksOf, label, add);
+    for (const { image, cells } of repeatedTiles(project.dir, scene)) {
+      add("issue", "looks", "R_REPEATED_TILES", label, `${image} repeats ${cells} times in solid blocks: the eye finds that grid at once.`, `Draw 2 or 3 more cells of the same size that join up, and list them: a sprite's "variants", or "variants" in a tilemap legend entry.`);
+    }
   }
   if (!scene.postfx && !uses("render")) {
     add("idea", "looks", "R_NO_POSTFX", label, "No post-processing.", 'A finishing shader ("postfx") ties a look together: bloom for anything that glows, a grade for mood, scanlines for arcade. In 3D, a render hook can run three.js post-processing (ctx.addon, ctx.setRender).');
@@ -181,7 +192,7 @@ const FUZZ_SECONDS = 4;
 function reviewFairness(info: SceneInfo, add: Add, play: boolean): void {
   const { label, game, results, cases } = info;
   const make = () => new World(game.scene, { scripts: game.scripts });
-  const route = results.findIndex((r) => r.pass && r.results.some((a) => /^won == true\b/.test(a.source.replace(/\s+/g, " "))));
+  const route = winRoute(results);
   const inputs = route >= 0 ? cases[route]?.inputs : undefined;
   if (inputs) {
     const script = InputScript.parse(inputs);
@@ -214,6 +225,115 @@ function reviewFairness(info: SceneInfo, add: Add, play: boolean): void {
   }
 }
 
+/** The first passing test that wins, whose inputs are a real way through the scene. */
+function winRoute(results: TestResult[]): number {
+  return results.findIndex((r) => r.pass && r.results.some((a) => /^won == true\b/.test(a.source.replace(/\s+/g, " "))));
+}
+
+interface Subject {
+  name: string;
+  ids: string[];
+  level: Level;
+  fix: string;
+}
+
+/** What a player has to pick out of a frame, and how much it matters when they can't. */
+function subjectsOf({ game }: SceneInfo): Subject[] {
+  const withComponent = (name: "hazard" | "goal" | "collectible") => game.scene.entities.filter((e) => e.components[name]).map((e) => e.id);
+  const player = findPlayer(new World(game.scene, { scripts: game.scripts }))?.id;
+  const subjects: Subject[] = [
+    { name: "The player", ids: player ? [player] : [], level: "issue", fix: "Give the player a color or outline that stands out from every background it crosses, or a light of its own." },
+    { name: "The hazards", ids: withComponent("hazard"), level: "issue", fix: "What hurts must be seen in time: a warning color no safe thing uses, a glow, a dark outline." },
+    { name: "The goal", ids: withComponent("goal"), level: "idea", fix: "Make the place to reach stand out: a brighter color, a glow, a beacon." },
+    { name: "The collectibles", ids: withComponent("collectible"), level: "idea", fix: "Make them catch the eye: a brighter color, a glow, a sparkle." },
+  ];
+  return subjects.filter((s) => s.ids.length > 0);
+}
+
+/**
+ * Readable: draws moments along the route with and without each thing that matters, so the
+ * difference is exactly where it is on screen and what is behind it. A thing is only called
+ * unclear if it is unclear at half the moments it's on screen or more; passing a dark corner is fine.
+ */
+async function reviewReadability(project: Project, scenes: SceneInfo[], add: Add): Promise<void> {
+  if (scenes.length === 0) return;
+  if (!findBrowser()) {
+    add("idea", "readable", "R_NOT_LOOKED", "frames", "Nobody looked at the frames: no Chrome, Edge or Chromium was found.", "Install one, or set LUDRA_BROWSER, to have review measure what a player can see.");
+    return;
+  }
+  const profiles: { label: string; hue: number[] }[] = [];
+  for (const info of scenes) {
+    const subjects = subjectsOf(info);
+    if (subjects.length === 0) continue;
+    const route = winRoute(info.results);
+    const inputs = (route >= 0 ? info.cases[route]?.inputs : undefined) ?? "";
+    const length = InputScript.parse(inputs).totalFrames;
+    const frames = [...new Set([MOMENT, ...[1, 2].map((n) => Math.max(MOMENT, Math.floor((length * n) / 3)))])];
+    let captured;
+    try {
+      captured = await captureScreenshots(project, { scene: info.label, inputs, frames, hide: subjects.map((s) => s.ids) });
+    } catch (err) {
+      add("idea", "readable", "R_NOT_LOOKED", info.label, `Could not draw the scene to measure it: ${(err as Error).message}`, "Run `ludra play --screenshot end` to see what goes wrong.");
+      continue;
+    }
+    const decoded = (png: string) => decodePng(Buffer.from(png.slice(png.indexOf(",") + 1), "base64"));
+    const seen: Presence[][] = subjects.map(() => []);
+    const hues: number[][] = [];
+    for (const frame of captured.frames) {
+      let before = decoded(frame.png);
+      hues.push(hueProfile(before));
+      frame.without!.forEach(({ png, after }, i) => {
+        const whole = decoded(after);
+        seen[i]!.push(measurePresence(before, decoded(png), whole));
+        before = whole;
+      });
+    }
+    profiles.push({ label: info.label, hue: averageProfile(hues) });
+    subjects.forEach((subject, i) => {
+      const moments = seen[i]!.filter((p) => p.pixels > 0);
+      if (subject.name === "The player" && moments.length === 0) {
+        add("issue", "readable", "R_PLAYER_NOT_DRAWN", info.label, "The player can't be seen in the frames measured: it is off screen, or the same color as what's behind it.", "Keep the player in view with a camera that follows it, and draw it in a color that stands out.");
+      }
+      if (moments.length === 0) return;
+      // A player missing from a moment is as hard to find as one that blends in.
+      const measured = subject.name === "The player" ? seen[i]! : closeEnough(moments);
+      const unclear = measured.filter((p) => !isClear(p));
+      if (unclear.length * 2 >= measured.length) {
+        const best = unclear.reduce((a, b) => (b.contrast > a.contrast ? b : a));
+        add(subject.level, "readable", "R_LOW_CONTRAST", info.label, `${subject.name} ${subject.name.endsWith("s") ? "blend into what's behind them" : "blends into what's behind it"} (contrast ${best.contrast.toFixed(2)}:1).`, subject.fix);
+      }
+      if (subject.name === "The player" && moments.every((p) => p.share < TINY_SHARE)) {
+        add("idea", "readable", "R_TINY_PLAYER", info.label, `The player covers only ${(moments[0]!.share * 100).toFixed(2)}% of the screen.`, "Move the camera closer or make the character bigger: it should be easy to find at a glance.");
+      }
+    });
+  }
+  // Each level a place of its own: the same colors all the way through read as one long level.
+  profiles.forEach((level, i) => {
+    const twin = profiles.slice(0, i).find((other) => areAlike(hueOverlap(level.hue, other.hue)));
+    if (twin) add("idea", "looks", "R_ALIKE_LEVELS", level.label, `It looks like ${twin.label}: their colors overlap ${Math.round(hueOverlap(level.hue, twin.hue) * 100)}%.`, "Give each level its own theme from game.md's palette: a wall color, an accent, a light. A player should know where they are from one frame.");
+  });
+}
+
+/** Looks that come from a decision: game.md says what this game is, and the art is held to its palette. */
+function reviewDirection(project: Project, add: Add): void {
+  const direction = readDirection(project.dir);
+  if (!direction) {
+    add("issue", "looks", "R_NO_DIRECTION", "game.md", "Nothing says what this game means to look like, so its look is whatever came easiest.", 'Write game.md before more art: "## Promise" (what a player remembers), then "## Look" with "- style:", "- type:" and "- palette:". Choose them for this game: a low window with "pixelated" gives a tighter look than smooth SVG at full size.');
+    return;
+  }
+  const missing = missingFromDirection(direction);
+  if (missing.length > 0) {
+    add("issue", "looks", "R_THIN_DIRECTION", "game.md", `game.md hasn't decided: ${list(missing)}.`, "Decide them for this game, then make the art agree.");
+    return;
+  }
+  const measured = offPalette(colorsOfProject(project.dir), direction.palette!);
+  if (hasLeftPalette(measured)) {
+    add("idea", "looks", "R_OFF_PALETTE", "game.md", `${measured.off.length} of ${measured.weighed} colors in the art are in no palette of game.md: ${list(measured.off)}.`, "Bring them to the palette, or change the palette in game.md if the art found something better.");
+  }
+}
+
+/** The first moment measured: late enough for a title card to have started fading. */
+const MOMENT = 60;
 type Add = (severity: "issue" | "idea", area: Area, code: string, where: string, message: string, fix: string) => void;
 
 /** 2D: a painted backdrop, and art instead of flat colored shapes. */
@@ -301,6 +421,9 @@ function print(project: Project, findings: Finding[], issues: number, ideas: num
     }
   }
   const summary = `\n${issues} issue(s), ${ideas} idea(s).`;
-  if (issues === 0) console.log(paint("green", `${summary} Nothing marks this as unfinished.${ideas > 0 ? " The ideas are worth a look." : ""}`));
+  if (issues === 0) {
+    console.log(paint("green", `${summary} Nothing marks this as unfinished.${ideas > 0 ? " The ideas are worth a look." : ""}`));
+    console.log(`That means it isn't broken, not that it's good. Look at the frames: do they keep the promise in game.md?`);
+  }
   else console.log(paint("red", `${summary} Fix the issues before calling the game done.`));
 }

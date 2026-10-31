@@ -4,6 +4,7 @@ A 3D game built with Ludra, a game engine designed for AI agents: Sky Islands. H
 
 ## Layout
 
+- `game.md`: what this game means to be and look like
 - `ludra.json`: project config (name, entry scene, window size).
 - `scenes/main.scene.json`: the level. `"world": { "dimensions": 3 }` makes it 3D: metres, +y up, +z toward the camera, gravity 9.81, Rapier 3D physics. `"environment"` sets the sky gradient, fog and tone mapping; `"sounds"` and `"music"` are the game's own.
 - `scripts/` (all presentation; tests never run them):
@@ -32,6 +33,10 @@ A 3D game built with Ludra, a game engine designed for AI agents: Sky Islands. H
 - **Light:** a `directional` sun with shadows (`shadowSize` metres around what the camera watches) and a `hemisphere` sky fill.
 - **The camera** is a `camera3d` in `"follow"` mode: behind the player and above, never turning with it, smoothed.
 
+## Before any art
+
+Decide the look in `game.md` first, and make it this game's own: what comes with a project is only an example, and the easy path gives a game that looks like every other. `## Promise` says what a player remembers; `## Look` has `- style:`, `- type:` and `- palette:`. One strong constraint does more than many effects: for example `"window": { "width": 480, "height": 270, "pixelated": true }` in `ludra.json` with `ctx.pixelText` for text gives hard pixels throughout, and a theme per level (walls, accent, light) tells a player where they are from one frame.
+
 ## Loop
 
 1. Edit the scene or a script. `npx @ludra/cli components` lists every component; `components mesh`, `light`, `camera3d`, `character` and `components script` (the render hook) cover 3D.
@@ -40,7 +45,7 @@ A 3D game built with Ludra, a game engine designed for AI agents: Sky Islands. H
 4. Find timings by sweeping: run `play` with a few values (a wait before boarding the raft, the moment of a jump) and keep the middle of the window that works. Hold a direction through a jump: with no key held, the player stops moving sideways, even in the air.
 5. Write the behavior into `tests/*.test.json`, run `npx @ludra/cli test`, then `npx @ludra/cli review` and `npx @ludra/cli dev`.
 
-Never call a change done until `ludra check`, `ludra test` and `ludra review` are all clean.
+Never call a change done until `ludra check`, `ludra test` and `ludra review` are all clean. Clean means it isn't broken, not that it's good: then look at the frames against `game.md` and keep making it better.
 
 ## Rules of thumb
 
