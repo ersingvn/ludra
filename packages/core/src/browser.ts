@@ -7,7 +7,7 @@ import { InputScript } from "./input.ts";
 import { LABEL_HEIGHT, layoutLabels, type Label } from "./labels.ts";
 import { ParticleSystem } from "./particles.ts";
 import { pixelText } from "./pixelfont.ts";
-import { PostFx } from "./postfx.ts";
+import { NoWebGL, PostFx } from "./postfx.ts";
 import type { DrawContext, DrawEvent, Script } from "./script.ts";
 import { FIXED_DT } from "./time.ts";
 import type { Body } from "./components.ts";
@@ -183,8 +183,13 @@ class Screen {
         if (shader instanceof Error) throw shader;
         fx = new PostFx(this.canvas.width, this.canvas.height, shader, postfx);
       } catch (err) {
-        error = `postfx: ${message(err)}`;
-        console.error("[ludra]", err);
+        if (err instanceof NoWebGL) {
+          // The player can't fix this and the game works without it: play on, unfinished by a shader.
+          console.warn("[ludra]", err.message);
+        } else {
+          error = `postfx: ${message(err)}`;
+          console.error("[ludra]", err);
+        }
       }
     }
     const target = fx?.canvas ?? this.canvas;
