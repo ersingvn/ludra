@@ -10,6 +10,8 @@ type Report = (code: string, path: string, message: string, fix?: string) => voi
 export interface TileDef {
   /** Image drawn tiled over the block, e.g. "assets/brick.svg". */
   image?: string;
+  /** More images of the same size, mixed in cell by cell so the repetition doesn't show. */
+  variants?: string[];
   /** Color when there is no image. */
   color?: string;
   /** Blocks movement. Default: true, unless the entry places a prefab. */
@@ -32,7 +34,7 @@ const isObject = (value: unknown): value is Record<string, unknown> => typeof va
 const show = (value: unknown) => (value === undefined ? "nothing" : JSON.stringify(value));
 
 const EXAMPLE = `Use "tilemap": { "tileSize": 40, "rows": ["#....c...#", "##########"], "legend": { "#": { "image": "assets/brick.svg" }, "c": "coin" } }.`;
-const ENTRY_FIELDS = ["image", "color", "solid", "sensor", "layer", "prefab", "components", "merge"];
+const ENTRY_FIELDS = ["image", "variants", "color", "solid", "sensor", "layer", "prefab", "components", "merge"];
 
 /**
  * Replaces every entity's `tilemap` component with the entities it describes. Generated
@@ -152,6 +154,7 @@ function cellEntity(def: TileDef, id: string, x: number, y: number, width: numbe
   if (def.image !== undefined || def.color !== undefined) {
     components.sprite = {
       ...(def.image !== undefined ? { image: def.image, tile: true } : {}),
+      ...(def.variants !== undefined ? { variants: def.variants } : {}),
       ...(def.color !== undefined ? { color: def.color } : {}),
       ...(def.layer !== undefined ? { layer: def.layer } : {}),
       // Without a body the sprite needs its own size.

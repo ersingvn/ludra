@@ -22,7 +22,8 @@ export class CliError extends Error {}
 export interface ProjectConfig {
   name: string;
   entry: string;
-  window: { width: number; height: number };
+  /** `pixelated`: the page shows the canvas at a whole multiple of its size, with hard pixels. */
+  window: { width: number; height: number; pixelated: boolean };
 }
 
 export interface Project {
@@ -50,7 +51,7 @@ export function loadProject(dir: string): Project {
   const config: ProjectConfig = {
     name: raw.name ?? "untitled",
     entry: raw.entry ?? "scenes/main.scene.json",
-    window: { width: raw.window?.width ?? 960, height: raw.window?.height ?? 540 },
+    window: { width: raw.window?.width ?? 960, height: raw.window?.height ?? 540, pixelated: raw.window?.pixelated === true },
   };
   const entryPath = join(root, config.entry);
   return { dir: root, config, entryPath, entryLabel: relative(root, entryPath).replaceAll("\\", "/") };

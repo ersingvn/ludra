@@ -6,6 +6,7 @@ import { collectAssetPaths } from "./effects.ts";
 import { InputScript } from "./input.ts";
 import { LABEL_HEIGHT, layoutLabels, type Label } from "./labels.ts";
 import { ParticleSystem } from "./particles.ts";
+import { pixelText } from "./pixelfont.ts";
 import { PostFx } from "./postfx.ts";
 import type { DrawContext, DrawEvent, Script } from "./script.ts";
 import { FIXED_DT } from "./time.ts";
@@ -558,6 +559,8 @@ class View {
   private readonly frameCache = new Map<string, number[]>();
   /** ctx.local for each entity's draw hooks. */
   private readonly local = new Map<string, Record<string, unknown>>();
+  /** Blocks with tile variants, painted once. */
+  private readonly tiled = new Map<string, HTMLCanvasElement>();
   /** Frames each platformer has been off the ground, so a one-frame bump doesn't flash the fall pose. */
   private readonly airborne = new Map<string, number>();
   /** Where joints to a point in the world were first seen, to draw them in the debug view. */
@@ -785,11 +788,37 @@ class View {
           this.shake = Math.max(this.shake, amount);
         },
         random: () => this.particles.random(),
+        pixelText: (text, x, y, options) => pixelText(ctx, text, x, y, options),
       });
     } finally {
       // Whatever the hook changed (transform, alpha, blend mode, filter) ends with it.
       ctx.restore();
     }
+  }
+
+  /** The image to repeat. With `variants`, the block once painted cell by cell, so no pattern shows; the cell's place picks its variant. */
+  private tiledImage(e: Entity, image: HTMLImageElement, width: number, height: number): HTMLImageElement | HTMLCanvasElement {
+    const sprite = e.sprite!;
+    if (sprite.variants.length === 0) return image;
+    const key = `${e.id}|${width}x${height}`;
+    const painted = this.tiled.get(key);
+    if (painted) return painted;
+    const choices = [image, ...sprite.variants.flatMap((path) => this.images.get(path) ?? [])];
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.ceil(width);
+    canvas.height = Math.ceil(height);
+    const g = canvas.getContext("2d")!;
+    g.imageSmoothingEnabled = false;
+    const left = Math.floor((e.transform.x - width / 2) / image.naturalWidth);
+    const top = Math.floor((e.transform.y - height / 2) / image.naturalHeight);
+    for (let row = 0; row * image.naturalHeight < height; row++) {
+      for (let column = 0; column * image.naturalWidth < width; column++) {
+        const pick = tileHash(left + column, top + row) % choices.length;
+        g.drawImage(choices[pick]!, column * image.naturalWidth, row * image.naturalHeight);
+      }
+    }
+    this.tiled.set(key, canvas);
+    return canvas;
   }
 
   private drawSprite(ctx: CanvasRenderingContext2D, e: Entity, time: number): void {
@@ -822,7 +851,7 @@ class View {
     }
 
     if (sprite.tile) {
-      const pattern = ctx.createPattern(image, "repeat");
+      const pattern = ctx.createPattern(this.tiledImage(e, image, width, height), "repeat");
       if (!pattern) return;
       ctx.save();
       ctx.translate(e.transform.x, e.transform.y);
@@ -971,6 +1000,13 @@ class View {
 }
 
 type AnimationState = "idle" | "run" | "jump" | "fall";
+
+/** The same number for the same cell, with no pattern a player could see between neighbors. */
+function tileHash(column: number, row: number): number {
+  let h = Math.imul(column, 73856093) ^ Math.imul(row, 19349663);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return (h ^ (h >>> 16)) >>> 0;
+}
 
 function recentEvents(world: World, name: string | undefined, seconds: number): DrawEvent[] {
   const since = world.time - seconds;

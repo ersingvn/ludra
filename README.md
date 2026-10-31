@@ -219,6 +219,30 @@ It also asks whether the game is **fair**:
 And it asks whether the game is **readable**, from real frames: it draws moments along the winning route with and without the player, the hazards, the goal and the collectibles, so the difference shows exactly where each one is and what is behind it. A player or hazard that blends in at half the moments it's on screen or more is an issue (`R_LOW_CONTRAST`), so is a player that can't be seen at all (`R_PLAYER_NOT_DRAWN`); a goal or collectible that blends in, or a tiny player (`R_TINY_PLAYER`), is an idea. This needs Chrome, Edge or Chromium; without one, review says it didn't look (`R_NOT_LOOKED`). A thing another entity's hook draws can't be left out on its own, so it isn't measured. `--fast` skips this too.
 - `--fast` skips the random play.
 
+And it asks whether the game has **decided how to look**. No tool can tell a good look from a dull one, and a game that passes every check can still look like every other, so a game writes down what it means to be, before its first asset, in `game.md`:
+
+```markdown
+# Last Lantern
+
+## Promise
+
+The dark closes in, and the lantern is all you have.
+
+## Look
+
+- style: 16-color pixel art at 480x270, a theme per level
+- type: hard pixel capitals, nothing smooth
+- palette: #120c0a, #4a3529, #ffcf70, #58907c, #d8a8ff
+```
+
+Without it, or with a part undecided, review has an issue (`R_NO_DIRECTION`, `R_THIN_DIRECTION`). What can be measured is held to it: art that has left the palette is an idea (`R_OFF_PALETTE`), one tile image filling thick blocks is an issue (`R_REPEATED_TILES`, fixed with `"variants"`), and levels whose frames share their colors are an idea (`R_ALIKE_LEVELS`). A clean review says the game isn't broken, not that it's good: it ends by sending you back to the frames.
+
+For a tighter look, three small pieces go together:
+
+- `"window": { "width": 480, "height": 270, "pixelated": true }` in `ludra.json` draws at low resolution and shows it at a whole multiple, with hard pixels.
+- `ctx.pixelText("Bölüm 1", x, y, { scale: 2, color: "#ffcf70", align: "center" })` in a draw hook writes sharp 5×7 capitals, with Turkish and Latin marks.
+- `"variants": ["assets/rock2.svg", "assets/rock3.svg"]` on a tiled sprite or a tilemap legend entry mixes in more cells of the same size, so the grid doesn't show.
+
 The skill treats issues like failing tests, and every template reviews clean (`--strict` makes issues fail CI).
 
 ### `ludra solve` and `ludra fuzz`: proof at scale

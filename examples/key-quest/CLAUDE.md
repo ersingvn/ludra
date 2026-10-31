@@ -4,11 +4,16 @@ A game built with Ludra, a game engine designed for AI agents.
 
 ## Layout
 
+- `game.md`: what this game means to be and look like
 - `ludra.json`: project config (name, entry scene, window size)
 - `scenes/main.scene.json`: the level. Entities are made of components; `effects` adds particles, sound and shake to game events.
-- `assets/`: SVG art. Spritesheets are frames side by side; tiles repeat.
+- `assets/`: SVG art. Spritesheets are frames side by side; tiles repeat, and `"variants"` mixes in more cells so the grid doesn't show.
 - `scripts/`: custom game logic in TypeScript (create it when needed). Run `npx @ludra/cli components script` for the API.
 - `tests/*.test.json`: gameplay tests, run headlessly
+
+## Before any art
+
+Decide the look in `game.md` first, and make it this game's own: what comes with a project is only an example, and the easy path gives a game that looks like every other. `## Promise` says what a player remembers; `## Look` has `- style:`, `- type:` and `- palette:`. One strong constraint does more than many effects: for example `"window": { "width": 480, "height": 270, "pixelated": true }` in `ludra.json` with `ctx.pixelText` for text gives hard pixels throughout, and a theme per level (walls, accent, light) tells a player where they are from one frame.
 
 ## Loop
 
@@ -28,5 +33,5 @@ Never call a change done until `ludra check` and `ludra test` both pass.
 - Moving platforms and enemies are kinematic bodies with a `patrol`. Players standing on a moving platform are carried.
 - A jump only triggers on a new press, so put a segment without jump between two jump segments.
 - The level is done when a test proves `won == true` with `deaths == 0`.
-- Art and effects never change gameplay. Make it playable first, then dress it. Write new art as SVG in `assets/`.
+- Art and effects never change gameplay. Make it playable first, then dress it in the look `game.md` chose: SVG in `assets/`, or draw hooks when code paints it better (lighting, rock, water).
 - For behavior no component provides (chasing, keys, timers, shooting), write a script and attach it with a `script` component. Use `world.random()`, never `Math.random()`, and test what it does through `self.state` and `world.emit`.

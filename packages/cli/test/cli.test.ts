@@ -183,7 +183,7 @@ describe("ludra review", () => {
     const { code, out } = ludra("review", bare, "--json", "--strict");
     assert.equal(code, 1);
     const codes = (JSON.parse(out).findings as { code: string }[]).map((f) => f.code);
-    for (const expected of ["R_NO_TESTS", "R_DEFAULT_HUD", "R_FLAT_BACKDROP", "R_PLAIN_SHAPES", "R_NO_POSTFX", "R_UNNAMED_SCENE", "R_STOCK_SOUNDS", "R_NO_MUSIC"]) {
+    for (const expected of ["R_NO_DIRECTION", "R_NO_TESTS", "R_DEFAULT_HUD", "R_FLAT_BACKDROP", "R_PLAIN_SHAPES", "R_NO_POSTFX", "R_UNNAMED_SCENE", "R_STOCK_SOUNDS", "R_NO_MUSIC"]) {
       assert.ok(codes.includes(expected), `${expected} in ${codes.join(", ")}`);
     }
     assert.equal(ludra("review", bare).code, 0, "without --strict, review only advises");

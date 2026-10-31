@@ -4,6 +4,7 @@ export * from "./components.ts";
 export * from "./effects.ts";
 export * from "./sound.ts";
 export * as dmath from "./dmath.ts";
+export * from "./pixelfont.ts";
 export * from "./tilemap.ts";
 export * from "./camera.ts";
 export * from "./tween.ts";

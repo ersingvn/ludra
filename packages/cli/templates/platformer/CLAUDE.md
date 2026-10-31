@@ -4,13 +4,18 @@ A platformer built with Ludra, a game engine designed for AI agents: two levels,
 
 ## Layout
 
+- `game.md`: what this game means to be and look like
 - `ludra.json`: project config (name, entry scene, window size)
 - `scenes/main.scene.json`: level 1 (the entry scene). Its flag's `next` leads to `scenes/level-2.scene.json`. Entities are made of components; `effects` adds particles, sound and shake to game events.
 - `prefabs/`: `coin` and `slime`, reused by both levels. An entity says `"prefab": "slime"` and lists only what differs.
-- `assets/`: SVG art. Spritesheets are frames side by side; tiles repeat.
+- `assets/`: SVG art. Spritesheets are frames side by side; tiles repeat, and `"variants"` mixes in more cells so the grid doesn't show.
 - `scripts/`: `backdrop.ts` (the night sky and parallax hills), `lantern.ts` (lights a reached checkpoint), `hud.ts` (hearts, points, title card, end screens). Run `npx @ludra/cli components script` for the API.
 - `shaders/glow.frag`: the finishing shader (bloom, grade, vignette).
 - `tests/*.test.json`: gameplay tests, run headlessly. Tests for level 2 say `"scene": "scenes/level-2.scene.json"`.
+
+## Before any art
+
+Decide the look in `game.md` first, and make it this game's own: what comes with a project is only an example, and the easy path gives a game that looks like every other. `## Promise` says what a player remembers; `## Look` has `- style:`, `- type:` and `- palette:`. One strong constraint does more than many effects: for example `"window": { "width": 480, "height": 270, "pixelated": true }` in `ludra.json` with `ctx.pixelText` for text gives hard pixels throughout, and a theme per level (walls, accent, light) tells a player where they are from one frame.
 
 ## Loop
 
@@ -21,7 +26,7 @@ A platformer built with Ludra, a game engine designed for AI agents: two levels,
 5. Run `npx @ludra/cli review` and fix every issue it lists: it catches what makes a game feel unfinished (untested mechanics, silent events, the default HUD, flat looks).
 6. Run `npx @ludra/cli dev` so a human can play it in the browser.
 
-Never call a change done until `ludra check`, `ludra test` and `ludra review` are all clean.
+Never call a change done until `ludra check`, `ludra test` and `ludra review` are all clean. Clean means it isn't broken, not that it's good: then look at the frames against `game.md` and keep making it better.
 
 ## Rules of thumb
 
@@ -36,5 +41,5 @@ Never call a change done until `ludra check`, `ludra test` and `ludra review` ar
 - For a game that is about physics (stacking, ropes, hinges, rolling, vehicles), set `"physics": "rapier"` in `"world"`: rotation, round and free shapes, friction, mass and joints. See the skill's physics section and `npx @ludra/cli components body` / `joint`.
 - The scene has its own `"sounds"` (used by `effects`) and `"music"` (tracks of notes). Change them with the game's mood; `npx @ludra/cli components sounds` shows every field. A script's `sound` hook gets the real Web Audio API for sound that follows the game.
 - Bigger levels: a `tilemap` draws a level as rows of characters, `cameraZone` frames rooms and vistas, and `tween` eases lifts, doors and pickups. See `npx @ludra/cli components tilemap` (and `cameraZone`, `tween`).
-- Art and effects never change gameplay. Make it playable first, then dress it. Write new art as SVG in `assets/`.
+- Art and effects never change gameplay. Make it playable first, then dress it in the look `game.md` chose: SVG in `assets/`, or draw hooks when code paints it better (lighting, rock, water).
 - For behavior no component provides (chasing, keys, timers, shooting), write a script and attach it with a `script` component. Use `world.random()`, never `Math.random()`, and test what it does through `self.state` and `world.emit`.

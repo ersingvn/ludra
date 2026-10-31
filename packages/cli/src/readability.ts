@@ -67,15 +67,26 @@ function median(values: number[]): number {
   return values.sort((x, y) => x - y)[Math.floor(values.length / 2)] ?? 0;
 }
 
-/** Clear if it differs in brightness or in color: red on an equally bright green still reads. */
 /** The moments that say something about a thing: a speck far down the path isn't there to be read yet. */
 export function closeEnough(moments: Presence[]): Presence[] {
   const close = moments.filter((p) => p.share >= TINY_SHARE);
   return close.length > 0 ? close : moments;
 }
 
+/** Clear if it differs in brightness or in color: red on an equally bright green still reads. */
 export function isClear(presence: Presence): boolean {
   return presence.contrast >= MIN_CONTRAST || (presence.difference >= MIN_DIFFERENCE && presence.brightness >= MIN_BRIGHTNESS);
+}
+
+export function rgbToLab(r: number, g: number, b: number): [number, number, number] {
+  return lab([linear(r), linear(g), linear(b)]);
+}
+
+/** How far apart two 8-bit colors look (CIE76 ΔE). */
+export function colorDistance(x: readonly number[], y: readonly number[]): number {
+  const [l1, a1, b1] = rgbToLab(x[0]!, x[1]!, x[2]!);
+  const [l2, a2, b2] = rgbToLab(y[0]!, y[1]!, y[2]!);
+  return Math.hypot(l1 - l2, a1 - a2, b1 - b2);
 }
 
 function linear(channel: number): number {

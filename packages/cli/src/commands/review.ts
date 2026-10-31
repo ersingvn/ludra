@@ -1,11 +1,13 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { findPlayer, fuzz, InputScript, isSoundPreset, measureWindows, runTest, World, type SceneDef, type Script, type TestCase, type TestResult } from "@ludra/core";
+import { colorsOfProject, hasLeftPalette, missingFromDirection, offPalette, readDirection } from "../direction.ts";
 import { paint } from "../format.ts";
 import { captureScreenshots, findBrowser } from "../headless.ts";
 import { decodePng } from "../png.ts";
 import { closeEnough, isClear, measurePresence, TINY_SHARE, type Presence } from "../readability.ts";
 import { listScenes, loadGame, loadProject, type Game, type Project } from "../project.ts";
+import { areAlike, averageProfile, hueOverlap, hueProfile, repeatedTiles } from "../variety.ts";
 
 /**
  * `ludra review`: the signs of a slop game, found automatically. Where `check`
@@ -88,6 +90,7 @@ export async function review(dir: string, options: { json?: boolean; strict?: bo
     reviewFairness(scene, add, !options.fast);
   }
   if (!options.fast) await reviewReadability(project, scenes, add);
+  reviewDirection(project, add);
 
   // Identity.
   const folder = basename(project.dir);
@@ -167,6 +170,9 @@ function reviewScene(project: Project, info: SceneInfo, hasTests: boolean, add: 
     review3DLooks(scene, uses("render"), hooksOf, label, add);
   } else {
     review2DLooks(scene, hooksOf, label, add);
+    for (const { image, cells } of repeatedTiles(project.dir, scene)) {
+      add("issue", "looks", "R_REPEATED_TILES", label, `${image} repeats ${cells} times in solid blocks: the eye finds that grid at once.`, `Draw 2 or 3 more cells of the same size that join up, and list them: a sprite's "variants", or "variants" in a tilemap legend entry.`);
+    }
   }
   if (!scene.postfx && !uses("render")) {
     add("idea", "looks", "R_NO_POSTFX", label, "No post-processing.", 'A finishing shader ("postfx") ties a look together: bloom for anything that glows, a grade for mood, scanlines for arcade. In 3D, a render hook can run three.js post-processing (ctx.addon, ctx.setRender).');
@@ -255,6 +261,7 @@ async function reviewReadability(project: Project, scenes: SceneInfo[], add: Add
     add("idea", "readable", "R_NOT_LOOKED", "frames", "Nobody looked at the frames: no Chrome, Edge or Chromium was found.", "Install one, or set LUDRA_BROWSER, to have review measure what a player can see.");
     return;
   }
+  const profiles: { label: string; hue: number[] }[] = [];
   for (const info of scenes) {
     const subjects = subjectsOf(info);
     if (subjects.length === 0) continue;
@@ -271,14 +278,17 @@ async function reviewReadability(project: Project, scenes: SceneInfo[], add: Add
     }
     const decoded = (png: string) => decodePng(Buffer.from(png.slice(png.indexOf(",") + 1), "base64"));
     const seen: Presence[][] = subjects.map(() => []);
+    const hues: number[][] = [];
     for (const frame of captured.frames) {
       let before = decoded(frame.png);
+      hues.push(hueProfile(before));
       frame.without!.forEach(({ png, after }, i) => {
         const whole = decoded(after);
         seen[i]!.push(measurePresence(before, decoded(png), whole));
         before = whole;
       });
     }
+    profiles.push({ label: info.label, hue: averageProfile(hues) });
     subjects.forEach((subject, i) => {
       const moments = seen[i]!.filter((p) => p.pixels > 0);
       if (subject.name === "The player" && moments.length === 0) {
@@ -296,6 +306,29 @@ async function reviewReadability(project: Project, scenes: SceneInfo[], add: Add
         add("idea", "readable", "R_TINY_PLAYER", info.label, `The player covers only ${(moments[0]!.share * 100).toFixed(2)}% of the screen.`, "Move the camera closer or make the character bigger: it should be easy to find at a glance.");
       }
     });
+  }
+  // Each level a place of its own: the same colors all the way through read as one long level.
+  profiles.forEach((level, i) => {
+    const twin = profiles.slice(0, i).find((other) => areAlike(hueOverlap(level.hue, other.hue)));
+    if (twin) add("idea", "looks", "R_ALIKE_LEVELS", level.label, `It looks like ${twin.label}: their colors overlap ${Math.round(hueOverlap(level.hue, twin.hue) * 100)}%.`, "Give each level its own theme from game.md's palette: a wall color, an accent, a light. A player should know where they are from one frame.");
+  });
+}
+
+/** Looks that come from a decision: game.md says what this game is, and the art is held to its palette. */
+function reviewDirection(project: Project, add: Add): void {
+  const direction = readDirection(project.dir);
+  if (!direction) {
+    add("issue", "looks", "R_NO_DIRECTION", "game.md", "Nothing says what this game means to look like, so its look is whatever came easiest.", 'Write game.md before more art: "## Promise" (what a player remembers), then "## Look" with "- style:", "- type:" and "- palette:". Choose them for this game: a low window with "pixelated" gives a tighter look than smooth SVG at full size.');
+    return;
+  }
+  const missing = missingFromDirection(direction);
+  if (missing.length > 0) {
+    add("issue", "looks", "R_THIN_DIRECTION", "game.md", `game.md hasn't decided: ${list(missing)}.`, "Decide them for this game, then make the art agree.");
+    return;
+  }
+  const measured = offPalette(colorsOfProject(project.dir), direction.palette!);
+  if (hasLeftPalette(measured)) {
+    add("idea", "looks", "R_OFF_PALETTE", "game.md", `${measured.off.length} of ${measured.weighed} colors in the art are in no palette of game.md: ${list(measured.off)}.`, "Bring them to the palette, or change the palette in game.md if the art found something better.");
   }
 }
 
@@ -388,6 +421,9 @@ function print(project: Project, findings: Finding[], issues: number, ideas: num
     }
   }
   const summary = `\n${issues} issue(s), ${ideas} idea(s).`;
-  if (issues === 0) console.log(paint("green", `${summary} Nothing marks this as unfinished.${ideas > 0 ? " The ideas are worth a look." : ""}`));
+  if (issues === 0) {
+    console.log(paint("green", `${summary} Nothing marks this as unfinished.${ideas > 0 ? " The ideas are worth a look." : ""}`));
+    console.log(`That means it isn't broken, not that it's good. Look at the frames: do they keep the promise in game.md?`);
+  }
   else console.log(paint("red", `${summary} Fix the issues before calling the game done.`));
 }

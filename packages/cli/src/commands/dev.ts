@@ -22,8 +22,13 @@ export function dev(dir: string, options: { port?: string }): number {
 }
 
 function page(project: Project, { browserModule, physicsModule, threeModule, importMap }: { browserModule: string; physicsModule: string; threeModule: string; importMap: string }): string {
-  const { width, height } = project.config.window;
+  const { width, height, pixelated } = project.config.window;
   const title = escapeHtml(project.config.name);
+  // A rule on the element, not on one canvas: a postfx scene swaps the canvas for its own.
+  const pixelStyle = pixelated ? `\n  canvas { width: calc(${width}px * var(--scale, 1)); height: calc(${height}px * var(--scale, 1)); max-width: none; max-height: none; image-rendering: pixelated; }` : "";
+  const pixelScript = pixelated
+    ? `\nconst fit = () => document.documentElement.style.setProperty("--scale", Math.max(1, Math.floor(Math.min(innerWidth / ${width}, innerHeight / ${height}))));\naddEventListener("resize", fit);\nfit();\n`
+    : "";
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -33,7 +38,7 @@ function page(project: Project, { browserModule, physicsModule, threeModule, imp
 <style>
   html, body { margin: 0; height: 100%; background: #0b0e14; color: #e6e6e6; font-family: system-ui, sans-serif; }
   body { display: grid; place-items: center; }
-  canvas { max-width: 100vw; max-height: 100vh; box-shadow: 0 0 0 1px #2a3142; }
+  canvas { max-width: 100vw; max-height: 100vh; box-shadow: 0 0 0 1px #2a3142; }${pixelStyle}
   #errors { max-width: 900px; padding: 24px; white-space: pre-wrap; font: 14px/1.5 ui-monospace, monospace; color: #ff9b9b; }
 </style>
 </head>
@@ -42,7 +47,7 @@ function page(project: Project, { browserModule, physicsModule, threeModule, imp
 <pre id="errors" hidden></pre>
 ${importMap}
 <script type="module">
-import { startGame } from "${browserModule}";
+import { startGame } from "${browserModule}";${pixelScript}
 // Rapier is a few MB of WebAssembly: only scenes with "physics": "rapier" (or 3D scenes) load it.
 const loadPhysics = async (name) => {
   if (name === "rapier") await (await import("${physicsModule}")).loadRapierPhysics();

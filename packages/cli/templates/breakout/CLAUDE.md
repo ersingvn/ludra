@@ -4,6 +4,7 @@ A breakout game built with Ludra, a game engine designed for AI agents.
 
 ## Layout
 
+- `game.md`: what this game means to be and look like
 - `ludra.json`: project config (name, entry scene, window size)
 - `scenes/main.scene.json`: the level. Entities are made of components; `effects` adds particles, sound and shake to game events.
 - `shaders/neon.frag`: the post-processing shader (bloom, chromatic aberration, scanlines, CRT curve).
@@ -15,6 +16,10 @@ A breakout game built with Ludra, a game engine designed for AI agents.
   - `backdrop.ts` and `wall.ts` only draw: the synthwave sky and the neon walls.
 - `tests/*.test.json`: gameplay tests, run headlessly
 
+## Before any art
+
+Decide the look in `game.md` first, and make it this game's own: what comes with a project is only an example, and the easy path gives a game that looks like every other. `## Promise` says what a player remembers; `## Look` has `- style:`, `- type:` and `- palette:`. One strong constraint does more than many effects: for example `"window": { "width": 480, "height": 270, "pixelated": true }` in `ludra.json` with `ctx.pixelText` for text gives hard pixels throughout, and a theme per level (walls, accent, light) tells a player where they are from one frame.
+
 ## Loop
 
 1. Edit `scenes/main.scene.json` or a script. Run `npx @ludra/cli components` for every component and field.
@@ -24,7 +29,7 @@ A breakout game built with Ludra, a game engine designed for AI agents.
 5. Run `npx @ludra/cli review` and fix every issue it lists: it catches what makes a game feel unfinished (untested mechanics, silent events, the default HUD, flat looks).
 6. Run `npx @ludra/cli dev` so a human can play it in the browser.
 
-Never call a change done until `ludra check`, `ludra test` and `ludra review` are all clean.
+Never call a change done until `ludra check`, `ludra test` and `ludra review` are all clean. Clean means it isn't broken, not that it's good: then look at the frames against `game.md` and keep making it better.
 
 ## Rules of thumb
 

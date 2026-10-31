@@ -19,6 +19,10 @@ A two-floor castle built with Ludra to show its world-building tools: the level 
   - The gate is `"on": "checkpoint"`, so lighting the lantern raises it once.
   - Tweened kinematic bodies move by velocity, so they carry the player like a patrol does. In scripts, `self.tween({ ... })` starts one.
 
+## Before any art
+
+Decide the look in `game.md` first, and make it this game's own: what comes with a project is only an example, and the easy path gives a game that looks like every other. `## Promise` says what a player remembers; `## Look` has `- style:`, `- type:` and `- palette:`. One strong constraint does more than many effects: for example `"window": { "width": 480, "height": 270, "pixelated": true }` in `ludra.json` with `ctx.pixelText` for text gives hard pixels throughout, and a theme per level (walls, accent, light) tells a player where they are from one frame.
+
 ## Loop
 
 1. Edit the scene or a script. `npx @ludra/cli components tilemap`, `cameraZone` and `tween` list every field.
