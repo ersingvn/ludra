@@ -10,7 +10,7 @@
       "name": "ludra",
       "source": "./plugins/ludra",
       "description": "Build, test and polish 2D games with Ludra, a game engine designed for agents: JSON scenes, fixes for every error, headless play-testing, SVG art, particles and sound.",
-      "version": "0.93.0",
+      "version": "0.94.0",
       "category": "development",
       "keywords": ["gamedev", "game-engine", "games"],
       "homepage": "https://github.com/ersingvn/ludra",
