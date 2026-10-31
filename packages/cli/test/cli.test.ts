@@ -67,6 +67,32 @@ describe("ludra CLI", () => {
     assert.match(out, /at most 48\. Use --sheet 0\.25s or longer/);
   });
 
+  test("play --camera refuses a 2D scene, a bad view and a run without frames", () => {
+    assert.match(ludra("play", game, "--camera", "map", "--screenshot", "end").out, /only works on 3D scenes/);
+    const shrine = fileURLToPath(new URL("../../../examples/moonlit-shrine", import.meta.url));
+    assert.match(ludra("play", shrine, "--camera", "1,2@player", "--screenshot", "end").out, /isn't a view/);
+    assert.match(ludra("play", shrine, "--camera", "1,2,3@nobody", "--screenshot", "end").out, /no entity "nobody"/);
+    assert.match(ludra("play", shrine, "--camera", "map").out, /needs --screenshot or --sheet/);
+  });
+
+  test("play --camera draws a 3D scene from somewhere else, without changing the run", { skip: findBrowser() ? false : "no Chrome, Edge or Chromium installed" }, () => {
+    const shrine = fileURLToPath(new URL("../../../examples/moonlit-shrine", import.meta.url));
+    const out = join(workDir, "camera-shots");
+    const run = (name: string, ...camera: string[]) => {
+      const { code, out: text } = ludra("play", shrine, "--inputs", "right:0.5s", "--screenshot", "end", "--out", join(out, name), "--json", ...camera);
+      assert.equal(code, 0, text);
+      const { screenshots: _, ...result } = JSON.parse(text);
+      return { result, png: readFileSync(join(out, name, "t-2.00s.png")) };
+    };
+    const normal = run("normal");
+    const map = run("map", "--camera", "map");
+    const free = run("free", "--camera", "0,20,12@player");
+    assert.deepEqual(map.result, normal.result, "the same run, drawn differently");
+    assert.deepEqual(free.result, normal.result);
+    assert.notDeepEqual(map.png, normal.png);
+    assert.notDeepEqual(free.png, normal.png);
+    assert.notDeepEqual(free.png, map.png);
+  });
   test("play --screenshot rejects a time after the run", () => {
     const { code, out } = ludra("play", game, "--duration", "1s", "--screenshot", "5s");
     assert.equal(code, 1);

@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
-import type { CapturedFrame } from "@ludra/core/browser";
+import type { CameraView, CapturedFrame } from "@ludra/core/browser";
 import { CliError, type Project } from "./project.ts";
 import { BLANK_PATH, createGameServer, PROJECT_PREFIX, SCRIPT_PREFIX } from "./server.ts";
 
@@ -47,6 +47,8 @@ export interface ScreenshotRequest {
   frames: number[];
   /** Also lay these frames out as one contact sheet, each with its label. */
   sheet?: SheetRequest;
+  /** A debugging view instead of the scene's camera (3D). */
+  camera?: CameraView;
 }
 
 export interface SheetRequest {
@@ -149,6 +151,7 @@ export async function captureScreenshots(project: Project, request: ScreenshotRe
         inputs: ${JSON.stringify(request.inputs)},
         frames: ${JSON.stringify(request.frames)},
         debug: ${JSON.stringify(!!request.debug)},
+        camera: ${JSON.stringify(request.camera ?? null)} ?? undefined,
         loadPhysics: async (name) => {
           if (name === "rapier") await (await import(${JSON.stringify(physicsModule)})).loadRapierPhysics();
           if (name === "rapier3d") await (await import(${JSON.stringify(physicsModule)})).loadRapier3DPhysics();

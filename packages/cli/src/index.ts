@@ -39,6 +39,9 @@ Usage
       --screenshot 1s,2.5s,end                 Save real rendered frames as PNGs (needs Chrome, Edge or Chromium)
       --sheet 0.5s                             One PNG of the whole run: a frame every 0.5s and the last, each
                                                labelled with its time and the events since the one before
+      --camera map                             3D: draw the frames as a map, the whole level from above with
+                                               each entity's id; or 0,20,12@0,0,0 from a point at a point,
+                                               or 0,20,12@player from a point at an entity
       --debug                                  Draw colliders, sensors, joints and ids over the screenshots
       --out screenshots                        Folder for screenshots, relative to the project (default: screenshots)
       --json                                   Machine-readable output
@@ -94,6 +97,7 @@ async function main(argv: string[]): Promise<number> {
       columns: { type: "string" },
       screenshot: { type: "string" },
       sheet: { type: "string" },
+      camera: { type: "string" },
       debug: { type: "boolean" },
       out: { type: "string" },
       json: { type: "boolean" },

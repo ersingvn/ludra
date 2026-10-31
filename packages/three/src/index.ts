@@ -18,7 +18,7 @@ import {
   type RenderContext,
   type SceneDef,
 } from "@ludra/core";
-import type { Renderer3D, Renderer3DFactory } from "@ludra/core/browser";
+import type { CameraView, Renderer3D, Renderer3DFactory } from "@ludra/core/browser";
 
 /**
  * The 3D renderer for Ludra: Three.js draws every entity with a `mesh` and lights the scene
@@ -78,6 +78,11 @@ interface Rig {
 export class ThreeRenderer implements Renderer3D {
   readonly canvas: HTMLCanvasElement;
   debug = false;
+  view: CameraView | undefined;
+  /** The map view's camera, fitted to the level every frame. */
+  private readonly mapCamera = new THREE.OrthographicCamera();
+  /** Lights the map evenly, so a night scene reads as well as a day one. */
+  private readonly mapLight = new THREE.AmbientLight(0xffffff, 3);
   /** Three.js itself, for render hooks and anything else (step 4 hands these to scripts). */
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
@@ -227,10 +232,68 @@ export class ThreeRenderer implements Renderer3D {
     const rig = this.rig!;
     this.camera.position.copy(rig.position);
     this.camera.lookAt(rig.look);
+    if (this.view?.mode === "free") this.placeFreeCamera(world, this.view);
     this.poseModels(world);
     this.runRenderHooks(world);
-    if (this.customRender) this.customRender();
+    if (this.view?.mode === "map") this.renderMap();
+    else if (this.customRender) this.customRender();
     else this.renderer.render(this.scene, this.camera);
+  }
+
+  /** In the map view: every entity with a body or mesh, at its place on the map. Ground-sized ones are left out. */
+  labels(world: WorldView): { text: string; x: number; y: number }[] {
+    if (this.view?.mode !== "map") return [];
+    const { width, height } = this.canvas;
+    const cam = this.mapCamera;
+    const mapArea = (cam.right - cam.left) * (cam.top - cam.bottom);
+    const labels: { text: string; x: number; y: number }[] = [];
+    const size = new THREE.Vector3();
+    for (const e of world.entities) {
+      if (!e.body && !e.mesh) continue;
+      const object = this.objects.get(e);
+      if (object && new THREE.Box3().setFromObject(object).getSize(size) && size.x * size.z > mapArea * 0.2) continue;
+      const point = new THREE.Vector3(e.transform.x, e.transform.y, e.transform.z).project(cam);
+      if (Math.abs(point.x) > 1 || Math.abs(point.y) > 1) continue;
+      labels.push({ text: e.id, x: ((point.x + 1) / 2) * width, y: ((1 - point.y) / 2) * height });
+    }
+    return labels;
+  }
+
+  /** Free view: from a fixed point, looking at a point or following an entity. */
+  private placeFreeCamera(world: WorldView, view: Extract<CameraView, { mode: "free" }>): void {
+    this.camera.position.set(view.from.x, view.from.y, view.from.z);
+    if (typeof view.at === "string") {
+      const target = world.entities.find((e) => e.id === view.at);
+      const t = target?.transform ?? { x: 0, y: 0, z: 0 };
+      this.camera.lookAt(t.x, t.y, t.z);
+    } else this.camera.lookAt(view.at.x, view.at.y, view.at.z);
+  }
+
+  /**
+   * Map view: straight down on everything drawn, north (-z) up, with no perspective so
+   * distances read true. Fog is off and the light is even: the map is about where things are.
+   */
+  private renderMap(): void {
+    const bounds = new THREE.Box3();
+    for (const object of this.objects.values()) if (object.visible) bounds.expandByObject(object);
+    if (bounds.isEmpty()) bounds.set(new THREE.Vector3(-10, 0, -10), new THREE.Vector3(10, 0, 10));
+    const center = bounds.getCenter(new THREE.Vector3());
+    const size = bounds.getSize(new THREE.Vector3());
+    const aspect = this.canvas.width / this.canvas.height;
+    const halfWidth = Math.max(size.x / 2, (size.z / 2) * aspect, 1) * 1.08;
+    const cam = this.mapCamera;
+    Object.assign(cam, { left: -halfWidth, right: halfWidth, top: halfWidth / aspect, bottom: -halfWidth / aspect, near: 0.1, far: size.y + 40 });
+    cam.position.set(center.x, bounds.max.y + 20, center.z);
+    cam.up.set(0, 0, -1);
+    cam.lookAt(center.x, bounds.min.y, center.z);
+    cam.updateProjectionMatrix();
+    cam.updateMatrixWorld();
+    const fog = this.scene.fog;
+    this.scene.fog = null;
+    this.scene.add(this.mapLight);
+    this.renderer.render(this.scene, cam);
+    this.scene.remove(this.mapLight);
+    this.scene.fog = fog;
   }
 
   /** Waits for every addon render hooks asked for, and for what their callbacks start in turn. */

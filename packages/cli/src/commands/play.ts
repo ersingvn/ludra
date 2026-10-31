@@ -13,6 +13,7 @@ import {
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { fixed, pad, padStart, paint } from "../format.ts";
+import type { CameraView } from "@ludra/core/browser";
 import { captureScreenshots, sheetLayout } from "../headless.ts";
 import { CliError, loadProject, requireGame, type Project } from "../project.ts";
 
@@ -26,6 +27,7 @@ export interface PlayOptions {
   columns?: string;
   screenshot?: string;
   sheet?: string;
+  camera?: string;
   debug?: boolean;
   out?: string;
   json?: boolean;
@@ -47,6 +49,9 @@ export async function play(dir: string, options: PlayOptions): Promise<number> {
   const every = Math.max(1, secondsToFrames(parse(() => parseDuration(options.every ?? "0.25s"))));
 
   const world = scriptErrors(() => new World(scene, { scripts }));
+  const camera = options.camera === undefined ? undefined : parseCamera(options.camera, world);
+  if (camera && scene.world?.dimensions !== 3) throw new CliError("--camera only works on 3D scenes. A 2D scene's screenshots already show what its camera sees; use --debug to see colliders.");
+  if (camera && !options.screenshot && !options.sheet) throw new CliError("--camera changes how frames are drawn, so it needs --screenshot or --sheet.");
   const watch = options.watch
     ? options.watch.split(",").map((id) => id.trim()).filter(Boolean)
     : world.entities.filter((e) => e.platformer || e.topdown).map((e) => e.id);
@@ -68,7 +73,7 @@ export async function play(dir: string, options: PlayOptions): Promise<number> {
   const columns = Number(options.columns ?? 80);
   if (!Number.isInteger(columns) || columns < 10) throw new CliError(`--columns must be a whole number of at least 10, got "${options.columns}".`);
   const ascii = options.ascii ? renderAscii(world, { columns }) : undefined;
-  const { screenshots, sheet } = options.screenshot || options.sheet ? await takeScreenshots(project, options, frames, world.events) : {};
+  const { screenshots, sheet } = options.screenshot || options.sheet ? await takeScreenshots(project, options, frames, world.events, camera) : {};
 
   if (options.json) {
     console.log(
@@ -126,6 +131,7 @@ async function takeScreenshots(
   options: PlayOptions,
   lastFrame: number,
   events: readonly GameEvent[],
+  camera: CameraView | undefined,
 ): Promise<{ screenshots?: Screenshot[]; sheet?: Sheet }> {
   const shots = options.screenshot ? screenshotFrames(options.screenshot, lastFrame) : [];
   const sheetFrames = options.sheet ? sheetFramesAt(options.sheet, lastFrame) : [];
@@ -139,6 +145,7 @@ async function takeScreenshots(
     inputs: options.inputs ?? "",
     frames,
     debug: options.debug,
+    camera,
     sheet: options.sheet
       ? { frames: sheetFrames, labels: sheetFrames.map((frame, i) => `${fixed(frame / 60, 2)}s  ${sheetEvents[i]!.join(" ")}`.trimEnd()) }
       : undefined,
@@ -160,6 +167,26 @@ async function takeScreenshots(
       }
     : undefined;
   return { screenshots, sheet };
+}
+
+/** `map`, or `x,y,z@x,y,z` (from a point, at a point), or `x,y,z@id` (from a point, following an entity). */
+function parseCamera(text: string, world: World): CameraView {
+  const spec = text.trim();
+  if (spec === "map") return { mode: "map" };
+  const usage = `--camera "${text}" isn't a view. Use map (the whole level from above), x,y,z@x,y,z (from a point, looking at a point) or x,y,z@player (looking at an entity).`;
+  const [from, at, ...rest] = spec.split("@").map((part) => part.trim());
+  if (!from || !at || rest.length > 0) throw new CliError(usage);
+  const point = (part: string) => {
+    const values = part.split(",").map((n) => Number(n.trim()));
+    if (values.length !== 3 || values.some((n) => !Number.isFinite(n))) return undefined;
+    return { x: values[0]!, y: values[1]!, z: values[2]! };
+  };
+  const eye = point(from);
+  if (!eye) throw new CliError(usage);
+  const target = point(at);
+  if (target) return { mode: "free", from: eye, at: target };
+  if (!world.get(at)) throw new CliError(`--camera: no entity "${at}" to look at. Entities: ${world.entities.map((e) => e.id).join(", ")}.`);
+  return { mode: "free", from: eye, at };
 }
 
 function screenshotFrames(list: string, lastFrame: number): number[] {

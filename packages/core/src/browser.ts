@@ -4,6 +4,7 @@ import { physicsEngineName } from "./engines.ts";
 import { parseFrames, type Sprite } from "./components.ts";
 import { collectAssetPaths } from "./effects.ts";
 import { InputScript } from "./input.ts";
+import { LABEL_HEIGHT, layoutLabels, type Label } from "./labels.ts";
 import { ParticleSystem } from "./particles.ts";
 import { PostFx } from "./postfx.ts";
 import type { DrawContext, DrawEvent, Script } from "./script.ts";
@@ -50,7 +51,17 @@ export interface Renderer3D {
   dispose(): void;
   /** Waits for anything still loading (render hooks' addons), so a screenshot shows the finished frame. */
   settle?(): Promise<void>;
+  /** Looks from somewhere other than the scene's camera3d. Leaves the game alone. */
+  view?: CameraView;
+  /** Names to write over the frame at these canvas pixels: the map view labels its entities. */
+  labels?(world: World): Label[];
 }
+
+/**
+ * A debugging view of a 3D scene: `map` looks straight down on the whole level, `free`
+ * looks from a point at another point or at an entity (by id), followed as it moves.
+ */
+export type CameraView = { mode: "map" } | { mode: "free"; from: { x: number; y: number; z: number }; at: { x: number; y: number; z: number } | string };
 
 export type Renderer3DFactory = (scene: SceneDef, options: { width: number; height: number; assetBase: string }) => Promise<Renderer3D>;
 
@@ -417,6 +428,8 @@ export interface CaptureOptions extends GameOptions {
   inputs?: string;
   /** Simulation frames to capture (60 per second). Frame 0 is the starting state. */
   frames: readonly number[];
+  /** A debugging view instead of the scene's camera (3D scenes only). */
+  camera?: CameraView;
 }
 
 export interface CapturedFrame {
@@ -441,6 +454,10 @@ export async function captureFrames(canvas: HTMLCanvasElement, scene: SceneDef, 
   if (error) throw new Error(error);
   const view = new View(scene, images, await useRenderer3D(scene, options, canvas.width, canvas.height));
   view.debug = options.debug ?? false;
+  if (options.camera) {
+    if (!view.renderer) throw new Error("A camera view only works on 3D scenes; 2D scenes always show the whole frame their camera sees.");
+    view.renderer.view = options.camera;
+  }
   const world = new World(scene, { scripts });
   const script = InputScript.parse(options.inputs ?? "");
   const wanted = new Set(options.frames);
@@ -455,8 +472,10 @@ export async function captureFrames(canvas: HTMLCanvasElement, scene: SceneDef, 
         await view.renderer.settle();
       }
       view.draw(screen.ctx, world, false, false);
-      screen.present(world.time);
-      captured.push({ frame, time: frame * FIXED_DT, png: screen.output.toDataURL("image/png") });
+      // A map shows where things are, so it skips the scene's shader along with its lighting.
+      if (options.camera?.mode !== "map") screen.present(world.time);
+      const output = options.camera?.mode === "map" ? canvas : screen.output;
+      captured.push({ frame, time: frame * FIXED_DT, png: output.toDataURL("image/png") });
     }
     if (frame >= last) break;
     world.step(script.at(frame));
@@ -597,7 +616,8 @@ class View {
   draw(ctx: CanvasRenderingContext2D, world: World, muted: boolean, continues: boolean): void {
     const { width: viewWidth, height: viewHeight } = ctx.canvas;
     const viewInfo = this.renderer ? this.drawWorld3D(ctx, world) : this.drawWorld(ctx, world);
-    this.drawInterface(ctx, world, muted, continues, viewInfo);
+    // The HUD belongs to the game's camera: over a debugging view it only hides what's being looked at.
+    if (!this.renderer?.view) this.drawInterface(ctx, world, muted, continues, viewInfo);
   }
 
   /** A 3D frame from the renderer, copied in so the interface and postfx go on top. */
@@ -608,7 +628,38 @@ class View {
     renderer.render(world);
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(renderer.canvas, 0, 0, width, height);
+    this.drawLabels(ctx, renderer.labels?.(world) ?? []);
     return { width, height, cameraX: 0, cameraY: 0, zoom: 1 };
+  }
+
+  /** Each name beside its point, with a line back to it when the label had to move away. */
+  private drawLabels(ctx: CanvasRenderingContext2D, labels: readonly Label[]): void {
+    if (labels.length === 0) return;
+    ctx.save();
+    ctx.font = "600 12px ui-monospace, Consolas, monospace";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    const placed = layoutLabels(labels, (text) => ctx.measureText(text).width, ctx.canvas.width, ctx.canvas.height);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+    for (const label of placed) {
+      const x = Math.max(label.textX, Math.min(label.x, label.textX + label.width));
+      const y = Math.max(label.textY, Math.min(label.y, label.textY + LABEL_HEIGHT));
+      if (Math.hypot(x - label.x, y - label.y) < 12) continue;
+      ctx.beginPath();
+      ctx.moveTo(label.x, label.y);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+    }
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.85)";
+    ctx.fillStyle = "#ffffff";
+    for (const label of placed) {
+      ctx.strokeText(label.text, label.textX, label.textY);
+      ctx.fillText(label.text, label.textX, label.textY);
+      ctx.fillRect(label.x - 1.5, label.y - 1.5, 3, 3);
+    }
+    ctx.restore();
   }
 
   /** The 2D world: backdrop color, sprites and draw hooks under the camera, particles, debug. */
