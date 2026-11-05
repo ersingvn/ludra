@@ -90,7 +90,7 @@ async function until(what: string, ready: () => boolean | Promise<boolean>, ms =
 }
 
 /** A person plays the game in a real browser, on `ludra dev`; the callback is the person. */
-async function session(game: string, port: number, takes: number, play: (page: Page) => Promise<void>): Promise<{ dir: string; file: string; recording: Recording }> {
+async function session(game: string, port: number, takes: number, play: (page: Page, onDisk: () => Recording | undefined) => Promise<void>): Promise<{ dir: string; file: string; recording: Recording }> {
   const dir = mkdtempSync(join(tmpdir(), "ludra-dev-"));
   cpSync(game, dir, { recursive: true, filter: (path) => !/node_modules|screenshots|recordings/.test(path) });
   const server: ChildProcess = spawn(process.execPath, ["--conditions=ludra-dev", "--no-warnings", CLI, "dev", dir, "--port", String(port)], { stdio: "pipe" });
@@ -104,15 +104,22 @@ async function session(game: string, port: number, takes: number, play: (page: P
     await until("the browser", () => /ws:\/\/\S+/.test(log));
     const page = await Page.open(/ws:\/\/\S+/.exec(log)![0], `http://127.0.0.1:${port}/`);
     await until("the game", async () => (await page.evaluate(`document.readyState === "complete" && !!document.querySelector("canvas")`)) === true);
-    await sleep(1500);
-    await play(page);
-    await page.send("Page.navigate", { url: "about:blank" });
-    closing = page;
     const folder = join(dir, "recordings");
     // Every take is on disk within seconds. Its ending may not be: a closing page's last request
     // isn't sure to arrive, and readRecording counts a take without one as stopped.
     const found = () => (existsSync(folder) ? readdirSync(folder).find((name) => name.endsWith(".rec.json")) : undefined);
     const read = () => JSON.parse(readFileSync(join(folder, found()!), "utf8")) as Recording;
+    const onDisk = () => {
+      try {
+        return found() ? read() : undefined;
+      } catch {
+        return undefined; // caught halfway through a write
+      }
+    };
+    await sleep(1500);
+    await play(page, onDisk);
+    await page.send("Page.navigate", { url: "about:blank" });
+    closing = page;
     try {
       await until(`${takes} finished takes on disk`, () => found() !== undefined && read().takes.filter(Boolean).length >= takes);
     } catch (err) {
@@ -171,7 +178,8 @@ describe("a person playing in a real browser", { skip: browser ? false : "needs 
     assert.equal(first!.marks[1]!.text, "the jump felt floaty");
     assert.deepEqual(second!.marks.map((m) => m.kind), ["great"]);
     assert.match(first!.inputs, /jump/);
-    assert.ok(first!.frames > 60);
+    // Frames, not seconds: a CI machine drawing in software may run at 10 fps. The replay below is the real check.
+    assert.ok(first!.frames >= first!.marks.at(-1)!.frame, `first take has ${first!.frames} frames`);
 
     const { code, report } = replay(file);
     assert.equal(code, 0, JSON.stringify(report.takes.map((t) => t.replay)));
@@ -179,12 +187,13 @@ describe("a person playing in a real browser", { skip: browser ? false : "needs 
     rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   });
 
-  it("keeps a long run on a tweened level, in step at every check", { timeout: 90_000 }, async () => {
-    const { dir, recording, file } = await session(join(ROOT, "examples/clockwork-keep"), 5802, 1, async (page) => {
+  it("keeps a long run on a tweened level, in step at every check", { timeout: 240_000 }, async () => {
+    const { dir, recording, file } = await session(join(ROOT, "examples/clockwork-keep"), 5802, 1, async (page, onDisk) => {
       await page.down("ArrowRight", "ArrowRight");
       await sleep(3000);
       await page.up("ArrowRight", "ArrowRight");
-      await sleep(7000);
+      // Played until long enough in frames, however fast this machine draws.
+      await until("600 frames on disk", () => (onDisk()?.takes[0]?.frames ?? 0) >= 600, 180_000);
     });
     assert.ok(recording.takes[0]!.frames > 500, `played ${recording.takes[0]!.frames} frames`);
     const { code, report } = replay(file);
