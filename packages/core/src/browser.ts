@@ -83,13 +83,20 @@ export interface Renderer3D {
  */
 export type CameraView = { mode: "map" } | { mode: "free"; from: { x: number; y: number; z: number }; at: { x: number; y: number; z: number } | string };
 
-export type Renderer3DFactory = (scene: SceneDef, options: { width: number; height: number; assetBase: string }) => Promise<Renderer3D>;
+/** Where a project path (an image, sound, model...) is loaded from. */
+export type AssetUrl = (path: string) => string;
+
+export type Renderer3DFactory = (scene: SceneDef, options: { width: number; height: number; assetBase: string; assetUrl?: AssetUrl }) => Promise<Renderer3D>;
 
 export interface GameOptions {
   /** URL prefix for image and audio paths in the scene. Defaults to "". */
   assetBase?: string;
+  /** Where each asset path loads from, instead of `assetBase` + path: a single-file build points them at its own data. */
+  assetUrl?: AssetUrl;
   /** URL prefix the scene's script paths are imported from. Defaults to `assetBase`. */
   scriptBase?: string;
+  /** Imports a script module instead of `import(scriptBase + path)`: a bundle has its scripts already. */
+  loadScript?: (path: string) => Promise<{ default?: Script }>;
   /** Scripts to load. Defaults to those the scene references; include any that `world.spawn` uses. */
   scriptPaths?: readonly string[];
   /**
@@ -102,6 +109,8 @@ export interface GameOptions {
    * e.g. `async (name) => (await import("@ludra/physics")).loadRapierPhysics()` for "rapier".
    */
   loadPhysics?: (name: string) => Promise<void>;
+  /** Whether backquote turns the debug view on and off. Defaults to true; a shipped build turns it off. */
+  debugKey?: boolean;
   /** Start with the debug view on: colliders, sensors, joints and ids drawn over the game. */
   debug?: boolean;
   /**
@@ -113,12 +122,18 @@ export interface GameOptions {
   recorder?: Recorder;
 }
 
+/** How the game finds its assets: `assetUrl`, or `assetBase` + path. */
+function assetUrlOf(options: GameOptions): AssetUrl {
+  const base = options.assetBase ?? "";
+  return options.assetUrl ?? ((path) => base + path);
+}
+
 /** A 3D scene's renderer, or undefined for 2D. */
 async function useRenderer3D(scene: SceneDef, options: GameOptions, width: number, height: number): Promise<Renderer3D | undefined> {
   if (scene.world?.dimensions !== 3) return undefined;
   if (!options.loadRenderer3D) throw new Error('This scene is 3D ("dimensions": 3), which @ludra/three draws. Pass loadRenderer3D to startGame (the ludra CLI does this for you).');
   const create = await options.loadRenderer3D();
-  return create(scene, { width, height, assetBase: options.assetBase ?? "" });
+  return create(scene, { width, height, assetBase: options.assetBase ?? "", assetUrl: assetUrlOf(options) });
 }
 
 /** Imports the game's script modules, keyed by their path in the scene. */
@@ -128,7 +143,7 @@ async function loadScripts(scene: SceneDef, options: GameOptions): Promise<Map<s
   const scripts = new Map<string, Script>();
   await Promise.all(
     [...new Set(paths)].map(async (path) => {
-      const module = (await import(base + path)) as { default?: Script };
+      const module = options.loadScript ? await options.loadScript(path) : ((await import(base + path)) as { default?: Script });
       if (!module.default) throw new Error(`Script ${path} has no default export.`);
       scripts.set(path, module.default);
     }),
@@ -137,7 +152,7 @@ async function loadScripts(scene: SceneDef, options: GameOptions): Promise<Map<s
 }
 
 /** Fonts load from Google Fonts or project files; a slow or offline font never blocks the game for long. */
-async function loadFonts(scene: SceneDef, assetBase: string): Promise<void> {
+async function loadFonts(scene: SceneDef, assetUrl: AssetUrl): Promise<void> {
   const fonts = Object.entries(scene.fonts ?? {});
   if (fonts.length === 0) return;
   const load = async ([family, src]: [string, string]) => {
@@ -154,7 +169,7 @@ async function loadFonts(scene: SceneDef, assetBase: string): Promise<void> {
       }
       await Promise.all(["400", "700", "900"].map((weight) => document.fonts.load(`${weight} 16px "${family}"`)));
     } else {
-      const face = new FontFace(family, `url("${assetBase}${src}")`);
+      const face = new FontFace(family, `url("${assetUrl(src)}")`);
       // FontFaceSet.add is missing from some TypeScript DOM typings.
       (document.fonts as unknown as Set<FontFace>).add(await face.load());
     }
@@ -166,10 +181,10 @@ async function loadFonts(scene: SceneDef, assetBase: string): Promise<void> {
 }
 
 /** A scene's postfx shader source, or why it couldn't be fetched. */
-async function loadShader(scene: SceneDef, assetBase: string): Promise<string | Error | undefined> {
+async function loadShader(scene: SceneDef, assetUrl: AssetUrl): Promise<string | Error | undefined> {
   const path = scene.postfx?.shader;
   if (!path) return undefined;
-  const response = await fetch(assetBase + path).catch((err: unknown) => err as Error);
+  const response = await fetch(assetUrl(path)).catch((err: unknown) => err as Error);
   if (response instanceof Error) return response;
   return response.ok ? response.text() : new Error(`could not load ${path} (${response.status})`);
 }
@@ -237,12 +252,12 @@ async function usePhysics(scene: SceneDef, options: GameOptions): Promise<void> 
 
 /** What a scene needs before it can be drawn. */
 async function loadScene(scene: SceneDef, options: GameOptions, scripts: Map<string, Script>) {
-  const assetBase = options.assetBase ?? "";
+  const assetUrl = assetUrlOf(options);
   const [images, more, shader] = await Promise.all([
-    loadImages(scene, assetBase),
+    loadImages(scene, assetUrl),
     loadScripts(scene, options),
-    loadShader(scene, assetBase),
-    loadFonts(scene, assetBase),
+    loadShader(scene, assetUrl),
+    loadFonts(scene, assetUrl),
   ]);
   for (const [path, script] of more) scripts.set(path, script);
   return { images, shader };
@@ -267,7 +282,7 @@ const GOTO_FADE = 0.35;
 export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef, options: GameOptions = {}): Promise<() => void> {
   const screen = new Screen(canvas);
   const ctx = screen.ctx;
-  const sounds = new SoundPlayer(options.assetBase ?? "");
+  const sounds = new SoundPlayer(assetUrlOf(options));
   const scripts = new Map<string, Script>();
 
   type Carry = { score: number; deaths: number; lives: number | undefined };
@@ -366,7 +381,7 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
       }
     }
     if (event.code === "KeyR") return restart();
-    if (event.code === "Backquote" && !event.repeat) {
+    if (event.code === "Backquote" && !event.repeat && options.debugKey !== false) {
       debug = !debug;
       view.debug = debug;
       return;
@@ -595,7 +610,7 @@ function drawCrash(ctx: CanvasRenderingContext2D, message: string): void {
   ctx.fillText("Fix the script; the page reloads on save. R restarts.", 32, y + 40);
 }
 
-async function loadImages(scene: SceneDef, assetBase: string): Promise<Map<string, HTMLImageElement>> {
+async function loadImages(scene: SceneDef, assetUrl: AssetUrl): Promise<Map<string, HTMLImageElement>> {
   const images = new Map<string, HTMLImageElement>();
   const paths = new Set(collectAssetPaths(scene).filter((ref) => ref.kind === "image").map((ref) => ref.path));
   await Promise.all(
@@ -611,7 +626,7 @@ async function loadImages(scene: SceneDef, assetBase: string): Promise<Map<strin
             console.warn(`[ludra] could not load image "${path}", drawing a colored shape instead.`);
             resolve();
           };
-          image.src = assetBase + path;
+          image.src = assetUrl(path);
         }),
     ),
   );

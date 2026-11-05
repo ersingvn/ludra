@@ -58,10 +58,11 @@ export class SoundPlayer {
   private musicDef: string | MusicDef | undefined;
   private noiseBuffer: AudioBuffer | undefined;
   private readonly buffers = new Map<string, Promise<AudioBuffer | undefined>>();
-  private readonly assetBase: string;
+  private readonly assetUrl: (path: string) => string;
 
-  constructor(assetBase: string) {
-    this.assetBase = assetBase;
+  /** `assetUrl` turns a sound's path into a URL; a string is a prefix, as before. */
+  constructor(assetUrl: string | ((path: string) => string)) {
+    this.assetUrl = typeof assetUrl === "string" ? (path) => assetUrl + path : assetUrl;
   }
 
   get muted(): boolean {
@@ -309,7 +310,7 @@ export class SoundPlayer {
     let pending = this.buffers.get(path);
     if (!pending) {
       const ac = this.context!;
-      pending = fetch(this.assetBase + path)
+      pending = fetch(this.assetUrl(path))
         .then((res) => (res.ok ? res.arrayBuffer() : Promise.reject(new Error(`${res.status}`))))
         .then((data) => ac.decodeAudioData(data))
         .catch((err: unknown) => {
