@@ -63,17 +63,26 @@ class Page {
     return this.evaluate(`window.dispatchEvent(new KeyboardEvent(${JSON.stringify(type)}, { code: ${JSON.stringify(code)}, key: ${JSON.stringify(key)}, bubbles: true, cancelable: true }))`);
   }
 
-  down(code: string, key: string) {
-    return this.key("keydown", code, key);
+  /**
+   * Waits until the page has drawn `count` more frames. Between a key going down and up, so the game
+   * steps while it's held however slowly this machine draws: a CI machine can take seconds a frame.
+   */
+  frames(count: number) {
+    return this.evaluate(`new Promise((done) => { let left = ${count}; const next = () => (--left <= 0 ? done(true) : requestAnimationFrame(next)); requestAnimationFrame(next); })`);
   }
 
-  up(code: string, key: string) {
-    return this.key("keyup", code, key);
+  async down(code: string, key: string) {
+    await this.key("keydown", code, key);
+    await this.frames(2);
+  }
+
+  async up(code: string, key: string) {
+    await this.key("keyup", code, key);
+    await this.frames(2);
   }
 
   async tap(code: string, key: string) {
     await this.down(code, key);
-    await sleep(40);
     await this.up(code, key);
   }
 
@@ -106,7 +115,7 @@ async function session(game: string, port: number, takes: number, play: (page: P
     chrome.stderr!.on("data", (chunk: Buffer) => (log += chunk.toString()));
     await until("the browser", () => /ws:\/\/\S+/.test(log));
     const page = await Page.open(/ws:\/\/\S+/.exec(log)![0], `http://127.0.0.1:${port}/`);
-    await until("the game", async () => (await page.evaluate(`document.readyState === "complete" && !!document.querySelector("canvas")`)) === true);
+    await until("the game", async () => (await page.evaluate(`document.readyState === "complete" && !!document.querySelector("canvas")`)) === true, 90_000);
     const folder = join(dir, "recordings");
     // Every take is on disk within seconds. Its ending may not be: a closing page's last request
     // isn't sure to arrive, and readRecording counts a take without one as stopped.
@@ -124,7 +133,7 @@ async function session(game: string, port: number, takes: number, play: (page: P
     await page.send("Page.navigate", { url: "about:blank" });
     closing = page;
     try {
-      await until(`${takes} finished takes on disk`, () => found() !== undefined && read().takes.filter(Boolean).length >= takes);
+      await until(`${takes} finished takes on disk`, () => found() !== undefined && read().takes.filter(Boolean).length >= takes, 60_000);
     } catch (err) {
       const seen = found() ? read().takes.map((take) => take && [take.end ?? "open", take.frames, take.marks.length]) : "no file";
       throw new Error(`${(err as Error).message} On disk: ${JSON.stringify(seen)}`);
@@ -154,7 +163,7 @@ const replay = (file: string) => {
 };
 
 describe("a person playing in a real browser", { skip: browser ? false : "needs Chrome, Edge or Chromium" }, () => {
-  it("is recorded in Chrome and played again in Node, frame for frame, keys, marks and restart included", { timeout: 90_000 }, async () => {
+  it("is recorded in Chrome and played again in Node, frame for frame, keys, marks and restart included", { timeout: 300_000 }, async () => {
     const { dir, recording, file } = await session(join(ROOT, "packages/cli/templates/platformer"), 5801, 2, async (page) => {
       await page.evaluate(`window.prompt = () => "the jump felt floaty"`);
       await page.down("ArrowRight", "ArrowRight");
@@ -191,7 +200,7 @@ describe("a person playing in a real browser", { skip: browser ? false : "needs 
     rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   });
 
-  it("keeps a long run on a tweened level, in step at every check", { timeout: 240_000 }, async () => {
+  it("keeps a long run on a tweened level, in step at every check", { timeout: 360_000 }, async () => {
     const { dir, recording, file } = await session(join(ROOT, "examples/clockwork-keep"), 5802, 1, async (page, onDisk) => {
       await page.down("ArrowRight", "ArrowRight");
       await sleep(3000);
