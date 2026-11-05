@@ -43,6 +43,7 @@ Repeat until the game does what the user asked:
    - `npx @ludra/cli replay <recording> --take 2 --mark 1` draws a contact sheet around a marked moment. Look at it, then change the game there. Don't touch what was marked `love this`.
    - `npx @ludra/cli replay .` plays the newest recording again. `same` means it plays out as the player saw it, `changed` means your edits changed this run, `diverged` means the same game played differently, so something in a script isn't deterministic (`Math.random`, `Date`, a module variable). Anything but `same` exits 1.
    - `npx @ludra/cli replay . --test` turns takes into tests in `tests/recordings.test.json`. A take that crashed stays red until you fix the bug.
+10. **Ship**: `npx @ludra/cli build` writes `build/index.html`, the whole game in one file that plays from a double click or any web host, and `build/<name>-web.zip` to upload to itch.io as an HTML game. It plays with a keyboard, a gamepad or a touch screen (buttons for the actions the game uses appear on the first touch); in a drawUI hook, `view.touch` says the player has no keyboard, so write "tap", not "press R". Before shipping, fix what `review`'s Shipping area lists: a big download, images over 4096 px, models with millions of triangles, thousands of entities alive at once.
 
 ## Input scripts
 

@@ -198,6 +198,32 @@ The page sends the take as it grows, every 10 seconds, on a mark and at each end
 
 Replay is checked between Node and Chromium. Firefox and Safari haven't been tried. A recording that drifts in its own browser shows up as `diverged`, so the failure is visible and not silent.
 
+## Shipping
+
+### One file, no bundler
+
+`ludra build` (`commands/build.ts`) checks every scene through `loadGame`, as `check` does, then packs the game into `build/index.html` and zips that for itch.io. `packGame` does the packing in memory, which is how `review` measures it.
+
+`ModulePacker` (`pack.ts`) starts from a start-up module written for the game and follows its imports. It reads each file, type-strips TypeScript as the dev server does, and rewrites the strings it imports (`from "x"`, `import "x"`, `import("x")` with a literal) to short names like `@pack/3`. A string that doesn't resolve to a file is left alone, so a lookalike in a comment changes nothing. Bare specifiers resolve through the same table as the dev server's import map.
+
+In the page, the modules sit in a JSON `<script>`, with `<` escaped so no code can close it. A classic script makes a blob URL for each and an import map naming them, then imports the start-up module. A classic script runs before any module, so the map is there in time. Two things a blob URL can't do are handled at pack time:
+- It can't be the base of a relative URL, so `import.meta.url` becomes a made-up `ludra:/pack/N`. three's `DRACOLoader` builds URLs from it as it loads, which now works; nothing is fetched from it.
+- Render hooks name three's addons at run time (`addon("postprocessing/RenderPass.js")`), which no import says. The build finds those calls in the scripts and maps each specifier to its module.
+
+Only what a game runs is packed: no Rapier in an arcade game, `rapier3d.ts` straight in a 3D one (the physics entry would bring 2D Rapier along), and `skip` leaves out 3D Rapier in a 2D one, which the physics entry can import.
+
+Assets are base64 in the game's JSON, keyed by their normalized project path, and become blob URLs on load. `startGame`'s `assetUrl` turns a path into one; without it, it's `assetBase` + path as before. The 3D renderer loads through a `LoadingManager` at `ludra:/<path>`, so a `.gltf`'s own `.bin` and textures resolve against that and are found wherever assets live. Scripts come through `loadScript`. Draco decoders and Google fonts still need the internet.
+
+### Controls
+
+`controls.ts` in core. `Gamepads.poll()` reads the standard mapping once a frame. `TouchControls` puts buttons over the page on the first touch or pen pointer: a movement pad, where a finger's direction from the middle presses up to two directions, and jump and action, where a finger presses the nearest button. `startGame` adds both to the keys it holds, and any action pressed since the last frame is a tap, as with keys. They reach the simulation as the same actions, so recordings hold them and replay them.
+
+Which buttons show is `actionsUsed`: what the player components need, and the actions scripts name in `held()` or `pressed()`. The CLI works this out over every scene and script and passes it as `actions`. `view.touch` tells draw hooks once the buttons are showing.
+
+### Budgets
+
+`shipping.ts` is review's Shipping area. What can be an issue is counted: the zip `packGame` makes, image sizes from file headers, model triangles from `readModel` once per entity showing the model, and entities alive at once over each test's run (or 10 s of no input). Step time is measured over the same runs, but a busy or slow machine changes it, so it is only ever an idea.
+
 ## Physics
 
 Bodies are moved by a `PhysicsEngine` (`physics.ts`): it is told about every created and removed entity, advances all bodies one fixed step, and answers overlap queries. Gameplay in `World` (platformer and top-down controls, patrols, pickups, hazards, goals, checkpoints) only talks to bodies through their velocities, `grounded`/`standingOn` and `overlaps`, so engines can be swapped without changing a game's rules. The entity's transform is the source of truth between steps, so gameplay can teleport an entity (a respawn) and the engine follows. `new World(scene, { physics })` takes any engine.
