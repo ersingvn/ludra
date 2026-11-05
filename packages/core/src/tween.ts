@@ -1,5 +1,7 @@
 /** Tweens: a value eased from where it is to a target, inside the deterministic simulation. */
 
+import { cos, pow2, sin } from "./dmath.ts";
+
 export const EASES = ["linear", "sineInOut", "quadIn", "quadOut", "quadInOut", "cubicInOut", "backOut", "elasticOut", "bounceOut"] as const;
 export type Ease = (typeof EASES)[number];
 export type TweenProperty = "x" | "y" | "z" | "rotation" | "rotationX" | "rotationY" | "scale" | "opacity";
@@ -44,21 +46,21 @@ export function ease(name: Ease, t: number): number {
     case "linear":
       return t;
     case "sineInOut":
-      return -(Math.cos(Math.PI * t) - 1) / 2;
+      return -(cos(Math.PI * t) - 1) / 2;
     case "quadIn":
       return t * t;
     case "quadOut":
       return 1 - (1 - t) * (1 - t);
     case "quadInOut":
-      return t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
+      return t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t);
     case "cubicInOut":
-      return t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
+      return t < 0.5 ? 4 * t * t * t : 1 - 4 * (1 - t) * (1 - t) * (1 - t);
     case "backOut": {
       const c = 1.70158;
-      return 1 + (c + 1) * (t - 1) ** 3 + c * (t - 1) ** 2;
+      return 1 + (c + 1) * (t - 1) * (t - 1) * (t - 1) + c * (t - 1) * (t - 1);
     }
     case "elasticOut":
-      return t === 0 || t === 1 ? t : 2 ** (-10 * t) * Math.sin(((t * 10 - 0.75) * 2 * Math.PI) / 3) + 1;
+      return t === 0 || t === 1 ? t : pow2(-10 * t) * sin(((t * 10 - 0.75) * 2 * Math.PI) / 3) + 1;
     case "bounceOut":
       return bounceOut(t);
   }

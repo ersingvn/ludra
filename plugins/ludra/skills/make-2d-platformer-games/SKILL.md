@@ -37,7 +37,12 @@ Repeat until the game does what the user asked:
    - `npx @ludra/cli fuzz` plays hundreds of random sessions and reports script crashes and softlocks (places a player gets into but never out of), each with the `--inputs` that reproduce it, plus a map of where players die.
    - Fix every crash and softlock (fuzz exits 1 on them, and on a level that can't be won). An unsolved level is a bug unless the user asked for one.
 7. **Review**: `npx @ludra/cli review` lists what makes a game feel unfinished: untested mechanics, events nothing answers, the default HUD, a flat backdrop, plain shapes. Fix every issue (✗) and consider the ideas (○). A game with review issues is not done, even if its tests pass.
-8. **Hand off**: tell the user to run `npx @ludra/cli dev` to play it.
+8. **Hand off**: tell the user to run `npx @ludra/cli dev` to play it, and to mark moments while playing: `1` too hard, `2` boring, `3` confusing, `4` love this, `N` their own words. Every session is recorded in `recordings/`.
+9. **Listen**: after someone has played, read what they felt before changing anything.
+   - `npx @ludra/cli feedback` lists marks, deaths, where players stopped and crashes, scene by scene, each with a command that shows it.
+   - `npx @ludra/cli replay <recording> --take 2 --mark 1` draws a contact sheet around a marked moment. Look at it, then change the game there. Don't touch what was marked `love this`.
+   - `npx @ludra/cli replay .` plays the newest recording again. `same` means it plays out as the player saw it, `changed` means your edits changed this run, `diverged` means the same game played differently, so something in a script isn't deterministic (`Math.random`, `Date`, a module variable). Anything but `same` exits 1.
+   - `npx @ludra/cli replay . --test` turns takes into tests in `tests/recordings.test.json`. A take that crashed stays red until you fix the bug.
 
 ## Input scripts
 

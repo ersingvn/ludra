@@ -44,6 +44,7 @@ Decide the look in `game.md` first, and make it this game's own: what comes with
 3. `npx @ludra/cli play --inputs "up:1s, up+jump:0.6s, up:1s" --watch player --every 0.25s` shows x, y and z. Add `--screenshot 1s,end` to see real frames, and `--debug` for colliders.
 4. Find timings by sweeping: run `play` with a few values (a wait before boarding the raft, the moment of a jump) and keep the middle of the window that works. Hold a direction through a jump: with no key held, the player stops moving sideways, even in the air.
 5. Write the behavior into `tests/*.test.json`, run `npx @ludra/cli test`, then `npx @ludra/cli review` and `npx @ludra/cli dev`.
+6. Players mark moments there with 1 too hard, 2 boring, 3 confusing, 4 love this, N their own words, and every session is recorded in `recordings/`. Afterwards `npx @ludra/cli feedback` shows what they felt, `npx @ludra/cli replay . --take 1 --mark 1` draws a marked moment, and `npx @ludra/cli replay . --test` turns takes into tests.
 
 Never call a change done until `ludra check`, `ludra test` and `ludra review` are all clean. Clean means it isn't broken, not that it's good: then look at the frames against `game.md` and keep making it better.
 

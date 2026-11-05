@@ -7,6 +7,7 @@ import RAPIER, {
   type World as RapierWorld,
 } from "@dimforge/rapier2d-deterministic-compat";
 import {
+  dmath,
   at,
   clampToPatrol,
   clampToWorld,
@@ -239,12 +240,12 @@ export class RapierPhysics implements PhysicsEngine {
       // The other body (or the world) comes first, so Rapier measures this body relative to it.
       const baseAnchor = localPoint(base, there);
       const ownAnchor = toRapier(spec.anchor.x, spec.anchor.y);
-      const length = spec.length || Math.hypot(there.x - here.x, there.y - here.y);
+      const length = spec.length || length2(there.x - here.x, there.y - here.y);
       // In 2D the axis is degrees (validation rejects a 3D vector here).
       const axis = typeof spec.axis === "number" ? spec.axis : 0;
       const data =
         spec.type === "prismatic"
-          ? RAPIER.JointData.prismatic(baseAnchor, ownAnchor, rotateBack(base, toRapier(Math.cos(axis * DEGREES), Math.sin(axis * DEGREES))))
+          ? RAPIER.JointData.prismatic(baseAnchor, ownAnchor, rotateBack(base, toRapier(dmath.cos(axis * DEGREES), dmath.sin(axis * DEGREES))))
           : spec.type === "fixed"
             ? RAPIER.JointData.fixed(baseAnchor, 0, ownAnchor, base.rotation() - link.body.rotation())
             : spec.type === "rope"
@@ -373,7 +374,7 @@ export class RapierPhysics implements PhysicsEngine {
         [c, a],
       ] as const) {
         const b = self.entity.body!;
-        if (b.type !== "dynamic" || b.bounce <= 0 || Math.hypot(b.vx, b.vy) < MIN_BOUNCE_SPEED) continue;
+        if (b.type !== "dynamic" || b.bounce <= 0 || length2(b.vx, b.vy) < MIN_BOUNCE_SPEED) continue;
         host.emit({ type: "bounce", entity: self.entity.id, other: other.entity.id, ...at(self.entity) });
       }
     });
@@ -502,7 +503,7 @@ export class RapierPhysics implements PhysicsEngine {
   raycast(_host: PhysicsHost, from: { x: number; y: number }, to: { x: number; y: number }, options: RayOptions = {}): RayHit | undefined {
     const dx = to.x - from.x;
     const dy = to.y - from.y;
-    const length = Math.hypot(dx, dy);
+    const length = length2(dx, dy);
     if (length === 0) return undefined;
     const origin = toRapier(from.x, from.y);
     const ignored = new Set((options.ignore ?? []).map((e) => this.links.get(e)?.collider.handle));
@@ -552,13 +553,19 @@ export class RapierPhysics implements PhysicsEngine {
   }
 }
 
+/** A vector's length from * and sqrt only (Math.hypot is implementation-defined). */
+function length2(x: number, y: number): number {
+  return Math.sqrt(x * x + y * y);
+}
+
 /** A point given as an offset from a body's center (in its own, turning frame), in Ludra's world. */
 function worldPoint(body: RigidBody, offset: { x: number; y: number }): { x: number; y: number } {
   const p = body.translation();
   const angle = body.rotation();
   const local = toRapier(offset.x, offset.y);
-  const cos = Math.cos(angle);
-  const sin = Math.sin(angle);
+  // dmath, not Math: platform trig can differ in the last bit (see dmath.ts).
+  const cos = dmath.cos(angle);
+  const sin = dmath.sin(angle);
   return fromRapier({ x: p.x + local.x * cos - local.y * sin, y: p.y + local.x * sin + local.y * cos });
 }
 
@@ -571,8 +578,8 @@ function localPoint(body: RigidBody, point: { x: number; y: number }): { x: numb
 
 /** A Rapier world vector in a body's own frame. */
 function rotateBack(body: RigidBody, v: { x: number; y: number }): { x: number; y: number } {
-  const cos = Math.cos(-body.rotation());
-  const sin = Math.sin(-body.rotation());
+  const cos = dmath.cos(-body.rotation());
+  const sin = dmath.sin(-body.rotation());
   return { x: v.x * cos - v.y * sin, y: v.x * sin + v.y * cos };
 }
 

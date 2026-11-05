@@ -193,4 +193,4 @@ Most of these are one short script. Use them to make each game feel different:
 - [ ] `ludra.json` has a real name, not the folder name
 - [ ] You can state the hook in one sentence, and the level is about it
 
-Then tell the user how to play (`npx @ludra/cli dev`), what the level is about, and anything you noticed but didn't fix.
+Then tell the user how to play (`npx @ludra/cli dev`), what the level is about, and anything you noticed but didn't fix. Ask them to mark moments as they play (`1` too hard, `2` boring, `3` confusing, `4` love this, `N` their own words). A person's mark tells you what no check can, so read `npx @ludra/cli feedback` before the next change.

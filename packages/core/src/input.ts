@@ -65,11 +65,16 @@ export class InputScript {
 
   /** Actions held during the step that advances from `frame` to `frame + 1`. */
   at(frame: number): ReadonlySet<Action> {
-    for (let i = this.segments.length - 1; i >= 0; i--) {
-      if (frame >= this.starts[i]!) {
-        return frame < this.starts[i]! + this.segments[i]!.frames ? this.segments[i]!.actions : NOTHING;
-      }
+    // Binary search: a recorded session has thousands of segments, and this runs every frame.
+    let low = 0;
+    let high = this.segments.length - 1;
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2);
+      if (this.starts[middle]! <= frame) low = middle;
+      else high = middle - 1;
     }
-    return NOTHING;
+    const start = this.starts[low];
+    if (start === undefined || frame < start) return NOTHING;
+    return frame < start + this.segments[low]!.frames ? this.segments[low]!.actions : NOTHING;
   }
 }

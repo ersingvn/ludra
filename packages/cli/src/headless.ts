@@ -46,6 +46,8 @@ export interface ScreenshotRequest {
   /** Scene to render, relative to the project. Defaults to the entry scene. */
   scene?: string;
   inputs: string;
+  /** What the run starts with from the scene before. */
+  carry?: { score?: number; deaths?: number; lives?: number };
   frames: number[];
   /** Also lay these frames out as one contact sheet, each with its label. */
   sheet?: SheetRequest;
@@ -153,6 +155,7 @@ export async function captureScreenshots(project: Project, request: ScreenshotRe
         scriptBase: ${JSON.stringify(SCRIPT_PREFIX)},
         scriptPaths: await (await fetch("/__ludra/scripts")).json(),
         inputs: ${JSON.stringify(request.inputs)},
+        carry: ${JSON.stringify(request.carry ?? null)} ?? undefined,
         frames: ${JSON.stringify(request.frames)},
         debug: ${JSON.stringify(!!request.debug)},
         camera: ${JSON.stringify(request.camera ?? null)} ?? undefined,
@@ -229,8 +232,8 @@ export async function captureScreenshots(project: Project, request: ScreenshotRe
 function removeProfile(profile: string): void {
   try {
     rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
-  } catch (err) {
-    console.warn(`Could not remove the temporary browser profile ${profile}: ${(err as Error).message}`);
+  } catch {
+    // Nothing the user can act on, and a word here would land in the middle of --json output.
   }
 }
 

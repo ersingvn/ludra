@@ -82,11 +82,11 @@ The CLI is a thin layer over core: project loading (`ludra.json`), output format
 
 Prefab meshes are checked once, on the prefab.
 
-`server.ts` serves a project to a browser: the engine's browser module (type-stripped on the fly when running from source; no bundler), the validated scene, and only media files from the project. `ludra dev` puts a game page in front of it and reloads when the scene or any asset changes.
+`server.ts` serves a project to a browser: the engine's browser module (type-stripped on the fly when running from source; no bundler), the validated scene, and only media files from the project. `ludra dev` puts a game page in front of it, reloads when the scene or any asset changes, and records the session (see Humans in the loop).
 
 ### Review
 
-`commands/review.ts` loads every scene, runs every test (`runTest` reports the events each run fired) and reads the scripts' sources. It reports findings by area (proof, fair, feel, looks, identity) as issues or ideas: no passing win test without deaths, a script with gameplay hooks whose entities and emitted events no assertion mentions, important events that fired with no `effects` entry and no `recent("…")` in a draw hook, no `drawUI`, no backdrop, sprites without art, no postfx. It's heuristic on purpose: it can't judge beauty, but it reliably catches the signs of unfinished work.
+`commands/review.ts` loads every scene, runs every test (`runTest` reports the events each run fired) and reads the scripts' sources. It reports findings by area (proof, fair, feel, looks, readable, players, identity) as issues or ideas: no passing win test without deaths, a script with gameplay hooks whose entities and emitted events no assertion mentions, important events that fired with no `effects` entry and no `recent("…")` in a draw hook, no `drawUI`, no backdrop, sprites without art, no postfx. It's heuristic on purpose: it can't judge beauty, but it reliably catches the signs of unfinished work.
 
 The fair area uses the search below:
 - **Timing.** It takes the first passing test that asserts `won == true` and runs `measureWindows` on its inputs. A press that works on 2 frames or fewer is `R_FRAME_PERFECT` (an issue); 3 to 6 frames is `R_TIGHT_TIMING` (an idea).
@@ -162,6 +162,41 @@ The fair area uses the search below:
 - **Deaths.** They are counted per cause and per place, snapped to the same 16 px (1 m) grid.
 
 Every finding carries the inputs from frame 0 that reproduce it. Both commands take a wall-clock deadline from the CLI; the simulation never sees the clock.
+
+## Humans in the loop
+
+A World only ever advances through its inputs, so a person's session can be kept as text and played again headlessly.
+
+### Recording
+
+`Recorder` (`packages/core/src/recording.ts`) writes down a session as `startGame` plays it. It only reads the world, and it keeps the inputs the world really stepped on, including a tap shorter than a frame.
+
+A recording is `{ version: 1, session, game, started, takes }`. A take is one run of one scene, from when its World was made until it ended:
+- `scene`, `version` (a hash of the scene as served and its scripts, so art and sound can change without changing it) and `carry`.
+- `inputs` in whole frames, and `frames`.
+- `end`: `won`, `lost`, `moved`, `restarted`, `stopped` or `crashed`, with `error` for a crash. A take whose page died has no end and reads as `stopped`.
+- `checks`: a `fingerprint` of `world.snapshot()` every 300 frames and on the last frame, to tell where a replay leaves the original. A crashed take adds none on its last frame, since the world stopped half way through a step.
+- `score`, `deathCount`, `lives`, `player`, `last`, `deaths` and `marks`.
+
+A take with no frames and no marks is dropped. Nothing reaches the disk until the player presses a key that does something or marks a moment, so a page left open leaves no file.
+
+### Getting it to disk
+
+The page sends the take as it grows, every 10 seconds, on a mark and at each end. `POST /__ludra/recording` (`server.ts`) is the one request that writes to disk, so it only accepts the game's own page: the Host must be local, an Origin must match it, and the content type must be `application/json`, which a website can't send here without a preflight that goes unanswered. The dev server listens on 127.0.0.1 only.
+
+`saveTake` (`recordings.ts`) checks what arrives, takes the file name only from a session id it validates, and writes through a temporary file. Requests can overtake each other as a page closes, so a take never goes back to an earlier state of itself. `readRecording` holds a file to the same checks.
+
+### Reading it
+
+`ludra replay` (`commands/replay.ts`) steps a fresh World through a take's inputs and compares fingerprints as it goes. Status comes from whether the run left the original or ended differently, and whether `gameHash` still matches the take's `version`: a different run on the same version is `diverged`, on another version `changed`. `--mark` and `--sheet` go through `ludra play`, with its `--from` and the take's `carry`.
+
+`--test` writes to `tests/recordings.test.json`, replacing a test of the same name. A test case can carry `carry`, what it starts with, and `recording`, the session it came from. Review's `winRoute` skips those, because a person's run isn't the level's route. Takes that diverged are left out, since a test of them would flicker.
+
+`ludra feedback` (`commands/feedback.ts`) groups marks, deaths, stops and crashes per scene, within 64 px (4 m in 3D). `review` reads the same groups, but only what happened on the current version: a mark on an older one may be about something already changed.
+
+### Limits
+
+Replay is checked between Node and Chromium. Firefox and Safari haven't been tried. A recording that drifts in its own browser shows up as `diverged`, so the failure is visible and not silent.
 
 ## Physics
 

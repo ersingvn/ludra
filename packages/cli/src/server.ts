@@ -1,16 +1,21 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { createServer, type Server, type ServerResponse } from "node:http";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { stripTypeScriptTypes } from "node:module";
 import { createRequire } from "node:module";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { collectAssetPaths } from "@ludra/core";
-import { isInside, listScenes, readScene, scriptPaths, type Project } from "./project.ts";
+import { CliError, isInside, listScenes, readScene, scriptPaths, type Project } from "./project.ts";
+import { gameHash, saveTake, type TakeUpload } from "./recordings.ts";
 
 export const PROJECT_PREFIX = "/__ludra/project/";
 export const SCRIPT_PREFIX = "/__ludra/script/";
 /** An empty same-origin page that headless capture loads before importing the engine. */
 export const BLANK_PATH = "/__ludra/blank";
+/** Where `ludra dev` pages send what the player does. */
+export const RECORDING_PATH = "/__ludra/recording";
+/** Far more than a take sends: about two hours of constant key changes. */
+const MAX_TAKE_BYTES = 2 * 1024 * 1024;
 
 const MEDIA_TYPES: Record<string, string> = {
   ".svg": "image/svg+xml",
@@ -103,7 +108,11 @@ function serveModule(res: ServerResponse, dir: string, path: string): void {
  * source, its TypeScript files are type-stripped on the fly.
  * `indexHtml` builds the page served at "/".
  */
-export function createGameServer(project: Project, indexHtml: (page: { browserModule: string; physicsModule: string; threeModule: string; importMap: string }) => string): GameServer {
+export function createGameServer(
+  project: Project,
+  indexHtml: (page: { browserModule: string; physicsModule: string; threeModule: string; importMap: string }) => string,
+  options: { record?: boolean } = {},
+): GameServer {
   const paths = enginePaths();
   const { browserModule, physicsModule } = paths;
   const importMap = `<script type="importmap">${JSON.stringify({ imports: paths.imports })}</script>`;
@@ -111,7 +120,9 @@ export function createGameServer(project: Project, indexHtml: (page: { browserMo
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     try {
-      if (url.pathname === "/") {
+      if (url.pathname === RECORDING_PATH && options.record) {
+        receiveTake(project, req, res);
+      } else if (url.pathname === "/") {
         res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
         res.end(indexHtml({ browserModule, physicsModule, threeModule: paths.threeModule, importMap }));
       } else if (url.pathname === BLANK_PATH) {
@@ -119,9 +130,10 @@ export function createGameServer(project: Project, indexHtml: (page: { browserMo
         res.end(`<!doctype html><html><head><meta charset="utf-8"><title>Ludra</title>${importMap}</head><body style="margin:0"></body></html>`);
       } else if (url.pathname === "/__ludra/scene") {
         // ?path= picks another scene, for goals with "next" and world.goto.
-        const { scene, diagnostics } = readScene(project, url.searchParams.get("path") ?? undefined);
+        const path = url.searchParams.get("path") ?? undefined;
+        const { scene, diagnostics, label } = readScene(project, path);
         res.writeHead(200, { "content-type": "application/json" });
-        res.end(JSON.stringify({ ok: !!scene, scene, diagnostics }));
+        res.end(JSON.stringify({ ok: !!scene, scene, diagnostics, path: label, version: scene ? gameHash(project, path) : "" }));
       } else if (url.pathname === "/__ludra/version") {
         res.writeHead(200, { "content-type": "text/plain" });
         res.end(version(project));
@@ -172,6 +184,45 @@ export function createGameServer(project: Project, indexHtml: (page: { browserMo
     }
   });
   return { server, browserModule, physicsModule, threeModule: paths.threeModule, importMap };
+}
+
+/**
+ * Keeps a take a page sent. This is the one request that writes to disk, so it only accepts its own
+ * page: a website the player has open can't write here, because it can't send this content type
+ * without a preflight (which goes unanswered), and its Origin wouldn't match. The Host check does
+ * the same for a site pointing its own name at 127.0.0.1.
+ */
+function receiveTake(project: Project, req: IncomingMessage, res: ServerResponse): void {
+  const refuse = (status: number, reason: string) => {
+    res.writeHead(status, { "content-type": "text/plain" });
+    res.end(reason);
+  };
+  const host = req.headers.host ?? "";
+  const local = /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host);
+  const origin = req.headers.origin;
+  if (req.method !== "POST") return refuse(405, "POST only");
+  if (!local || (origin !== undefined && origin !== `http://${host}`)) return refuse(403, "Only the game's own page can record.");
+  if (req.headers["content-type"] !== "application/json") return refuse(415, "JSON only");
+
+  const chunks: Buffer[] = [];
+  let size = 0;
+  req.on("data", (chunk: Buffer) => {
+    size += chunk.length;
+    if (size <= MAX_TAKE_BYTES) chunks.push(chunk);
+  });
+  req.on("end", () => {
+    if (size > MAX_TAKE_BYTES) return refuse(413, "Take too large");
+    try {
+      saveTake(project, JSON.parse(Buffer.concat(chunks).toString("utf8")) as TakeUpload);
+      res.writeHead(204);
+      res.end();
+    } catch (err) {
+      // A malformed take is the sender's fault; a full disk or a locked file is worth seeing.
+      const malformed = err instanceof CliError || err instanceof SyntaxError;
+      if (!malformed) console.error(`Could not save a recording: ${(err as Error).message}`);
+      refuse(malformed ? 400 : 500, (err as Error).message);
+    }
+  });
 }
 
 /** Changes whenever a scene, prefab or any file they reference changes, so the page knows to reload. */

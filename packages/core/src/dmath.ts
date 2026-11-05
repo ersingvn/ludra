@@ -101,3 +101,17 @@ export function asin(x: number): number {
 
 /** For tests: π/4, so callers can check the kernels' range. */
 export const DMATH_REDUCED_RANGE = QUARTER_PI;
+
+/** 2 to the power x, from a fixed series: Math.pow isn't required to round the same everywhere. */
+export function pow2(x: number): number {
+  const whole = Math.floor(x);
+  const part = (x - whole) * Math.LN2;
+  let term = 1;
+  let sum = 1;
+  for (let i = 1; i <= 16; i++) {
+    term *= part / i;
+    sum += term;
+  }
+  for (let i = 0; i < Math.abs(whole); i++) sum = whole > 0 ? sum * 2 : sum / 2;
+  return sum;
+}

@@ -48,7 +48,7 @@ export default {
     // Never travel almost horizontally (it would take forever to come back), and keep the speed constant.
     const minVertical = speed * 0.35;
     if (Math.abs(self.vy) < minVertical) self.vy = (self.vy < 0 ? -1 : 1) * minVertical;
-    const current = Math.hypot(self.vx, self.vy);
+    const current = Math.sqrt(self.vx * self.vx + self.vy * self.vy);
     if (current > 0) {
       self.vx = (self.vx / current) * speed;
       self.vy = (self.vy / current) * speed;

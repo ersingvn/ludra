@@ -108,7 +108,7 @@ export function boxMass(e: Entity): number {
 export function raycastBoxes(host: PhysicsHost, from: { x: number; y: number }, to: { x: number; y: number }, options: RayOptions = {}): RayHit | undefined {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
-  const length = Math.hypot(dx, dy);
+  const length = Math.sqrt(dx * dx + dy * dy);
   if (length === 0) return undefined;
   let best: RayHit | undefined;
   for (const e of host.entities) {
