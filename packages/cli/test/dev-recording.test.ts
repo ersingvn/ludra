@@ -113,7 +113,8 @@ async function session(game: string, port: number, takes: number, play: (page: P
     await new Promise<void>((resolve) => server.stdout!.once("data", () => resolve()));
     let log = "";
     chrome.stderr!.on("data", (chunk: Buffer) => (log += chunk.toString()));
-    await until("the browser", () => /ws:\/\/\S+/.test(log));
+    // A CI machine starting two Chromes back to back has taken over 20 s.
+    await until("the browser", () => /ws:\/\/\S+/.test(log), 60_000);
     const page = await Page.open(/ws:\/\/\S+/.exec(log)![0], `http://127.0.0.1:${port}/`);
     await until("the game", async () => (await page.evaluate(`document.readyState === "complete" && !!document.querySelector("canvas")`)) === true, 90_000);
     const folder = join(dir, "recordings");
