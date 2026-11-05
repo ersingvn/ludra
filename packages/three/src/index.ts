@@ -44,9 +44,16 @@ const TONE_MAPPING = {
 /** Collider colors in the debug view, as in 2D: static, dynamic, kinematic, sensor, player. */
 const DEBUG_COLORS = { static: 0x7fdbff, dynamic: 0xffdc00, kinematic: 0xff851b, sensor: 0x2ecc40, player: 0xff4136 } as const;
 
+/**
+ * Loaders see project paths under this made-up scheme, which the loading manager turns into real
+ * URLs. three resolves a .gltf's relative files against it like any other base.
+ */
+const PROJECT = "ludra:/";
+
 /** Creates the 3D renderer for a scene. Pass it to startGame as `loadRenderer3D`. */
 export const createRenderer3D: Renderer3DFactory = async (scene, options) => {
-  const renderer = new ThreeRenderer(scene, options.width, options.height, options.assetBase);
+  const base = options.assetBase;
+  const renderer = new ThreeRenderer(scene, options.width, options.height, options.assetUrl ?? ((path) => base + path));
   await renderer.load();
   return renderer;
 };
@@ -115,11 +122,13 @@ export class ThreeRenderer implements Renderer3D {
   private readonly pending = new Set<Promise<unknown>>();
 
   private readonly def: SceneDef;
-  private readonly assetBase: string;
+  /** Loads go through this, so a .gltf's own relative files (its .bin, its textures) are found wherever assets live. */
+  private readonly manager: THREE.LoadingManager;
 
-  constructor(def: SceneDef, width: number, height: number, assetBase: string) {
+  constructor(def: SceneDef, width: number, height: number, assetUrl: (path: string) => string) {
     this.def = def;
-    this.assetBase = assetBase;
+    this.manager = new THREE.LoadingManager();
+    this.manager.setURLModifier((url) => (url.startsWith(PROJECT) ? assetUrl(url.slice(PROJECT.length)) : url));
     this.canvas = document.createElement("canvas");
     this.canvas.width = width;
     this.canvas.height = height;
@@ -140,7 +149,7 @@ export class ThreeRenderer implements Renderer3D {
 
   /** Loads every texture and model the scene (and its prefabs) names, so the first frame (and screenshots) are complete. */
   async load(): Promise<void> {
-    const loader = new THREE.TextureLoader();
+    const loader = new THREE.TextureLoader(this.manager);
     const meshes = [...this.def.entities, ...Object.values(this.def.prefabs ?? {})].map((e) => e.components?.mesh as Record<string, unknown> | undefined);
     const named = (field: string) => new Set(meshes.map((m) => m?.[field]).filter((p): p is string => typeof p === "string" && p !== ""));
     const paths = named("texture");
@@ -149,7 +158,7 @@ export class ThreeRenderer implements Renderer3D {
       ...models,
       ...[...paths].map(async (path) => {
         try {
-          const texture = await loader.loadAsync(this.assetBase + path);
+          const texture = await loader.loadAsync(PROJECT + path);
           texture.colorSpace = THREE.SRGBColorSpace;
           texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
           texture.anisotropy = 4;
@@ -166,15 +175,19 @@ export class ThreeRenderer implements Renderer3D {
     let load = this.gltfLoads.get(path);
     if (load) return load;
     if (!this.gltfLoader) {
-      this.gltfLoader = new GLTFLoader();
+      this.gltfLoader = new GLTFLoader(this.manager);
       const draco = new DRACOLoader();
       // The decoder sits in three's addons, which the import map serves.
-      draco.setDecoderPath(new URL("../libs/draco/gltf/", import.meta.resolve("three/addons/loaders/DRACOLoader.js")).href);
+      try {
+        draco.setDecoderPath(new URL("../libs/draco/gltf/", import.meta.resolve("three/addons/loaders/DRACOLoader.js")).href);
+      } catch {
+        // A single-file build has no folder to load the decoder from: Draco models don't load there.
+      }
       this.gltfLoader.setDRACOLoader(draco);
       this.gltfLoader.setMeshoptDecoder(MeshoptDecoder);
     }
     load = this.track(
-      this.gltfLoader.loadAsync(this.assetBase + path).then(
+      this.gltfLoader.loadAsync(PROJECT + path).then(
         (gltf) => void this.gltfs.set(path, gltf),
         (err: unknown) => {
           console.warn(`[ludra] could not load model "${path}" (${(err as Error)?.message ?? err}), drawing its shape instead.`);

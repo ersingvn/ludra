@@ -7,6 +7,7 @@ import { dev } from "./commands/dev.ts";
 import { feedback } from "./commands/feedback.ts";
 import { replay } from "./commands/replay.ts";
 import { diff } from "./commands/diff.ts";
+import { build } from "./commands/build.ts";
 import { fuzz } from "./commands/fuzz.ts";
 import { inspect } from "./commands/inspect.ts";
 import { create } from "./commands/new.ts";
@@ -86,6 +87,7 @@ Usage
                                                in recordings/, and 1 2 3 4 N mark how a moment felt
       --no-record                              Don't record
   ludra feedback [folder] [--json]             What players felt: marks, deaths and where they stopped, by scene
+  ludra build [folder] [--out build] [--json]  The game as one HTML file, and a zip of it for itch.io
   ludra replay <recording|folder> [options]    Play a recording again and show each take; exit 1 when one no longer
                                                plays out the same. A folder means its newest recording
       --take 2                                 Only this take (numbered from 1)
@@ -169,6 +171,8 @@ async function main(argv: string[]): Promise<number> {
       return feedback(target ?? ".", values);
     case "inspect":
       return inspect(target, values);
+    case "build":
+      return build(target ?? ".", values);
     case "diff":
       return diff(target, extra, values);
     case "blocks":

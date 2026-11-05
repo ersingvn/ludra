@@ -25,6 +25,7 @@ Decide the look in `game.md` first, and make it this game's own: what comes with
 5. Run `npx @ludra/cli review` and fix every issue it lists: it catches what makes a game feel unfinished (untested mechanics, silent events, the default HUD, flat looks).
 6. Run `npx @ludra/cli dev` so a human can play it in the browser. The backquote key (`) toggles the debug view there.
 7. Players mark moments there with 1 too hard, 2 boring, 3 confusing, 4 love this, N their own words, and every session is recorded in `recordings/`. Afterwards `npx @ludra/cli feedback` shows what they felt, `npx @ludra/cli replay . --take 1 --mark 1` draws a marked moment, and `npx @ludra/cli replay . --test` turns takes into tests.
+8. To ship it, `npx @ludra/cli build` writes `build/index.html`, the whole game in one file, and a zip of it to upload to itch.io as an HTML game. It plays with a keyboard, a gamepad or a touch screen; a drawUI hook can check `view.touch` to say "tap" instead of naming keys. `review`'s Shipping area says what would make it heavy or slow on a phone.
 
 Never call a change done until `ludra check`, `ludra test` and `ludra review` are all clean. Clean means it isn't broken, not that it's good: then look at the frames against `game.md` and keep making it better.
 

@@ -7,6 +7,7 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import type { Recording } from "@ludra/core";
 import { findBrowser } from "../src/headless.ts";
+import { oneLiveBrowser } from "./live-browser.ts";
 
 const CLI = fileURLToPath(new URL("../src/index.ts", import.meta.url));
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
@@ -102,7 +103,12 @@ async function until(what: string, ready: () => boolean | Promise<boolean>, ms =
 }
 
 /** A person plays the game in a real browser, on `ludra dev`; the callback is the person. */
-async function session(game: string, port: number, takes: number, play: (page: Page, onDisk: () => Recording | undefined) => Promise<void>): Promise<{ dir: string; file: string; recording: Recording }> {
+/** One session at a time across test files: see oneLiveBrowser. */
+function session(...args: Parameters<typeof playSession>): ReturnType<typeof playSession> {
+  return oneLiveBrowser(() => playSession(...args));
+}
+
+async function playSession(game: string, port: number, takes: number, play: (page: Page, onDisk: () => Recording | undefined) => Promise<void>): Promise<{ dir: string; file: string; recording: Recording }> {
   const dir = mkdtempSync(join(tmpdir(), "ludra-dev-"));
   cpSync(game, dir, { recursive: true, filter: (path) => !/node_modules|screenshots|recordings/.test(path) });
   const server: ChildProcess = spawn(process.execPath, ["--conditions=ludra-dev", "--no-warnings", CLI, "dev", dir, "--port", String(port)], { stdio: "pipe" });

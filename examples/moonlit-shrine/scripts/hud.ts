@@ -135,7 +135,8 @@ export default {
     }
 
     g.textAlign = "right";
-    label(g, "M sound  ·  R restart", view.width - 18, view.height - 14, 11, "rgba(232, 228, 255, 0.45)", SANS, 600);
+    // On a phone, buttons in the corner do these.
+    if (!view.touch) label(g, "M sound  ·  R restart", view.width - 18, view.height - 14, 11, "rgba(232, 228, 255, 0.45)", SANS, 600);
 
     if (world.won || world.lost) {
       const end = recent(world.won ? "win" : "gameover", 1e9).at(-1);

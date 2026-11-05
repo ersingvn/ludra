@@ -9,6 +9,7 @@ import { captureScreenshots, findBrowser } from "../headless.ts";
 import { decodePng } from "../png.ts";
 import { closeEnough, isClear, measurePresence, TINY_SHARE, type Presence } from "../readability.ts";
 import { listScenes, loadGame, loadProject, type Game, type Project } from "../project.ts";
+import { reviewShipping } from "../shipping.ts";
 import { areAlike, averageProfile, hueOverlap, hueProfile, repeatedTiles } from "../variety.ts";
 
 /**
@@ -18,7 +19,7 @@ import { areAlike, averageProfile, hueOverlap, hueProfile, repeatedTiles } from 
  * game is called done; ideas are worth considering.
  */
 
-type Area = "proof" | "fair" | "feel" | "looks" | "readable" | "players" | "identity";
+type Area = "proof" | "fair" | "feel" | "looks" | "readable" | "players" | "shipping" | "identity";
 type Level = "issue" | "idea";
 
 export interface Finding {
@@ -38,6 +39,7 @@ const AREAS: Record<Area, string> = {
   looks: "Looks: does it have a style of its own?",
   readable: "Readable: can a player see what matters?",
   players: "Players: what did people say when they played it?",
+  shipping: "Shipping: will it run well where players are, phones included?",
   identity: "Identity: is it a game, or a project folder?",
 };
 
@@ -95,6 +97,7 @@ export async function review(dir: string, options: { json?: boolean; strict?: bo
   if (!options.fast) await reviewReadability(project, scenes, add);
   reviewDirection(project, add);
   reviewPlayers(project, add);
+  await reviewShipping(project, scenes.map((s) => ({ label: s.label, scene: s.game.scene, scripts: s.game.scripts, cases: s.cases })), add);
 
   // Identity.
   const folder = basename(project.dir);

@@ -25,7 +25,7 @@ claude > ludra new slime-valley
          Done. Run `ludra dev` to play it.
 ```
 
-> **Status:** early (v0.95). 3D games with Three.js and Rapier 3D, including any glTF model with skeletal animation on the simulation clock and colliders of any shape (from a model, or procedural terrain), and 2D games in several genres (platformers, top-down adventures, breakout, physics games) on arcade or real Rapier physics, with tilemaps, camera zones, tweens, multiple levels, lives, checkpoints and prefabs, `ludra review` to catch unfinished and unfair work, `ludra solve` to prove a level can be won and how tight each jump is, `ludra fuzz` to find crashes and softlocks by random play, contact sheets, visual diffs and a `game.md` that holds the art to a decided look, art drawn in code with lighting, custom interfaces and GLSL post-processing, a library of ready-made gameplay blocks, custom TypeScript scripts, enemies, hazards, moving platforms, goals, animated SVG sprites, particles, each game's own synthesized sounds and music, plus the full agent toolchain including real rendered screenshots and `ludra inspect` to read any model, image or sound as text, and recorded play sessions that show an agent what a person felt, each one a test with one command, work today. Shipping (a single-file web build, touch and gamepad controls) is next on the [roadmap](#roadmap).
+> **Status:** early (v0.96). 3D games with Three.js and Rapier 3D, including any glTF model with skeletal animation on the simulation clock and colliders of any shape (from a model, or procedural terrain), and 2D games in several genres (platformers, top-down adventures, breakout, physics games) on arcade or real Rapier physics, with tilemaps, camera zones, tweens, multiple levels, lives, checkpoints and prefabs, `ludra review` to catch unfinished and unfair work, `ludra solve` to prove a level can be won and how tight each jump is, `ludra fuzz` to find crashes and softlocks by random play, contact sheets, visual diffs and a `game.md` that holds the art to a decided look, art drawn in code with lighting, custom interfaces and GLSL post-processing, a library of ready-made gameplay blocks, custom TypeScript scripts, enemies, hazards, moving platforms, goals, animated SVG sprites, particles, each game's own synthesized sounds and music, plus the full agent toolchain including real rendered screenshots and `ludra inspect` to read any model, image or sound as text, recorded play sessions that show an agent what a person felt, each one a test with one command, and `ludra build`, the whole game as one HTML file for itch.io or any web host, played with a keyboard, a gamepad or a touch screen, work today. v1.0 is next on the [roadmap](#roadmap).
 
 ## The idea
 
@@ -351,6 +351,34 @@ ludra replay . --test          # write takes into tests/recordings.test.json
 
 So far replay is checked between Node and Chromium. Firefox and Safari haven't been tried: if a recording from one of them doesn't play the same, `replay` says `diverged`.
 
+### `ludra build`: one file, wherever players are
+
+```bash
+ludra build
+# ✓ Built Slime Valley: 1 scene, 2 scripts, 8 assets
+#   build/index.html  395 KB   one file: open it, or put it on any web host
+#   build/slime-valley-web.zip  100 KB   for itch.io: upload it as an HTML game
+```
+
+`build/index.html` is the whole game: engine, scenes, scripts, images, sounds and models. It plays from a double click (`file://`), any web host or an itch.io page, and needs nothing else. There's no bundler: Ludra puts each module in the page as it is, type-stripped, and links them with an import map. Only what a game runs goes in, so an arcade game is a few hundred KB, and Rapier (about 3 MB) and Three.js (about 2 MB) come only with games that use them. The build refuses what `ludra check` refuses, and the debug key is off.
+
+Players aren't all at a keyboard:
+- **Gamepads** play in the standard layout: the left stick or the d-pad moves, A jumps, the other face buttons are `action`, Start restarts and Back mutes.
+- **On a touch screen** the first touch shows buttons for the actions this game uses, read from its player components and from what its scripts read (`input.held("action")`). Movement sits under the left thumb, where a finger can slide and press diagonals; jump and action under the right. Draw hooks get `view.touch`, so a game's own interface can say "tap" instead of naming keys.
+
+Both work in `ludra dev` too and go into recordings like keys, so a session played with a gamepad or on a touch screen replays and becomes a test the same way. A build doesn't record.
+
+`review` asks whether the game will run well there, in its **Shipping** area. What can fail `--strict` is counted, not timed, so a busy machine reviews a game the same as an idle one:
+
+| Code | When |
+| --- | --- |
+| `R_BIG_BUILD` | The zip is over 10 MB (an idea) or 50 MB (an issue) |
+| `R_HUGE_IMAGE` | An image is over 4096 px on a side; an issue for a 3D texture, which many phones can't load |
+| `R_HEAVY_ASSET` | One file is over 8 MB, usually an uncompressed WAV |
+| `R_HEAVY_MODEL` | A 3D scene's models draw over 1M triangles (4M: an issue) |
+| `R_MANY_ENTITIES` | Over 2000 entities are alive at once in the tests (6000: an issue) |
+| `R_SLOW_STEP` | A step takes over 3 ms on this machine (only ever an idea) |
+
 ### Lives, checkpoints, prefabs and levels
 
 ```json
@@ -559,7 +587,7 @@ No audio files are needed, and sound has no ceiling. A scene designs its own `"s
 
 For everything else, a script's `sound` hook gets the real Web Audio API, the way draw hooks get the real canvas: Crate & Chasm's wind grows as you climb, the spiked ball hisses as fast as it swings and the bridge creaks under your feet. Every template ships with its own sounds and music, and `ludra review` flags stock beeps and silent games. Presentation never touches the simulation, so polishing a game can't break its tests, and `ludra check` reports any missing image or audio file along with the files that do exist.
 
-## Components (v0.95)
+## Components (v0.96)
 
 | Component | What it does |
 | --- | --- |
@@ -620,7 +648,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how it fits together.
 - ~~**v0.93: proof at scale.** `World.save()`/`restore()` bit for bit on every physics engine. `ludra solve` searches inputs for a way to win (is the level beatable, a fast route as a ready test, how wide each press's timing window is). `ludra fuzz` plays hundreds of random sessions to find crashes, softlocks and where players die. `review` asks whether a game is fair from both.~~ Done.
 - ~~**v0.94: sharper eyes and taste.** Contact sheets (many frames in one image), visual diffs between versions, a free debug camera and a top-down map in 3D, readability checks on frames, and a `game.md` of design intent that `review` measures the game against.~~ Done.
 - ~~**v0.95: humans in the loop.** Record a person's session in `ludra dev`, let them mark moments ("too hard", "boring here"), and turn any recording into a test with one command, so the agent sees exactly what the player felt.~~ Done.
-- **v0.96: shipping.** A single-file web build ready for itch.io, touch and gamepad controls, performance budgets in `review`.
+- ~~**v0.96: shipping.** A single-file web build ready for itch.io, touch and gamepad controls, performance budgets in `review`.~~ Done.
 - **v1.0.** Any genre in 2D or 3D, as far as the agent wants to take it, with a `make-games` skill and complete docs: an engine where an AI makes games people want to play.
 
 ## Contributing

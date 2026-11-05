@@ -17,7 +17,7 @@ export const RECORDING_PATH = "/__ludra/recording";
 /** Far more than a take sends: about two hours of constant key changes. */
 const MAX_TAKE_BYTES = 2 * 1024 * 1024;
 
-const MEDIA_TYPES: Record<string, string> = {
+export const MEDIA_TYPES: Record<string, string> = {
   ".svg": "image/svg+xml",
   ".png": "image/png",
   ".jpg": "image/jpeg",
@@ -54,7 +54,7 @@ export interface GameServer {
 }
 
 /** Where the engine's packages are on disk, and the URLs the browser loads them from. */
-function enginePaths() {
+export function enginePaths() {
   const coreEntry = fileURLToPath(import.meta.resolve("@ludra/core/browser"));
   const coreDir = dirname(coreEntry);
   const coreIndex = fileURLToPath(import.meta.resolve("@ludra/core"));
@@ -71,6 +71,10 @@ function enginePaths() {
   const url = (prefix: string, dir: string, file: string) => `${prefix}${relative(dir, file).replaceAll(sep, "/")}`;
   return {
     coreDir,
+    coreEntry,
+    coreIndex,
+    physicsEntry,
+    threeEntry,
     physicsDir,
     rapierFile,
     rapier3dFile,

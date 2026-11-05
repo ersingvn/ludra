@@ -1,5 +1,5 @@
 import { paint } from "../format.ts";
-import { CliError, loadProject, type Project } from "../project.ts";
+import { CliError, gameActions, loadProject, type Project } from "../project.ts";
 import { RECORDINGS_DIR } from "../recordings.ts";
 import { createGameServer, PROJECT_PREFIX, RECORDING_PATH, SCRIPT_PREFIX } from "../server.ts";
 
@@ -17,7 +17,8 @@ export function dev(dir: string, options: { port?: string; "no-record"?: boolean
   });
   server.listen(port, "127.0.0.1", () => {
     console.log(paint("green", `▶ ${project.config.name} is running at http://localhost:${port}`));
-    console.log(paint("dim", `  Arrows/WASD to move, Space/Z to jump, M to mute, R to restart, \` (backquote) for the debug view.`));
+    console.log(paint("dim", `  Arrows/WASD or a gamepad to move, Space/Z or A to jump, M to mute, R to restart, \` (backquote) for the debug view.`));
+    console.log(paint("dim", `  On a touch screen, touching the page shows on-screen buttons. To try it on a phone, "ludra build" and open the file there.`));
     if (record) {
       console.log(paint("dim", `  Marking a moment: 1 too hard, 2 boring, 3 confusing, 4 love this, N your own words.`));
       console.log(paint("dim", `  Every session is recorded in ${RECORDINGS_DIR}/ (--no-record turns that off). "ludra feedback" shows what players felt.`));
@@ -99,7 +100,7 @@ if (data.ok) {
     return next.scene;
   };
   const recorder = ${record} ? startRecorder(data.path, versions) : undefined;
-  await startGame(document.getElementById("game"), data.scene, { assetBase: "${PROJECT_PREFIX}", scriptBase: "${SCRIPT_PREFIX}", scriptPaths, loadScene, loadPhysics, loadRenderer3D, recorder });
+  await startGame(document.getElementById("game"), data.scene, { assetBase: "${PROJECT_PREFIX}", scriptBase: "${SCRIPT_PREFIX}", scriptPaths, loadScene, loadPhysics, loadRenderer3D, recorder, actions: ${JSON.stringify(gameActions(project))} });
 } else {
   document.getElementById("game").hidden = true;
   const errors = document.getElementById("errors");

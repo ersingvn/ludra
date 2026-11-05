@@ -1,5 +1,6 @@
 import { SoundPlayer } from "./audio.ts";
 import { CameraRig } from "./camera.ts";
+import { actionsUsed, Gamepads, TouchControls } from "./controls.ts";
 import { physicsEngineName } from "./engines.ts";
 import { parseFrames, type Sprite } from "./components.ts";
 import { collectAssetPaths } from "./effects.ts";
@@ -83,13 +84,20 @@ export interface Renderer3D {
  */
 export type CameraView = { mode: "map" } | { mode: "free"; from: { x: number; y: number; z: number }; at: { x: number; y: number; z: number } | string };
 
-export type Renderer3DFactory = (scene: SceneDef, options: { width: number; height: number; assetBase: string }) => Promise<Renderer3D>;
+/** Where a project path (an image, sound, model...) is loaded from. */
+export type AssetUrl = (path: string) => string;
+
+export type Renderer3DFactory = (scene: SceneDef, options: { width: number; height: number; assetBase: string; assetUrl?: AssetUrl }) => Promise<Renderer3D>;
 
 export interface GameOptions {
   /** URL prefix for image and audio paths in the scene. Defaults to "". */
   assetBase?: string;
+  /** Where each asset path loads from, instead of `assetBase` + path: a single-file build points them at its own data. */
+  assetUrl?: AssetUrl;
   /** URL prefix the scene's script paths are imported from. Defaults to `assetBase`. */
   scriptBase?: string;
+  /** Imports a script module instead of `import(scriptBase + path)`: a bundle has its scripts already. */
+  loadScript?: (path: string) => Promise<{ default?: Script }>;
   /** Scripts to load. Defaults to those the scene references; include any that `world.spawn` uses. */
   scriptPaths?: readonly string[];
   /**
@@ -102,6 +110,8 @@ export interface GameOptions {
    * e.g. `async (name) => (await import("@ludra/physics")).loadRapierPhysics()` for "rapier".
    */
   loadPhysics?: (name: string) => Promise<void>;
+  /** Whether backquote turns the debug view on and off. Defaults to true; a shipped build turns it off. */
+  debugKey?: boolean;
   /** Start with the debug view on: colliders, sensors, joints and ids drawn over the game. */
   debug?: boolean;
   /**
@@ -109,8 +119,21 @@ export interface GameOptions {
    * `async () => (await import("@ludra/three")).createRenderer3D`.
    */
   loadRenderer3D?: () => Promise<Renderer3DFactory>;
+  /**
+   * The actions the game uses, which on-screen touch controls show. Defaults to what each scene's
+   * player components need; the CLI adds what scripts read.
+   */
+  actions?: readonly Action[];
+  /** On-screen buttons once someone touches the page. Defaults to true. Gamepads always work. */
+  touch?: boolean;
   /** Writes down the session, and turns on the keys that mark moments. `ludra dev` passes one. */
   recorder?: Recorder;
+}
+
+/** How the game finds its assets: `assetUrl`, or `assetBase` + path. */
+function assetUrlOf(options: GameOptions): AssetUrl {
+  const base = options.assetBase ?? "";
+  return options.assetUrl ?? ((path) => base + path);
 }
 
 /** A 3D scene's renderer, or undefined for 2D. */
@@ -118,7 +141,7 @@ async function useRenderer3D(scene: SceneDef, options: GameOptions, width: numbe
   if (scene.world?.dimensions !== 3) return undefined;
   if (!options.loadRenderer3D) throw new Error('This scene is 3D ("dimensions": 3), which @ludra/three draws. Pass loadRenderer3D to startGame (the ludra CLI does this for you).');
   const create = await options.loadRenderer3D();
-  return create(scene, { width, height, assetBase: options.assetBase ?? "" });
+  return create(scene, { width, height, assetBase: options.assetBase ?? "", assetUrl: assetUrlOf(options) });
 }
 
 /** Imports the game's script modules, keyed by their path in the scene. */
@@ -128,7 +151,7 @@ async function loadScripts(scene: SceneDef, options: GameOptions): Promise<Map<s
   const scripts = new Map<string, Script>();
   await Promise.all(
     [...new Set(paths)].map(async (path) => {
-      const module = (await import(base + path)) as { default?: Script };
+      const module = options.loadScript ? await options.loadScript(path) : ((await import(base + path)) as { default?: Script });
       if (!module.default) throw new Error(`Script ${path} has no default export.`);
       scripts.set(path, module.default);
     }),
@@ -137,7 +160,7 @@ async function loadScripts(scene: SceneDef, options: GameOptions): Promise<Map<s
 }
 
 /** Fonts load from Google Fonts or project files; a slow or offline font never blocks the game for long. */
-async function loadFonts(scene: SceneDef, assetBase: string): Promise<void> {
+async function loadFonts(scene: SceneDef, assetUrl: AssetUrl): Promise<void> {
   const fonts = Object.entries(scene.fonts ?? {});
   if (fonts.length === 0) return;
   const load = async ([family, src]: [string, string]) => {
@@ -154,7 +177,7 @@ async function loadFonts(scene: SceneDef, assetBase: string): Promise<void> {
       }
       await Promise.all(["400", "700", "900"].map((weight) => document.fonts.load(`${weight} 16px "${family}"`)));
     } else {
-      const face = new FontFace(family, `url("${assetBase}${src}")`);
+      const face = new FontFace(family, `url("${assetUrl(src)}")`);
       // FontFaceSet.add is missing from some TypeScript DOM typings.
       (document.fonts as unknown as Set<FontFace>).add(await face.load());
     }
@@ -166,10 +189,10 @@ async function loadFonts(scene: SceneDef, assetBase: string): Promise<void> {
 }
 
 /** A scene's postfx shader source, or why it couldn't be fetched. */
-async function loadShader(scene: SceneDef, assetBase: string): Promise<string | Error | undefined> {
+async function loadShader(scene: SceneDef, assetUrl: AssetUrl): Promise<string | Error | undefined> {
   const path = scene.postfx?.shader;
   if (!path) return undefined;
-  const response = await fetch(assetBase + path).catch((err: unknown) => err as Error);
+  const response = await fetch(assetUrl(path)).catch((err: unknown) => err as Error);
   if (response instanceof Error) return response;
   return response.ok ? response.text() : new Error(`could not load ${path} (${response.status})`);
 }
@@ -237,12 +260,12 @@ async function usePhysics(scene: SceneDef, options: GameOptions): Promise<void> 
 
 /** What a scene needs before it can be drawn. */
 async function loadScene(scene: SceneDef, options: GameOptions, scripts: Map<string, Script>) {
-  const assetBase = options.assetBase ?? "";
+  const assetUrl = assetUrlOf(options);
   const [images, more, shader] = await Promise.all([
-    loadImages(scene, assetBase),
+    loadImages(scene, assetUrl),
     loadScripts(scene, options),
-    loadShader(scene, assetBase),
-    loadFonts(scene, assetBase),
+    loadShader(scene, assetUrl),
+    loadFonts(scene, assetUrl),
   ]);
   for (const [path, script] of more) scripts.set(path, script);
   return { images, shader };
@@ -267,7 +290,7 @@ const GOTO_FADE = 0.35;
 export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef, options: GameOptions = {}): Promise<() => void> {
   const screen = new Screen(canvas);
   const ctx = screen.ctx;
-  const sounds = new SoundPlayer(options.assetBase ?? "");
+  const sounds = new SoundPlayer(assetUrlOf(options));
   const scripts = new Map<string, Script>();
 
   type Carry = { score: number; deaths: number; lives: number | undefined };
@@ -286,6 +309,8 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
   /** World events the sound hooks have already been given, and their per-entity memory. */
   let soundEvents = 0;
   const soundLocals = new Map<string, Record<string, unknown>>();
+  let touch: TouchControls | undefined;
+  let touched = false;
 
   const enter = async (next: SceneDef, carry: Carry | undefined, path?: string) => {
     const { images, shader } = await loadScene(next, options, scripts);
@@ -295,6 +320,8 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
     startCarry = carry;
     view?.renderer?.dispose();
     view = new View(next, images, await useRenderer3D(next, options, canvas.width, canvas.height));
+    view.touch = touched;
+    if (!options.actions) touch?.setActions(actionsUsed([next]));
     view.debug = debug;
     sounds.setScene(next.sounds, next.music);
     soundEvents = 0;
@@ -366,7 +393,7 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
       }
     }
     if (event.code === "KeyR") return restart();
-    if (event.code === "Backquote" && !event.repeat) {
+    if (event.code === "Backquote" && !event.repeat && options.debugKey !== false) {
       debug = !debug;
       view.debug = debug;
       return;
@@ -390,14 +417,36 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
   window.addEventListener("keyup", onKeyUp);
   window.addEventListener("blur", onBlur);
 
+  // Gamepads and touch buttons press the same actions as keys. A press since the last frame is a
+  // tap too, so it reaches the simulation even if it's let go before the next step.
+  const gamepads = new Gamepads();
+  if (options.touch !== false && typeof document !== "undefined") {
+    touch = new TouchControls(options.actions ?? actionsUsed([scene]), {
+      restart,
+      mute: () => (sounds.muted = !sounds.muted),
+      touched: () => {
+        sounds.unlock();
+        touched = view.touch = true;
+      },
+    });
+    document.body.append(touch.root);
+  }
+  let pressedBefore: ReadonlySet<Action> = new Set();
+
   let last = performance.now();
   let accumulator = 0;
   let raf = 0;
   const frame = (now: number) => {
     accumulator += Math.min(MAX_FRAME_TIME, (now - last) / 1000);
     last = now;
+    const pad = gamepads.poll();
+    if (pad.restart) restart();
+    if (pad.mute) sounds.muted = !sounds.muted;
+    const pressed = touch && touch.held.size > 0 ? new Set([...pad.actions, ...touch.held]) : pad.actions;
+    for (const action of pressed) if (!pressedBefore.has(action)) tapped.add(action);
+    pressedBefore = pressed;
     while (accumulator >= FIXED_DT && !crash && !loading) {
-      const input = tapped.size > 0 ? new Set([...held, ...tapped]) : held;
+      const input = tapped.size > 0 || pressed.size > 0 ? new Set([...held, ...pressed, ...tapped]) : held;
       try {
         world.step(input);
         options.recorder?.step(world, input);
@@ -473,6 +522,7 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
     window.removeEventListener("keydown", onKeyDown);
     window.removeEventListener("keyup", onKeyUp);
     window.removeEventListener("blur", onBlur);
+    touch?.dispose();
   };
 }
 
@@ -595,7 +645,7 @@ function drawCrash(ctx: CanvasRenderingContext2D, message: string): void {
   ctx.fillText("Fix the script; the page reloads on save. R restarts.", 32, y + 40);
 }
 
-async function loadImages(scene: SceneDef, assetBase: string): Promise<Map<string, HTMLImageElement>> {
+async function loadImages(scene: SceneDef, assetUrl: AssetUrl): Promise<Map<string, HTMLImageElement>> {
   const images = new Map<string, HTMLImageElement>();
   const paths = new Set(collectAssetPaths(scene).filter((ref) => ref.kind === "image").map((ref) => ref.path));
   await Promise.all(
@@ -611,7 +661,7 @@ async function loadImages(scene: SceneDef, assetBase: string): Promise<Map<strin
             console.warn(`[ludra] could not load image "${path}", drawing a colored shape instead.`);
             resolve();
           };
-          image.src = assetBase + path;
+          image.src = assetUrl(path);
         }),
     ),
   );
@@ -634,6 +684,8 @@ class View {
   private readonly jointOrigins = new Map<string, { x: number; y: number }>();
   /** Draw colliders, sensors, joints and ids over the game. */
   debug = false;
+  /** On-screen touch buttons are showing. */
+  touch = false;
   /** Entities left out of the drawing. The game still runs them. */
   hidden: ReadonlySet<string> = new Set();
   /** Draw without shake, so two drawings of one moment differ only in what was hidden. */
@@ -722,7 +774,7 @@ class View {
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(renderer.canvas, 0, 0, width, height);
     this.drawLabels(ctx, renderer.labels?.(world) ?? []);
-    return { width, height, cameraX: 0, cameraY: 0, zoom: 1 };
+    return { width, height, cameraX: 0, cameraY: 0, zoom: 1, touch: this.touch };
   }
 
   /** Each name beside its point, with a line back to it when the label had to move away. */
@@ -773,7 +825,7 @@ class View {
       cameraY += (this.particles.random() - 0.5) * 2 * this.shake;
     }
 
-    const viewInfo = { width: viewWidth, height: viewHeight, cameraX, cameraY, zoom };
+    const viewInfo = { width: viewWidth, height: viewHeight, cameraX, cameraY, zoom, touch: this.touch };
     ctx.save();
     ctx.scale(zoom, zoom);
     ctx.translate(-cameraX, -cameraY);
@@ -821,7 +873,8 @@ class View {
     ctx.textAlign = "right";
     ctx.font = "500 13px system-ui, sans-serif";
     ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
-    ctx.fillText(`M: sound ${muted ? "off" : "on"} · R: restart`, viewWidth - 16, 28);
+    // On a touch screen the buttons for these are in that corner.
+    if (!this.touch) ctx.fillText(`M: sound ${muted ? "off" : "on"} · R: restart`, viewWidth - 16, 28);
 
     if (world.won || world.lost) {
       ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
