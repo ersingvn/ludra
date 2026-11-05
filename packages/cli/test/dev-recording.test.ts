@@ -172,7 +172,8 @@ describe("a person playing in a real browser", { skip: browser ? false : "needs 
     });
     assert.equal(recording.takes.length, 2, JSON.stringify(recording.takes.map((t) => [t.end, t.frames])));
     const [first, second] = recording.takes;
-    assert.equal(first!.end, "restarted");
+    const told = (take: Recording["takes"][number]) => JSON.stringify({ end: take?.end, frames: take?.frames, deaths: take?.deaths, inputs: take?.inputs.slice(0, 300) });
+    assert.equal(first!.end, "restarted", `first take: ${told(first)}`);
     assert.ok(second!.end === undefined || second!.end === "stopped", `second take ended ${second!.end}`);
     assert.deepEqual(first!.marks.map((m) => m.kind), ["hard", "note"]);
     assert.equal(first!.marks[1]!.text, "the jump felt floaty");
@@ -193,7 +194,14 @@ describe("a person playing in a real browser", { skip: browser ? false : "needs 
       await sleep(3000);
       await page.up("ArrowRight", "ArrowRight");
       // Played until long enough in frames, however fast this machine draws.
-      await until("600 frames on disk", () => (onDisk()?.takes[0]?.frames ?? 0) >= 600, 180_000);
+      const start = Date.now();
+      try {
+        await until("600 frames on disk", () => (onDisk()?.takes[0]?.frames ?? 0) >= 600, 180_000);
+      } catch (err) {
+        const take = onDisk()?.takes[0];
+        const fps = await page.evaluate(`new Promise((done) => { let n = 0; const t = performance.now(); const f = () => (++n, performance.now() - t < 2000 ? requestAnimationFrame(f) : done(n / 2)); requestAnimationFrame(f); })`);
+        throw new Error(`${(err as Error).message} After ${Math.round((Date.now() - start) / 1000)} s: ${JSON.stringify({ end: take?.end, frames: take?.frames, deaths: take?.deaths?.length, drawnPerSecond: fps })}`);
+      }
     });
     assert.ok(recording.takes[0]!.frames > 500, `played ${recording.takes[0]!.frames} frames`);
     const { code, report } = replay(file);
