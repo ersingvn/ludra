@@ -55,17 +55,20 @@ class Page {
     return answer.result?.value;
   }
 
-  private key(type: string, code: string, key: string, text?: string) {
-    const windowsVirtualKeyCode = key.length === 1 ? key.toUpperCase().charCodeAt(0) : { ArrowRight: 39, ArrowLeft: 37 }[key] ?? 0;
-    return this.send("Input.dispatchKeyEvent", { type, code, key, windowsVirtualKeyCode, ...(text ? { text } : {}) });
+  /**
+   * A key event sent to the page's own handlers. Not through DevTools' Input domain: on a CI
+   * machine drawing 4 frames a second, that queue held keys back for seconds or lost them.
+   */
+  private key(type: "keydown" | "keyup", code: string, key: string) {
+    return this.evaluate(`window.dispatchEvent(new KeyboardEvent(${JSON.stringify(type)}, { code: ${JSON.stringify(code)}, key: ${JSON.stringify(key)}, bubbles: true, cancelable: true }))`);
   }
 
   down(code: string, key: string) {
-    return this.key("keyDown", code, key);
+    return this.key("keydown", code, key);
   }
 
   up(code: string, key: string) {
-    return this.key("keyUp", code, key);
+    return this.key("keyup", code, key);
   }
 
   async tap(code: string, key: string) {
