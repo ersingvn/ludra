@@ -163,7 +163,14 @@ const replay = (file: string) => {
   return { code: result.status, report: JSON.parse(result.stdout) as { ok: boolean; takes: { replay: { status: string; leftBetween?: number[] } }[] } };
 };
 
-describe("a person playing in a real browser", { skip: browser ? false : "needs Chrome, Edge or Chromium" }, () => {
+/**
+ * A real Chrome playing in real time. GitHub's Windows and macOS machines have no GPU and draw a game
+ * at 1-5 frames a second, too slow to play it; there it runs only on Linux CI (and on any machine
+ * locally). Node's side of determinism is checked on every OS by the golden-hash tests.
+ */
+const skip = !browser ? "needs Chrome, Edge or Chromium" : process.env.CI && process.platform !== "linux" ? "real-time browser play runs on Linux CI only" : false;
+
+describe("a person playing in a real browser", { skip }, () => {
   it("is recorded in Chrome and played again in Node, frame for frame, keys, marks and restart included", { timeout: 300_000 }, async () => {
     const { dir, recording, file } = await session(join(ROOT, "packages/cli/templates/platformer"), 5801, 2, async (page) => {
       await page.evaluate(`window.prompt = () => "the jump felt floaty"`);
