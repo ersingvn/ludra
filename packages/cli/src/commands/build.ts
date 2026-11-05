@@ -7,13 +7,11 @@ import { CliError, gameActions, isInside, listScenes, loadGame, loadProject, rea
 import { enginePaths, MEDIA_TYPES } from "../server.ts";
 import { gltfFiles, ModulePacker, normalizePath, scriptSafe, zip } from "../pack.ts";
 
-export interface BuildResult {
+/** A game packed into a page, in memory. */
+export interface PackedGame {
   /** The page, and the zip that holds it. */
-  html: string;
-  zip: string;
-  /** Bytes of each. */
-  htmlBytes: number;
-  zipBytes: number;
+  page: Buffer;
+  zip: Buffer;
   scenes: string[];
   scripts: string[];
   assets: string[];
@@ -21,8 +19,27 @@ export interface BuildResult {
   notes: string[];
 }
 
-/** Everything a game is, in one HTML file: engine, scenes, scripts and assets. */
+export interface BuildResult extends Omit<PackedGame, "page" | "zip"> {
+  /** Where the page and the zip were written. */
+  html: string;
+  zip: string;
+  htmlBytes: number;
+  zipBytes: number;
+}
+
+/** Packs a game into one HTML file and writes it, and a zip of it, to `outDir`. */
 export async function buildGame(project: Project, outDir: string): Promise<BuildResult> {
+  const { page, zip: packed, ...rest } = await packGame(project);
+  mkdirSync(outDir, { recursive: true });
+  const htmlFile = join(outDir, "index.html");
+  writeFileSync(htmlFile, page);
+  const zipFile = join(outDir, `${slug(project.config.name)}-web.zip`);
+  writeFileSync(zipFile, packed);
+  return { html: htmlFile, zip: zipFile, htmlBytes: page.length, zipBytes: packed.length, ...rest };
+}
+
+/** Everything a game is, in one HTML file: engine, scenes, scripts and assets. */
+export async function packGame(project: Project): Promise<PackedGame> {
   // Every scene the game can reach, checked as `ludra check` would, scripts too: a build never ships an error.
   const scenes: Record<string, SceneDef> = {};
   const failed: string[] = [];
@@ -162,14 +179,8 @@ ${packer.html(startName)}
 </html>
 `;
 
-  mkdirSync(outDir, { recursive: true });
-  const htmlFile = join(outDir, "index.html");
   const page = Buffer.from(html, "utf8");
-  writeFileSync(htmlFile, page);
-  const zipFile = join(outDir, `${slug(project.config.name)}-web.zip`);
-  const packed = zip([{ name: "index.html", data: page }]);
-  writeFileSync(zipFile, packed);
-  return { html: htmlFile, zip: zipFile, htmlBytes: page.length, zipBytes: packed.length, scenes: Object.keys(scenes), scripts, assets: [...assets.keys()], notes };
+  return { page, zip: zip([{ name: "index.html", data: page }]), scenes: Object.keys(scenes), scripts, assets: [...assets.keys()], notes };
 }
 
 export async function build(dir: string, options: { out?: string; json?: boolean }): Promise<number> {
@@ -193,7 +204,7 @@ const ADDON_CALL = /\baddon\(\s*["'`]([^"'`$]+)["'`]\s*\)/g;
 /** `addon(name)`, with anything but a string literal. */
 const ADDON_BY_VARIABLE = /\baddon\(\s*[^"'`\s)]/;
 
-function megabytes(bytes: number): string {
+export function megabytes(bytes: number): string {
   return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
