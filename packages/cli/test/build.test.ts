@@ -7,10 +7,13 @@ import { describe, it } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { crc32, inflateRawSync } from "node:zlib";
 import { findBrowser } from "../src/headless.ts";
+import { oneLiveBrowser } from "./live-browser.ts";
 import { ModulePacker, normalizePath, scriptSafe, zip } from "../src/pack.ts";
 
 const CLI = fileURLToPath(new URL("../src/index.ts", import.meta.url));
 const browser = findBrowser();
+/** Real Chrome on GitHub's Windows and macOS machines draws a game at 1-5 fps: as for recordings, only Linux CI plays one. */
+const live = !browser ? "needs Chrome, Edge or Chromium" : process.env.CI && process.platform !== "linux" ? "real browser play runs on Linux CI only" : false;
 
 function run(...args: string[]) {
   const result = spawnSync(process.execPath, ["--conditions=ludra-dev", "--no-warnings", CLI, ...args], { encoding: "utf8" });
@@ -171,7 +174,7 @@ describe("ludra build", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("plays from file:// with nothing else around: scripts, images and the next scene", { skip: browser ? false : "needs Chrome, Edge or Chromium", timeout: 240_000 }, async () => {
+  it("plays from file:// with nothing else around: scripts, images and the next scene", { skip: live, timeout: 240_000 }, () => oneLiveBrowser(async () => {
     const dir = twoSceneGame();
     assert.equal(run("build", dir).code, 0);
     const page = await open(join(dir, "build", "index.html"));
@@ -183,7 +186,7 @@ describe("ludra build", () => {
       await page.close();
       rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     }
-  });
+  }));
 });
 
 /** A side-view game whose script tells the page where the player is and whether action is held. */
@@ -197,8 +200,8 @@ function controlsGame(): string {
   });
 }
 
-describe("controls besides the keyboard", { skip: browser ? false : "needs Chrome, Edge or Chromium" }, () => {
-  it("touch buttons appear on a phone, move and act; a gamepad's stick moves too", { timeout: 240_000 }, async () => {
+describe("controls besides the keyboard", { skip: live }, () => {
+  it("touch buttons appear on a phone, move and act; a gamepad's stick moves too", { timeout: 240_000 }, () => oneLiveBrowser(async () => {
     const dir = controlsGame();
     assert.equal(run("build", dir).code, 0);
     // The page's own Gamepad API, answered from a value the test sets.
@@ -240,7 +243,7 @@ describe("controls besides the keyboard", { skip: browser ? false : "needs Chrom
       await page.close();
       rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     }
-  });
+  }));
 });
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
