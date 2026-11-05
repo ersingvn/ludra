@@ -3,6 +3,8 @@ import { basename, join, resolve } from "node:path";
 import { findPlayer, fuzz, InputScript, isSoundPreset, measureWindows, runTest, World, type SceneDef, type Script, type TestCase, type TestResult } from "@ludra/core";
 import { colorsOfProject, hasLeftPalette, missingFromDirection, offPalette, readDirection } from "../direction.ts";
 import { paint } from "../format.ts";
+import { collectFeedback } from "./feedback.ts";
+import { describeMark } from "./replay.ts";
 import { captureScreenshots, findBrowser } from "../headless.ts";
 import { decodePng } from "../png.ts";
 import { closeEnough, isClear, measurePresence, TINY_SHARE, type Presence } from "../readability.ts";
@@ -16,7 +18,7 @@ import { areAlike, averageProfile, hueOverlap, hueProfile, repeatedTiles } from 
  * game is called done; ideas are worth considering.
  */
 
-type Area = "proof" | "fair" | "feel" | "looks" | "readable" | "identity";
+type Area = "proof" | "fair" | "feel" | "looks" | "readable" | "players" | "identity";
 type Level = "issue" | "idea";
 
 export interface Finding {
@@ -35,6 +37,7 @@ const AREAS: Record<Area, string> = {
   feel: "Feel: does every moment answer the player?",
   looks: "Looks: does it have a style of its own?",
   readable: "Readable: can a player see what matters?",
+  players: "Players: what did people say when they played it?",
   identity: "Identity: is it a game, or a project folder?",
 };
 
@@ -91,6 +94,7 @@ export async function review(dir: string, options: { json?: boolean; strict?: bo
   }
   if (!options.fast) await reviewReadability(project, scenes, add);
   reviewDirection(project, add);
+  reviewPlayers(project, add);
 
   // Identity.
   const folder = basename(project.dir);
@@ -106,6 +110,32 @@ export async function review(dir: string, options: { json?: boolean; strict?: bo
     print(project, findings, issues, ideas);
   }
   return options.strict && issues > 0 ? 1 : 0;
+}
+
+/**
+ * What people said while playing, on the game as it is now: a mark on an older version may be
+ * about something already changed. Only `ludra feedback` shows those.
+ */
+function reviewPlayers(project: Project, add: Add): void {
+  const { sessions, scenes } = collectFeedback(project);
+  if (sessions === 0) {
+    add("idea", "players", "R_NO_PLAYTEST", "recordings/", "Nobody has played this game yet, as far as Ludra knows.", "Have a person play it with `ludra dev` and mark moments with 1 2 3 4 N, then read `ludra feedback`.");
+    return;
+  }
+  for (const scene of scenes) {
+    for (const crash of scene.crashes) {
+      if (crash.count > crash.older) add("issue", "proof", "R_PLAYER_CRASH", scene.scene, `A player's run crashed: ${crash.error}`, `See it with \`${crash.replay}\`, and keep it fixed with --test.`);
+    }
+    const felt = scene.marks.filter((m) => m.kind !== "great" && m.count > m.older);
+    if (felt.length > 0) {
+      const count = felt.reduce((sum, m) => sum + m.count - m.older, 0);
+      add("idea", "players", "R_PLAYER_MARKS", scene.scene, `Players marked ${count} moment${count === 1 ? "" : "s"} on this version: ${list(felt.map((m) => describeMark(m.kind)))}.`, "Read `ludra feedback`, see each moment with its command, and change the game there.");
+    }
+    const loved = scene.marks.filter((m) => m.kind === "great" && m.count > m.older);
+    if (loved.length > 0) {
+      add("idea", "players", "R_PLAYER_LOVED", scene.scene, `Players loved ${loved.reduce((sum, m) => sum + m.count - m.older, 0)} moment(s) here.`, "Keep them as they are, and make more of what worked. `ludra feedback` has where.");
+    }
+  }
 }
 
 function reviewScene(project: Project, info: SceneInfo, hasTests: boolean, add: (level: Level, area: Area, code: string, where: string, message: string, fix: string) => void): void {
@@ -192,7 +222,7 @@ const FUZZ_SECONDS = 4;
 function reviewFairness(info: SceneInfo, add: Add, play: boolean): void {
   const { label, game, results, cases } = info;
   const make = () => new World(game.scene, { scripts: game.scripts });
-  const route = winRoute(results);
+  const route = winRoute(results, cases);
   const inputs = route >= 0 ? cases[route]?.inputs : undefined;
   if (inputs) {
     const script = InputScript.parse(inputs);
@@ -226,8 +256,9 @@ function reviewFairness(info: SceneInfo, add: Add, play: boolean): void {
 }
 
 /** The first passing test that wins, whose inputs are a real way through the scene. */
-function winRoute(results: TestResult[]): number {
-  return results.findIndex((r) => r.pass && r.results.some((a) => /^won == true\b/.test(a.source.replace(/\s+/g, " "))));
+function winRoute(results: TestResult[], cases: TestCase[]): number {
+  // A person's recorded run isn't the level's intended route, and may start with a carry.
+  return results.findIndex((r, i) => r.pass && !cases[i]?.recording && r.results.some((a) => /^won == true\b/.test(a.source.replace(/\s+/g, " "))));
 }
 
 interface Subject {
@@ -265,7 +296,7 @@ async function reviewReadability(project: Project, scenes: SceneInfo[], add: Add
   for (const info of scenes) {
     const subjects = subjectsOf(info);
     if (subjects.length === 0) continue;
-    const route = winRoute(info.results);
+    const route = winRoute(info.results, info.cases);
     const inputs = (route >= 0 ? info.cases[route]?.inputs : undefined) ?? "";
     const length = InputScript.parse(inputs).totalFrames;
     const frames = [...new Set([MOMENT, ...[1, 2].map((n) => Math.max(MOMENT, Math.floor((length * n) / 3)))])];

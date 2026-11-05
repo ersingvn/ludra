@@ -7,12 +7,15 @@ import { InputScript } from "./input.ts";
 import { LABEL_HEIGHT, layoutLabels, type Label } from "./labels.ts";
 import { ParticleSystem } from "./particles.ts";
 import { pixelText } from "./pixelfont.ts";
+import { MARK_LABELS, Recorder, type MarkKind } from "./recording.ts";
 import { NoWebGL, PostFx } from "./postfx.ts";
 import type { DrawContext, DrawEvent, Script } from "./script.ts";
 import { FIXED_DT } from "./time.ts";
 import type { Body } from "./components.ts";
 import type { Action, PostFxDef, SceneDef } from "./types.ts";
 import { World, type Entity, type GameEvent } from "./world.ts";
+
+export { Recorder };
 
 const KEYMAP: Record<string, Action> = {
   ArrowLeft: "left",
@@ -28,6 +31,20 @@ const KEYMAP: Record<string, Action> = {
   KeyX: "action",
   Enter: "action",
 };
+
+/** Keys a player marks a moment with, when the session is being recorded. N asks for their own words. */
+const MARK_KEYS: Record<string, MarkKind> = {
+  Digit1: "hard",
+  Numpad1: "hard",
+  Digit2: "boring",
+  Numpad2: "boring",
+  Digit3: "confusing",
+  Numpad3: "confusing",
+  Digit4: "great",
+  Numpad4: "great",
+};
+/** Milliseconds a mark's confirmation stays on screen. */
+const TOAST_MS = 1200;
 
 /** Longest frame gap we catch up on, so a backgrounded tab doesn't fast-forward. */
 const MAX_FRAME_TIME = 0.25;
@@ -92,6 +109,8 @@ export interface GameOptions {
    * `async () => (await import("@ludra/three")).createRenderer3D`.
    */
   loadRenderer3D?: () => Promise<Renderer3DFactory>;
+  /** Writes down the session, and turns on the keys that mark moments. `ludra dev` passes one. */
+  recorder?: Recorder;
 }
 
 /** A 3D scene's renderer, or undefined for 2D. */
@@ -253,6 +272,8 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
 
   type Carry = { score: number; deaths: number; lives: number | undefined };
   let scene = firstScene;
+  /** The scene's path; undefined for the entry scene. */
+  let scenePath: string | undefined;
   let startCarry: Carry | undefined;
   let view: View;
   let world: World;
@@ -266,10 +287,11 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
   let soundEvents = 0;
   const soundLocals = new Map<string, Record<string, unknown>>();
 
-  const enter = async (next: SceneDef, carry: Carry | undefined) => {
+  const enter = async (next: SceneDef, carry: Carry | undefined, path?: string) => {
     const { images, shader } = await loadScene(next, options, scripts);
     await usePhysics(next, options);
     scene = next;
+    scenePath = path;
     startCarry = carry;
     view?.renderer?.dispose();
     view = new View(next, images, await useRenderer3D(next, options, canvas.width, canvas.height));
@@ -282,6 +304,7 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
     exitSince = undefined;
     try {
       world = new World(next, { scripts, carry });
+      options.recorder?.begin(world, path, carry);
     } catch (err) {
       crash = message(err);
       world = new World({ ...next, entities: [] });
@@ -298,6 +321,7 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
       return;
     }
     world = new World(scene, { scripts, carry: startCarry });
+    options.recorder?.begin(world, scenePath, startCarry);
     view.reset(world);
     sounds.setScene(scene.sounds, scene.music);
     soundEvents = 0;
@@ -312,7 +336,7 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
     const carry = { score: world.score, deaths: world.deaths, lives: world.lives };
     options
       .loadScene(path)
-      .then((next) => enter(next, carry))
+      .then((next) => enter(next, carry, path))
       .catch((err: unknown) => {
         crash = `Could not load the next scene "${path}": ${message(err)}`;
       })
@@ -322,8 +346,25 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
   const held = new Set<Action>();
   // Keys pressed since the last step. A tap shorter than one frame still reaches the simulation.
   const tapped = new Set<Action>();
+  let toast: { text: string; until: number } | undefined;
+  const mark = (kind: MarkKind, text?: string) => {
+    options.recorder?.mark(world, kind, text);
+    toast = { text: `marked: ${text ?? MARK_LABELS[kind]}`, until: performance.now() + TOAST_MS };
+  };
   const onKeyDown = (event: KeyboardEvent) => {
     sounds.unlock();
+    if (options.recorder && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      const kind = MARK_KEYS[event.code];
+      if (kind) return mark(kind);
+      if (event.code === "KeyN") {
+        // A dialog stops the page, so the game waits while they write. It also hides keyups.
+        const text = window.prompt("What do you want to say about this moment?")?.trim();
+        held.clear();
+        tapped.clear();
+        if (text) mark("note", text);
+        return;
+      }
+    }
     if (event.code === "KeyR") return restart();
     if (event.code === "Backquote" && !event.repeat) {
       debug = !debug;
@@ -356,12 +397,15 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
     accumulator += Math.min(MAX_FRAME_TIME, (now - last) / 1000);
     last = now;
     while (accumulator >= FIXED_DT && !crash && !loading) {
+      const input = tapped.size > 0 ? new Set([...held, ...tapped]) : held;
       try {
-        world.step(tapped.size > 0 ? new Set([...held, ...tapped]) : held);
+        world.step(input);
+        options.recorder?.step(world, input);
       } catch (err) {
         // A script threw: freeze the game and show why, instead of failing silently.
         crash = message(err);
         console.error("[ludra]", err);
+        options.recorder?.crash(world, input, crash);
       }
       tapped.clear();
       view.step(world, (sound) => sounds.play(sound));
@@ -418,6 +462,7 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
       ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     }
     if (crash) drawCrash(ctx, crash);
+    if (toast && now < toast.until) drawToast(ctx, toast.text);
     screen.present(world.time);
     raf = requestAnimationFrame(frame);
   };
@@ -440,6 +485,8 @@ export interface CaptureOptions extends GameOptions {
   camera?: CameraView;
   /** Also draws each frame once per group with those entities left out, to see what they add. */
   hide?: readonly (readonly string[])[];
+  /** What the run starts with from the scene before, as a recorded take did. */
+  carry?: { score?: number; deaths?: number; lives?: number };
 }
 
 export interface CapturedFrame {
@@ -475,7 +522,7 @@ export async function captureFrames(canvas: HTMLCanvasElement, scene: SceneDef, 
     if (!view.renderer) throw new Error("A camera view only works on 3D scenes; 2D scenes always show the whole frame their camera sees.");
     view.renderer.view = options.camera;
   }
-  const world = new World(scene, { scripts });
+  const world = new World(scene, { scripts, carry: options.carry });
   const script = InputScript.parse(options.inputs ?? "");
   const wanted = new Set(options.frames);
   const last = Math.max(0, ...options.frames);
@@ -506,6 +553,21 @@ export async function captureFrames(canvas: HTMLCanvasElement, scene: SceneDef, 
     view.step(world, () => {});
   }
   return captured;
+}
+
+/** Tells the player their mark was kept, without getting in the way of the game. */
+function drawToast(ctx: CanvasRenderingContext2D, text: string): void {
+  ctx.save();
+  ctx.font = "600 15px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const width = ctx.measureText(text).width + 28;
+  const x = ctx.canvas.width / 2;
+  ctx.fillStyle = "rgba(10, 12, 18, 0.8)";
+  ctx.fillRect(x - width / 2, 14, width, 30);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(text, x, 29);
+  ctx.restore();
 }
 
 function drawCrash(ctx: CanvasRenderingContext2D, message: string): void {

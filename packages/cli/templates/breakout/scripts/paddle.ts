@@ -8,7 +8,7 @@ export default {
   touch({ self, world, params }, other) {
     if (other.id !== params.ball) return;
     const offset = Math.max(-1, Math.min(1, (other.x - self.x) / (self.width / 2)));
-    const speed = Math.hypot(other.vx, other.vy) || 1;
+    const speed = Math.sqrt(other.vx * other.vx + other.vy * other.vy) || 1;
     other.vx = offset * speed * 0.8;
     other.vy = -Math.sqrt(speed * speed - other.vx * other.vx);
     world.emit("paddle-hit");

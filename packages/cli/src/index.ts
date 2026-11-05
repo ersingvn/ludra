@@ -4,6 +4,8 @@ import { add, blocks } from "./commands/blocks.ts";
 import { check } from "./commands/check.ts";
 import { components } from "./commands/components.ts";
 import { dev } from "./commands/dev.ts";
+import { feedback } from "./commands/feedback.ts";
+import { replay } from "./commands/replay.ts";
 import { diff } from "./commands/diff.ts";
 import { fuzz } from "./commands/fuzz.ts";
 import { inspect } from "./commands/inspect.ts";
@@ -39,6 +41,7 @@ Usage
       --screenshot 1s,2.5s,end                 Save real rendered frames as PNGs (needs Chrome, Edge or Chromium)
       --sheet 0.5s                             One PNG of the whole run: a frame every 0.5s and the last, each
                                                labelled with its time and the events since the one before
+      --from 3s                                Start the --sheet here instead of at the beginning
       --camera map                             3D: draw the frames as a map, the whole level from above with
                                                each entity's id; or 0,20,12@0,0,0 from a point at a point,
                                                or 0,20,12@player from a point at an entity
@@ -79,7 +82,17 @@ Usage
   ludra add <block> [folder] --at x,y          Add a block: entities, scripts, art and effects
       --id name                                Id prefix for its entities (default: the block name)
       --force                                  Replace files you changed that the block also ships
-  ludra dev [folder] [--port 5173]             Play the game in the browser with live reload
+  ludra dev [folder] [--port 5173]             Play the game in the browser with live reload. Records each session
+                                               in recordings/, and 1 2 3 4 N mark how a moment felt
+      --no-record                              Don't record
+  ludra feedback [folder] [--json]             What players felt: marks, deaths and where they stopped, by scene
+  ludra replay <recording|folder> [options]    Play a recording again and show each take; exit 1 when one no longer
+                                               plays out the same. A folder means its newest recording
+      --take 2                                 Only this take (numbered from 1)
+      --mark 1                                 Draw the moments around this mark of the take, as a contact sheet
+      --test                                   Turn takes into tests in tests/recordings.test.json
+      --sheet, --screenshot, --debug, --out    As in ludra play, for one take
+      --json                                   Machine-readable output
 
 Folder defaults to the current directory.`;
 
@@ -117,6 +130,11 @@ async function main(argv: string[]): Promise<number> {
       sessions: { type: "string" },
       seconds: { type: "string" },
       "no-softlocks": { type: "boolean" },
+      "no-record": { type: "boolean" },
+      take: { type: "string" },
+      test: { type: "boolean" },
+      mark: { type: "string" },
+      from: { type: "string" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -145,6 +163,10 @@ async function main(argv: string[]): Promise<number> {
       return components(target, values);
     case "dev":
       return dev(target ?? ".", values);
+    case "replay":
+      return replay(target ?? ".", values);
+    case "feedback":
+      return feedback(target ?? ".", values);
     case "inspect":
       return inspect(target, values);
     case "diff":

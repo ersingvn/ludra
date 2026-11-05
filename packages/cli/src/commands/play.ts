@@ -27,6 +27,10 @@ export interface PlayOptions {
   columns?: string;
   screenshot?: string;
   sheet?: string;
+  /** Where the --sheet starts. */
+  from?: string;
+  /** What the run starts with from the scene before: a recorded take's. Not a flag. */
+  carry?: { score?: number; deaths?: number; lives?: number };
   camera?: string;
   debug?: boolean;
   out?: string;
@@ -48,7 +52,7 @@ export async function play(dir: string, options: PlayOptions): Promise<number> {
   const frames = secondsToFrames(options.duration ? parse(() => parseDuration(options.duration!)) : defaultDuration(script));
   const every = Math.max(1, secondsToFrames(parse(() => parseDuration(options.every ?? "0.25s"))));
 
-  const world = scriptErrors(() => new World(scene, { scripts }));
+  const world = scriptErrors(() => new World(scene, { scripts, carry: options.carry }));
   const camera = options.camera === undefined ? undefined : parseCamera(options.camera, world);
   if (camera && scene.world?.dimensions !== 3) throw new CliError("--camera only works on 3D scenes. A 2D scene's screenshots already show what its camera sees; use --debug to see colliders.");
   if (camera && !options.screenshot && !options.sheet) throw new CliError("--camera changes how frames are drawn, so it needs --screenshot or --sheet.");
@@ -134,8 +138,10 @@ async function takeScreenshots(
   camera: CameraView | undefined,
 ): Promise<{ screenshots?: Screenshot[]; sheet?: Sheet }> {
   const shots = options.screenshot ? screenshotFrames(options.screenshot, lastFrame) : [];
-  const sheetFrames = options.sheet ? sheetFramesAt(options.sheet, lastFrame) : [];
-  const sheetEvents = sheetFrames.map((frame, i) => eventsBetween(events, i === 0 ? -1 : sheetFrames[i - 1]!, frame));
+  const first = options.from ? secondsToFrames(parse(() => parseDuration(options.from!))) : 0;
+  if (first >= lastFrame && options.sheet) throw new CliError(`--from ${options.from} is at or after the end of the run (${fixed(lastFrame / 60, 2)}s).`);
+  const sheetFrames = options.sheet ? sheetFramesAt(options.sheet, first, lastFrame) : [];
+  const sheetEvents = sheetFrames.map((frame, i) => eventsBetween(events, i === 0 ? first - 1 : sheetFrames[i - 1]!, frame));
   const frames = [...new Set([...shots, ...sheetFrames])].sort((a, b) => a - b);
 
   const outDir = resolve(project.dir, options.out ?? "screenshots");
@@ -143,6 +149,7 @@ async function takeScreenshots(
   const captured = await captureScreenshots(project, {
     scene: options.scene,
     inputs: options.inputs ?? "",
+    carry: options.carry,
     frames,
     debug: options.debug,
     camera,
@@ -201,15 +208,15 @@ function screenshotFrames(list: string, lastFrame: number): number[] {
   });
 }
 
-/** Frame 0, every interval after it, and the last frame. */
-function sheetFramesAt(interval: string, lastFrame: number): number[] {
+/** The first frame, every interval after it, and the last frame. */
+function sheetFramesAt(interval: string, first: number, lastFrame: number): number[] {
   const step = secondsToFrames(parse(() => parseDuration(interval)));
   if (step < 1) throw new CliError(`--sheet ${interval} is shorter than one frame. Use an interval like 0.5s.`);
   const frames: number[] = [];
-  for (let frame = 0; frame < lastFrame; frame += step) frames.push(frame);
+  for (let frame = first; frame < lastFrame; frame += step) frames.push(frame);
   frames.push(lastFrame);
   if (frames.length > MAX_SHEET_FRAMES) {
-    const fits = Math.ceil(lastFrame / 60 / (MAX_SHEET_FRAMES - 1) / 0.05) * 0.05;
+    const fits = Math.ceil((lastFrame - first) / 60 / (MAX_SHEET_FRAMES - 1) / 0.05) * 0.05;
     throw new CliError(`--sheet ${interval} gives ${frames.length} frames; a sheet holds at most ${MAX_SHEET_FRAMES}. Use --sheet ${fixed(fits, 2)}s or longer, or a shorter --duration.`);
   }
   return frames;

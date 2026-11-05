@@ -27,7 +27,9 @@ ludra new my-game
 | `ludra play [folder]` | Deterministic headless run: timeline, events, ASCII map |
 | `ludra test [folder]` | Scripted inputs plus assertions such as `won == true` or `deaths == 0` |
 | `ludra components [name]` | Reference for every component, field and effect |
-| `ludra dev [folder]` | Browser runtime with keyboard controls, sound and live reload |
+| `ludra dev [folder]` | Browser runtime with keyboard controls, sound and live reload. Records each session, and the player marks moments with 1 2 3 4 N |
+| `ludra feedback [folder]` | What players felt, scene by scene: marks, deaths, where they stopped, crashes |
+| `ludra replay <recording\|folder>` | Play a recording again, see a marked moment, or turn takes into tests with `--test` |
 
 Every command accepts `--json`. Requires Node.js 22.18 or newer.
 

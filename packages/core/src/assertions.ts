@@ -195,6 +195,10 @@ export interface TestCase {
   inputs?: string;
   /** Run length, e.g. "3s". Defaults to the inputs plus one second, or the latest `at`. */
   duration?: string | number;
+  /** What the run starts with from the scene before, as a recorded take did. */
+  carry?: { score?: number; deaths?: number; lives?: number };
+  /** The session this was recorded from: a person's run, not a route written to prove something. */
+  recording?: string;
   assert: string[];
 }
 
@@ -231,7 +235,7 @@ export function runTest(scene: SceneDef, test: TestCase, options: WorldOptions =
   const snapshots = new Map<number, WorldSnapshot>();
   let world: World;
   try {
-    world = new World(scene, options);
+    world = new World(scene, test.carry ? { ...options, carry: test.carry } : options);
     simulate(world, script, frames, (w) => {
       if (wanted.has(w.frame)) snapshots.set(w.frame, w.snapshot());
     });

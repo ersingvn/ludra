@@ -939,7 +939,7 @@ export class World {
       const dx = (held.has("right") ? 1 : 0) - (held.has("left") ? 1 : 0);
       const dz = (held.has("down") ? 1 : 0) - (held.has("up") ? 1 : 0);
       // Diagonals walk at the same speed as straight lines.
-      const length = Math.hypot(dx, dz) || 1;
+      const length = Math.sqrt(dx * dx + dz * dz) || 1;
       b.vx = (dx / length) * c.speed;
       b.vz = (dz / length) * c.speed;
       // Facing -z is a turn of 0; walking right (+x) is -90 (turning right is clockwise from above).
@@ -981,7 +981,7 @@ export class World {
       if (t.directions === "y") dx = 0;
       if (t.directions === "4" && dx !== 0) dy = 0;
       // Diagonals move at the same speed as straight lines.
-      const length = Math.hypot(dx, dy) || 1;
+      const length = Math.sqrt(dx * dx + dy * dy) || 1;
       b.vx = (dx / length) * t.speed;
       b.vy = (dy / length) * t.speed;
     }
