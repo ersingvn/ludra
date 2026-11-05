@@ -2,12 +2,14 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
+  actionsUsed,
   closestName,
   collectAssetPaths,
   findRuntimeImports,
   physicsEngineName,
   validateScene,
   validateScriptModule,
+  type Action,
   type Diagnostic,
   type SceneDef,
   type Script,
@@ -366,4 +368,14 @@ export function requireScene(project: Project, scenePath?: string): SceneDef {
     throw new CliError(`${formatDiagnostics(diagnostics, label)}\n\nFix the errors above (see \`ludra check\`) and try again.`);
   }
   return scene;
+}
+
+/** The actions a game's players need, across every scene and script: what on-screen controls show. */
+export function gameActions(project: Project): Action[] {
+  const scenes = listScenes(project).map((path) => readScene(project, path).scene).filter((scene): scene is SceneDef => !!scene);
+  const sources = [...new Set(scenes.flatMap((scene) => scriptPaths(project, scene)))]
+    .map((path) => resolve(project.dir, path))
+    .filter((file) => existsSync(file))
+    .map((file) => readFileSync(file, "utf8"));
+  return actionsUsed(scenes, sources);
 }

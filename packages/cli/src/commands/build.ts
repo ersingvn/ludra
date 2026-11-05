@@ -3,7 +3,7 @@ import { dirname, extname, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { collectAssetPaths, physicsEngineName, type SceneDef } from "@ludra/core";
 import { formatDiagnostics, paint } from "../format.ts";
-import { CliError, isInside, listScenes, loadGame, loadProject, readScene, scriptPaths, type Project } from "../project.ts";
+import { CliError, gameActions, isInside, listScenes, loadGame, loadProject, readScene, scriptPaths, type Project } from "../project.ts";
 import { enginePaths, MEDIA_TYPES } from "../server.ts";
 import { gltfFiles, ModulePacker, normalizePath, scriptSafe, zip } from "../pack.ts";
 
@@ -122,6 +122,7 @@ await startGame(document.getElementById("game"), game.scenes[game.entry], {
   loadPhysics: async (name) => {${engines.has("rapier") ? `\n    if (name === "rapier") await (await import(${url(paths.physicsEntry)})).loadRapierPhysics();` : ""}${engines.has("rapier3d") ? `\n    if (name === "rapier3d") await (await import(${url(rapier3dModule)})).loadRapier3DPhysics();` : ""}
   },${threeD ? `\n  loadRenderer3D: async () => (await import(${url(paths.threeEntry)})).createRenderer3D,` : ""}
   debugKey: false,
+  actions: ${JSON.stringify(gameActions(project))},
 });
 `;
   const startName = packer.addSource(start, join(project.dir, "__ludra_start__.js"));

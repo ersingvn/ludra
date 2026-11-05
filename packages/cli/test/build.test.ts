@@ -186,6 +186,63 @@ describe("ludra build", () => {
   });
 });
 
+/** A side-view game whose script tells the page where the player is and whether action is held. */
+function controlsGame(): string {
+  const ground = { id: "ground", components: { transform: { x: 480, y: 520 }, body: { type: "static", width: 960, height: 40 }, sprite: { color: "#335" } } };
+  const player = { id: "player", components: { transform: { x: 480, y: 480 }, body: { type: "dynamic", width: 32, height: 32 }, platformer: {}, sprite: { color: "#f80" }, script: { src: "scripts/report.ts" } } };
+  return files({
+    "ludra.json": JSON.stringify({ name: "Controls", entry: "main.scene.json" }),
+    "main.scene.json": JSON.stringify({ entities: [ground, player] }),
+    "scripts/report.ts": `export default { update({ self, input }) { const page = globalThis as Record<string, unknown>; page.px = self.x; page.act = input.held("action"); } };`,
+  });
+}
+
+describe("controls besides the keyboard", { skip: browser ? false : "needs Chrome, Edge or Chromium" }, () => {
+  it("touch buttons appear on a phone, move and act; a gamepad's stick moves too", { timeout: 60_000 }, async () => {
+    const dir = controlsGame();
+    assert.equal(run("build", dir).code, 0);
+    // The page's own Gamepad API, answered from a value the test sets.
+    const page = await open(join(dir, "build", "index.html"), { phone: true, beforeLoad: `navigator.getGamepads = () => globalThis.testPads ?? [];` });
+    // Pointer events on the page, as a touch screen sends them. Not DevTools' touch input, which a slow machine holds back.
+    const touch = (type: string, id: number, where: string) =>
+      page.evaluate(`(() => { const [x, y] = ${where}; const target = document.elementFromPoint(x, y) ?? document.body; target.dispatchEvent(new PointerEvent(${JSON.stringify(type)}, { pointerId: ${id}, pointerType: "touch", isPrimary: ${id === 1}, clientX: x, clientY: y, bubbles: true, cancelable: true })); return true; })()`);
+    const centre = (selector: string, dx = 0) => `(() => { const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return [r.left + r.width / 2 + ${dx}, r.top + r.height / 2]; })()`;
+    const x = async () => (await page.evaluate("globalThis.px")) as number;
+    try {
+      await until(async () => typeof (await page.evaluate("globalThis.px")) === "number", 30_000);
+      assert.equal(await page.evaluate(`document.querySelector(".ludra-touch").hidden`), true, "no buttons before a touch");
+      await touch("pointerdown", 9, "[422, 60]");
+      await touch("pointerup", 9, "[422, 60]");
+      assert.equal(await page.evaluate(`document.querySelector(".ludra-touch").hidden`), false, "buttons once touched");
+      assert.deepEqual(await page.evaluate(`[...document.querySelectorAll(".ludra-touch .b")].map((b) => b.dataset.action)`), ["left", "right", "action", "jump"], "a platformer's moves, and action because the script reads it");
+
+      const start = await x();
+      await touch("pointerdown", 1, centre(".ludra-touch .move", 40));
+      await until(async () => (await x()) > start + 30, 10_000);
+      // Sliding the same finger to the other side runs back.
+      const turned = await x();
+      await touch("pointermove", 1, centre(".ludra-touch .move", -40));
+      await until(async () => (await x()) < turned - 30, 10_000);
+      await touch("pointerup", 1, centre(".ludra-touch .move", -40));
+
+      assert.equal(await page.evaluate("globalThis.act"), false);
+      await touch("pointerdown", 2, centre('.ludra-touch .b[data-action="action"]'));
+      await until(async () => (await page.evaluate("globalThis.act")) === true, 10_000);
+      await touch("pointerup", 2, centre('.ludra-touch .b[data-action="action"]'));
+      await until(async () => (await page.evaluate("globalThis.act")) === false, 10_000);
+
+      const still = await x();
+      await page.evaluate(`globalThis.testPads = [{ connected: true, axes: [0.95, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })) }]`);
+      await until(async () => (await x()) > still + 30, 10_000);
+      await page.evaluate(`globalThis.testPads = []`);
+      assert.deepEqual(page.problems, []);
+    } finally {
+      await page.close();
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    }
+  });
+});
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function until(ready: () => Promise<boolean>, ms: number) {
@@ -197,7 +254,7 @@ async function until(ready: () => Promise<boolean>, ms: number) {
 }
 
 /** A page in headless Chrome, with every error and warning it logs. */
-async function open(file: string) {
+async function open(file: string, setup: { phone?: boolean; beforeLoad?: string } = {}) {
   const profile = mkdtempSync(join(tmpdir(), "ludra-build-browser-"));
   const chrome = spawn(browser!, ["--headless=new", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "--no-first-run", "--mute-audio", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "about:blank"], { stdio: ["ignore", "ignore", "pipe"] });
   let log = "";
@@ -223,6 +280,12 @@ async function open(file: string) {
   const { targetId } = await send("Target.createTarget", { url: "about:blank" });
   const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: true });
   await send("Runtime.enable", {}, sessionId);
+  await send("Page.enable", {}, sessionId);
+  if (setup.phone) {
+    await send("Emulation.setDeviceMetricsOverride", { width: 844, height: 390, deviceScaleFactor: 1, mobile: true }, sessionId);
+    await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 }, sessionId);
+  }
+  if (setup.beforeLoad) await send("Page.addScriptToEvaluateOnNewDocument", { source: setup.beforeLoad }, sessionId);
   await send("Page.navigate", { url: pathToFileURL(file).href }, sessionId);
   return {
     problems,

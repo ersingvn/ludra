@@ -1,5 +1,6 @@
 import { SoundPlayer } from "./audio.ts";
 import { CameraRig } from "./camera.ts";
+import { actionsUsed, Gamepads, TouchControls } from "./controls.ts";
 import { physicsEngineName } from "./engines.ts";
 import { parseFrames, type Sprite } from "./components.ts";
 import { collectAssetPaths } from "./effects.ts";
@@ -118,6 +119,13 @@ export interface GameOptions {
    * `async () => (await import("@ludra/three")).createRenderer3D`.
    */
   loadRenderer3D?: () => Promise<Renderer3DFactory>;
+  /**
+   * The actions the game uses, which on-screen touch controls show. Defaults to what each scene's
+   * player components need; the CLI adds what scripts read.
+   */
+  actions?: readonly Action[];
+  /** On-screen buttons once someone touches the page. Defaults to true. Gamepads always work. */
+  touch?: boolean;
   /** Writes down the session, and turns on the keys that mark moments. `ludra dev` passes one. */
   recorder?: Recorder;
 }
@@ -301,6 +309,7 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
   /** World events the sound hooks have already been given, and their per-entity memory. */
   let soundEvents = 0;
   const soundLocals = new Map<string, Record<string, unknown>>();
+  let touch: TouchControls | undefined;
 
   const enter = async (next: SceneDef, carry: Carry | undefined, path?: string) => {
     const { images, shader } = await loadScene(next, options, scripts);
@@ -310,6 +319,7 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
     startCarry = carry;
     view?.renderer?.dispose();
     view = new View(next, images, await useRenderer3D(next, options, canvas.width, canvas.height));
+    if (!options.actions) touch?.setActions(actionsUsed([next]));
     view.debug = debug;
     sounds.setScene(next.sounds, next.music);
     soundEvents = 0;
@@ -405,14 +415,33 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
   window.addEventListener("keyup", onKeyUp);
   window.addEventListener("blur", onBlur);
 
+  // Gamepads and touch buttons press the same actions as keys. A press since the last frame is a
+  // tap too, so it reaches the simulation even if it's let go before the next step.
+  const gamepads = new Gamepads();
+  if (options.touch !== false && typeof document !== "undefined") {
+    touch = new TouchControls(options.actions ?? actionsUsed([scene]), {
+      restart,
+      mute: () => (sounds.muted = !sounds.muted),
+      touched: () => sounds.unlock(),
+    });
+    document.body.append(touch.root);
+  }
+  let pressedBefore: ReadonlySet<Action> = new Set();
+
   let last = performance.now();
   let accumulator = 0;
   let raf = 0;
   const frame = (now: number) => {
     accumulator += Math.min(MAX_FRAME_TIME, (now - last) / 1000);
     last = now;
+    const pad = gamepads.poll();
+    if (pad.restart) restart();
+    if (pad.mute) sounds.muted = !sounds.muted;
+    const pressed = touch && touch.held.size > 0 ? new Set([...pad.actions, ...touch.held]) : pad.actions;
+    for (const action of pressed) if (!pressedBefore.has(action)) tapped.add(action);
+    pressedBefore = pressed;
     while (accumulator >= FIXED_DT && !crash && !loading) {
-      const input = tapped.size > 0 ? new Set([...held, ...tapped]) : held;
+      const input = tapped.size > 0 || pressed.size > 0 ? new Set([...held, ...pressed, ...tapped]) : held;
       try {
         world.step(input);
         options.recorder?.step(world, input);
@@ -488,6 +517,7 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
     window.removeEventListener("keydown", onKeyDown);
     window.removeEventListener("keyup", onKeyUp);
     window.removeEventListener("blur", onBlur);
+    touch?.dispose();
   };
 }
 
