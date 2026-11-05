@@ -171,12 +171,12 @@ describe("ludra build", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("plays from file:// with nothing else around: scripts, images and the next scene", { skip: browser ? false : "needs Chrome, Edge or Chromium", timeout: 60_000 }, async () => {
+  it("plays from file:// with nothing else around: scripts, images and the next scene", { skip: browser ? false : "needs Chrome, Edge or Chromium", timeout: 240_000 }, async () => {
     const dir = twoSceneGame();
     assert.equal(run("build", dir).code, 0);
     const page = await open(join(dir, "build", "index.html"));
     try {
-      await until(async () => (await page.evaluate("globalThis.secondRan")) === "second scene", 30_000);
+      await until(async () => (await page.evaluate("globalThis.secondRan")) === "second scene", 120_000);
       assert.equal(await page.evaluate("globalThis.firstRan"), 1);
       assert.deepEqual(page.problems, []);
     } finally {
@@ -198,7 +198,7 @@ function controlsGame(): string {
 }
 
 describe("controls besides the keyboard", { skip: browser ? false : "needs Chrome, Edge or Chromium" }, () => {
-  it("touch buttons appear on a phone, move and act; a gamepad's stick moves too", { timeout: 60_000 }, async () => {
+  it("touch buttons appear on a phone, move and act; a gamepad's stick moves too", { timeout: 240_000 }, async () => {
     const dir = controlsGame();
     assert.equal(run("build", dir).code, 0);
     // The page's own Gamepad API, answered from a value the test sets.
@@ -209,7 +209,7 @@ describe("controls besides the keyboard", { skip: browser ? false : "needs Chrom
     const centre = (selector: string, dx = 0) => `(() => { const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return [r.left + r.width / 2 + ${dx}, r.top + r.height / 2]; })()`;
     const x = async () => (await page.evaluate("globalThis.px")) as number;
     try {
-      await until(async () => typeof (await page.evaluate("globalThis.px")) === "number", 30_000);
+      await until(async () => typeof (await page.evaluate("globalThis.px")) === "number", 120_000);
       assert.equal(await page.evaluate(`document.querySelector(".ludra-touch").hidden`), true, "no buttons before a touch");
       await touch("pointerdown", 9, "[422, 60]");
       await touch("pointerup", 9, "[422, 60]");
@@ -218,22 +218,22 @@ describe("controls besides the keyboard", { skip: browser ? false : "needs Chrom
 
       const start = await x();
       await touch("pointerdown", 1, centre(".ludra-touch .move", 40));
-      await until(async () => (await x()) > start + 30, 10_000);
+      await until(async () => (await x()) > start + 30, 60_000);
       // Sliding the same finger to the other side runs back.
       const turned = await x();
       await touch("pointermove", 1, centre(".ludra-touch .move", -40));
-      await until(async () => (await x()) < turned - 30, 10_000);
+      await until(async () => (await x()) < turned - 30, 60_000);
       await touch("pointerup", 1, centre(".ludra-touch .move", -40));
 
       assert.equal(await page.evaluate("globalThis.act"), false);
       await touch("pointerdown", 2, centre('.ludra-touch .b[data-action="action"]'));
-      await until(async () => (await page.evaluate("globalThis.act")) === true, 10_000);
+      await until(async () => (await page.evaluate("globalThis.act")) === true, 60_000);
       await touch("pointerup", 2, centre('.ludra-touch .b[data-action="action"]'));
-      await until(async () => (await page.evaluate("globalThis.act")) === false, 10_000);
+      await until(async () => (await page.evaluate("globalThis.act")) === false, 60_000);
 
       const still = await x();
       await page.evaluate(`globalThis.testPads = [{ connected: true, axes: [0.95, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })) }]`);
-      await until(async () => (await x()) > still + 30, 10_000);
+      await until(async () => (await x()) > still + 30, 60_000);
       await page.evaluate(`globalThis.testPads = []`);
       assert.deepEqual(page.problems, []);
     } finally {

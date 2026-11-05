@@ -37,7 +37,7 @@ export function checkDrawHooks(scene: SceneDef, scripts: ScriptModules, options:
   const reported = new Set<string>();
   const diagnostics: Diagnostic[] = [];
   const g = mockCanvas();
-  const view = { width: world.width, height: world.height, cameraX: 0, cameraY: 0, zoom: 1 };
+  const view = { width: world.width, height: world.height, cameraX: 0, cameraY: 0, zoom: 1, touch: false };
   const locals = new Map<string, Record<string, unknown>>();
 
   for (let frame = 0; frame <= CHECK_FRAMES.at(-1)!; frame++) {

@@ -184,7 +184,8 @@ export interface DrawContext {
   /** Per-entity memory for presentation (trails, tweens). Not part of the game state and not testable. */
   local: Record<string, unknown>;
   /** Visible area: canvas size, camera position (world px at the top-left) and zoom. */
-  view: { width: number; height: number; cameraX: number; cameraY: number; zoom: number };
+  /** `touch`: on-screen buttons are showing, so the player has no keyboard: say "tap", not "press R". */
+  view: { width: number; height: number; cameraX: number; cameraY: number; zoom: number; touch: boolean };
   /** Events that happened in the last `seconds` (default 0.5), optionally only those named `name`. Newest last. */
   recent(name?: string, seconds?: number): DrawEvent[];
   /** An image from the project, e.g. "assets/glow.png". Images in sprites or in string script params are preloaded. */

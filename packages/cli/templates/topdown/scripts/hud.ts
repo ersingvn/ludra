@@ -72,7 +72,8 @@ export default {
     g.font = `400 11px ${TITLE}`;
     g.textAlign = "right";
     g.fillStyle = "rgba(255, 247, 230, 0.4)";
-    g.fillText("M sound  ·  R restart", view.width - 24, view.height - 16);
+    // On a phone, buttons in the corner do these.
+    if (!view.touch) g.fillText("M sound  ·  R restart", view.width - 24, view.height - 16);
 
     if (world.won) {
       const win = recent("win", 1e9).at(-1);

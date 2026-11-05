@@ -68,7 +68,8 @@ export default {
     }
 
     g.textAlign = "right";
-    label(g, "M sound  ·  R restart", view.width - 18, view.height - 14, 13, "rgba(255, 241, 214, 0.75)", 400);
+    // On a phone, buttons in the corner do these.
+    if (!view.touch) label(g, "M sound  ·  R restart", view.width - 18, view.height - 14, 13, "rgba(255, 241, 214, 0.75)", 400);
 
     if (world.won) {
       const end = recent("win", 1e9).at(-1);

@@ -310,6 +310,7 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
   let soundEvents = 0;
   const soundLocals = new Map<string, Record<string, unknown>>();
   let touch: TouchControls | undefined;
+  let touched = false;
 
   const enter = async (next: SceneDef, carry: Carry | undefined, path?: string) => {
     const { images, shader } = await loadScene(next, options, scripts);
@@ -319,6 +320,7 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
     startCarry = carry;
     view?.renderer?.dispose();
     view = new View(next, images, await useRenderer3D(next, options, canvas.width, canvas.height));
+    view.touch = touched;
     if (!options.actions) touch?.setActions(actionsUsed([next]));
     view.debug = debug;
     sounds.setScene(next.sounds, next.music);
@@ -422,7 +424,10 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
     touch = new TouchControls(options.actions ?? actionsUsed([scene]), {
       restart,
       mute: () => (sounds.muted = !sounds.muted),
-      touched: () => sounds.unlock(),
+      touched: () => {
+        sounds.unlock();
+        touched = view.touch = true;
+      },
     });
     document.body.append(touch.root);
   }
@@ -679,6 +684,8 @@ class View {
   private readonly jointOrigins = new Map<string, { x: number; y: number }>();
   /** Draw colliders, sensors, joints and ids over the game. */
   debug = false;
+  /** On-screen touch buttons are showing. */
+  touch = false;
   /** Entities left out of the drawing. The game still runs them. */
   hidden: ReadonlySet<string> = new Set();
   /** Draw without shake, so two drawings of one moment differ only in what was hidden. */
@@ -767,7 +774,7 @@ class View {
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(renderer.canvas, 0, 0, width, height);
     this.drawLabels(ctx, renderer.labels?.(world) ?? []);
-    return { width, height, cameraX: 0, cameraY: 0, zoom: 1 };
+    return { width, height, cameraX: 0, cameraY: 0, zoom: 1, touch: this.touch };
   }
 
   /** Each name beside its point, with a line back to it when the label had to move away. */
@@ -818,7 +825,7 @@ class View {
       cameraY += (this.particles.random() - 0.5) * 2 * this.shake;
     }
 
-    const viewInfo = { width: viewWidth, height: viewHeight, cameraX, cameraY, zoom };
+    const viewInfo = { width: viewWidth, height: viewHeight, cameraX, cameraY, zoom, touch: this.touch };
     ctx.save();
     ctx.scale(zoom, zoom);
     ctx.translate(-cameraX, -cameraY);
@@ -866,7 +873,8 @@ class View {
     ctx.textAlign = "right";
     ctx.font = "500 13px system-ui, sans-serif";
     ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
-    ctx.fillText(`M: sound ${muted ? "off" : "on"} · R: restart`, viewWidth - 16, 28);
+    // On a touch screen the buttons for these are in that corner.
+    if (!this.touch) ctx.fillText(`M: sound ${muted ? "off" : "on"} · R: restart`, viewWidth - 16, 28);
 
     if (world.won || world.lost) {
       ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
