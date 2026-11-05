@@ -86,6 +86,8 @@ Usage
   ludra dev [folder] [--port 5173]             Play the game in the browser with live reload. Records each session
                                                in recordings/, and 1 2 3 4 N mark how a moment felt
       --no-record                              Don't record
+      --studio                                 What Ludra Studio needs: /__ludra/project, /events, /run, and
+                                               ?studio=1 pages that hot-reload in place (docs/studio.md)
   ludra feedback [folder] [--json]             What players felt: marks, deaths and where they stopped, by scene
   ludra build [folder] [--out build] [--json]  The game as one HTML file, and a zip of it for itch.io
   ludra replay <recording|folder> [options]    Play a recording again and show each take; exit 1 when one no longer
@@ -133,6 +135,7 @@ async function main(argv: string[]): Promise<number> {
       seconds: { type: "string" },
       "no-softlocks": { type: "boolean" },
       "no-record": { type: "boolean" },
+      studio: { type: "boolean" },
       take: { type: "string" },
       test: { type: "boolean" },
       mark: { type: "string" },

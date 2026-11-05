@@ -2,15 +2,21 @@ import { paint } from "../format.ts";
 import { CliError, gameActions, loadProject, type Project } from "../project.ts";
 import { RECORDINGS_DIR } from "../recordings.ts";
 import { createGameServer, PROJECT_PREFIX, RECORDING_PATH, SCRIPT_PREFIX } from "../server.ts";
+import { createStudioApi } from "../studio-api.ts";
 
 /** Serves the game for a human to play, records the session, and reloads the page when the scene or its assets change. */
-export function dev(dir: string, options: { port?: string; "no-record"?: boolean }): number {
+export function dev(dir: string, options: { port?: string; "no-record"?: boolean; studio?: boolean }): number {
   const project = loadProject(dir);
   const port = Number(options.port ?? 5173);
   if (!Number.isInteger(port) || port <= 0) throw new CliError(`Invalid --port "${options.port}".`);
 
   const record = !options["no-record"];
-  const { server } = createGameServer(project, (engine) => page(project, engine, record), { record });
+  // --studio: the endpoints Ludra Studio talks to (docs/studio.md). Without it, nothing changes.
+  const studio = options.studio === true;
+  const { server } = createGameServer(project, (engine) => page(project, engine, record, studio), {
+    record,
+    ...(studio ? { studio: (version: () => string) => createStudioApi(project, { version }) } : {}),
+  });
   server.on("error", (err: NodeJS.ErrnoException) => {
     console.error(paint("red", err.code === "EADDRINUSE" ? `Port ${port} is in use. Try --port ${port + 1}.` : err.message));
     process.exit(1);
@@ -23,12 +29,13 @@ export function dev(dir: string, options: { port?: string; "no-record"?: boolean
       console.log(paint("dim", `  Marking a moment: 1 too hard, 2 boring, 3 confusing, 4 love this, N your own words.`));
       console.log(paint("dim", `  Every session is recorded in ${RECORDINGS_DIR}/ (--no-record turns that off). "ludra feedback" shows what players felt.`));
     }
+    if (studio) console.log(paint("dim", `  Studio mode: /__ludra/project, /__ludra/events and /__ludra/run answer, and ?studio=1 hot-reloads in place.`));
     console.log(paint("dim", `  Editing a scene, prefab, script or asset reloads the page. Ctrl+C to stop.`));
   });
   return 0;
 }
 
-function page(project: Project, { browserModule, physicsModule, threeModule, importMap }: { browserModule: string; physicsModule: string; threeModule: string; importMap: string }, record: boolean): string {
+function page(project: Project, { browserModule, physicsModule, threeModule, importMap }: { browserModule: string; physicsModule: string; threeModule: string; importMap: string }, record: boolean, studioServer = false): string {
   const { width, height, pixelated } = project.config.window;
   const title = escapeHtml(project.config.name);
   // A rule on the element, not on one canvas: a postfx scene swaps the canvas for its own.
@@ -56,7 +63,14 @@ function page(project: Project, { browserModule, physicsModule, threeModule, imp
 ${record ? `<div id="marks">Recording · 1 too hard · 2 boring · 3 confusing · 4 love this · N a note</div>` : ""}
 ${importMap}
 <script type="module">
-import { Recorder, startGame } from "${browserModule}";${pixelScript}
+import { connectStudio, Recorder, startGame } from "${browserModule}";${pixelScript}
+// Inside Ludra Studio: no reloads, no recording, and a link to the window around the game.
+const studio = ${studioServer} && new URLSearchParams(location.search).has("studio");
+if (studio) document.getElementById("marks")?.remove();
+// Studio passes its token along to the game page, which needs it for the change stream.
+const token = new URLSearchParams(location.search).get("token");
+const eventsUrl = "/__ludra/events" + (token ? "?token=" + encodeURIComponent(token) : "");
+const toStudio = (type, fields = {}) => window.parent.postMessage({ ludra: 1, type, ...fields }, "*");
 // Rapier is a few MB of WebAssembly: only scenes with "physics": "rapier" (or 3D scenes) load it.
 const loadPhysics = async (name) => {
   if (name === "rapier") await (await import("${physicsModule}")).loadRapierPhysics();
@@ -99,18 +113,71 @@ if (data.ok) {
     versions.set(path, next.version);
     return next.scene;
   };
-  const recorder = ${record} ? startRecorder(data.path, versions) : undefined;
-  await startGame(document.getElementById("game"), data.scene, { assetBase: "${PROJECT_PREFIX}", scriptBase: "${SCRIPT_PREFIX}", scriptPaths, loadScene, loadPhysics, loadRenderer3D, recorder, actions: ${JSON.stringify(gameActions(project))} });
+  const recorder = ${record} && !studio ? startRecorder(data.path, versions) : undefined;
+  // A changed script must load again, not come from the module cache: each hot reload asks for a new copy.
+  let scriptVersion = 0;
+  const loadScript = studio ? (path) => import("${SCRIPT_PREFIX}" + path + "?v=" + scriptVersion) : undefined;
+  let control;
+  await startGame(document.getElementById("game"), data.scene, {
+    assetBase: "${PROJECT_PREFIX}", scriptBase: "${SCRIPT_PREFIX}", scriptPaths, loadScene, loadPhysics, loadRenderer3D, recorder,
+    actions: ${JSON.stringify(gameActions(project))},
+    entryPath: data.path,
+    ...(studio ? { loadScript, onControl: (c) => (control = c) } : {}),
+  });
+  if (studio) {
+    const link = connectStudio(control, window.parent);
+    const HOT = new Set(["prefab", "script", "asset"]);
+    let queue = Promise.resolve();
+    const onChange = (files) => {
+      const paths = files.map((f) => f.path);
+      if (files.some((f) => f.kind === "config" || f.kind === "design")) {
+        link.hot("restarted", control.world.frame, paths, "ludra.json or game.md changed, so the page reloads");
+        setTimeout(() => location.reload(), 50);
+        return;
+      }
+      const relevant = files.filter((f) => HOT.has(f.kind) || (f.kind === "scene" && f.path === control.scenePath));
+      if (relevant.length === 0) return;
+      if (relevant.some((f) => f.kind === "script")) scriptVersion++;
+      queue = queue.then(async () => {
+        const frame = control.world.frame;
+        try {
+          const next = await (await fetch("/__ludra/scene?path=" + encodeURIComponent(control.scenePath))).json();
+          if (!next.ok) {
+            const errors = next.diagnostics.filter((d) => d.severity === "error");
+            link.error(control.scenePath + " doesn't pass check: " + errors.map((d) => d.code + " at " + d.path).join(", "), next.diagnostics);
+            link.hot("rejected", frame, paths, "the changed scene doesn't pass check, so the old version plays on");
+            return;
+          }
+          const done = await control.hot(next.scene);
+          link.hot(done.result, done.frame, paths, done.reason);
+        } catch (err) {
+          link.error(String(err && err.message ? err.message : err));
+          link.hot("rejected", frame, paths, "it couldn't be loaded: " + (err && err.message ? err.message : err));
+        }
+      });
+    };
+    new EventSource(eventsUrl).onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      if (message.type === "change") onChange(message.files);
+    };
+  }
 } else {
   document.getElementById("game").hidden = true;
   const errors = document.getElementById("errors");
   errors.hidden = false;
   errors.textContent = "The scene has errors (run \`ludra check\`):\\n\\n" +
     data.diagnostics.map((d) => d.severity + " " + d.code + " at " + d.path + "\\n  " + d.message + (d.fix ? "\\n  fix: " + d.fix : "")).join("\\n\\n");
+  if (studio) {
+    // Nothing runs yet: say why, and start again once a file changes.
+    toStudio("error", { message: data.path + " doesn't pass check", diagnostics: data.diagnostics });
+    new EventSource(eventsUrl).onmessage = (event) => {
+      if (JSON.parse(event.data).type === "change") location.reload();
+    };
+  }
 }
 
 const version = await (await fetch("/__ludra/version")).text();
-setInterval(async () => {
+if (!studio) setInterval(async () => {
   try {
     if ((await (await fetch("/__ludra/version")).text()) !== version) location.reload();
   } catch {}
