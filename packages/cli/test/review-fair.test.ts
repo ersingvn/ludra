@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { fuzz, World } from "@ludra/core";
+import { loadGame, loadProject } from "../src/project.ts";
 
 /** review's "Fair" area: timing windows of the win test's route, and random play for crashes and softlocks. */
 
@@ -31,5 +33,18 @@ describe("review: fair", () => {
     assert.ok(trap, "R_SOFTLOCK");
     assert.equal(trap.level, "issue");
     assert.ok(!review(fixture("softlock"), "--fast").some((f) => f.code === "R_SOFTLOCK"));
+  });
+
+  test("random play is a fixed amount of work: a slow machine finds what a fast one does", async () => {
+    const { game } = await loadGame(loadProject(fixture("softlock")));
+    assert.ok(game);
+    const make = () => new World(game.scene, { scripts: game.scripts });
+    const fast = fuzz(make, { sessions: 200, seconds: 30, work: 200_000 });
+    // A deadline that is checked often but never reached, and wastes time each check, like a busy machine.
+    const slow = fuzz(make, { sessions: 200, seconds: 30, work: 200_000, deadline: () => { for (let i = 0; i < 2_000; i++) Math.sqrt(i); return false; } });
+    // It stops once the budget is spent, give or take the last held key or search step.
+    assert.ok(fast.outOfWork && fast.work >= 200_000 && fast.work < 201_000, `work ${fast.work}`);
+    assert.deepEqual(slow, fast);
+    assert.equal(fast.softlocks.length, 1);
   });
 });

@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
-import { findPlayer, fuzz, InputScript, isSoundPreset, measureWindows, runTest, World, type SceneDef, type Script, type TestCase, type TestResult } from "@ludra/core";
+import { findPlayer, fuzz, InputScript, isSoundPreset, measureWindows, physicsEngineName, runTest, World, type SceneDef, type Script, type TestCase, type TestResult } from "@ludra/core";
 import { colorsOfProject, hasLeftPalette, missingFromDirection, offPalette, readDirection } from "../direction.ts";
 import { paint } from "../format.ts";
 import { collectFeedback } from "./feedback.ts";
@@ -215,8 +215,15 @@ function reviewScene(project: Project, info: SceneInfo, hasTests: boolean, add: 
   }
 }
 
-/** Seconds of random play per scene, looking for crashes and softlocks. */
-const FUZZ_SECONDS = 4;
+/**
+ * Frames of random play per scene (sessions plus the softlock searches), looking for crashes and
+ * softlocks. A fixed amount of work rather than a few seconds, so a busy machine finds what an idle
+ * one does. Rapier's frames cost about ten times arcade's, so it gets fewer: each takes a few
+ * seconds on an ordinary machine.
+ */
+const FUZZ_WORK: Record<string, number> = { arcade: 200_000, rapier: 25_000, rapier3d: 25_000 };
+/** Only a safety net for a scene whose frames are far slower than usual: normally never reached. */
+const FUZZ_MAX_SECONDS = 60;
 
 /**
  * Fair: the win test's route, press by press, must leave a person room to be a little early or
@@ -244,8 +251,9 @@ function reviewFairness(info: SceneInfo, add: Add, play: boolean): void {
   if (!play) return;
   let result;
   try {
-    const until = Date.now() + FUZZ_SECONDS * 1000;
-    result = fuzz(make, { sessions: 200, seconds: 30, deadline: () => Date.now() > until });
+    const until = Date.now() + FUZZ_MAX_SECONDS * 1000;
+    const work = FUZZ_WORK[physicsEngineName(game.scene)] ?? FUZZ_WORK.rapier;
+    result = fuzz(make, { sessions: 200, seconds: 30, work, deadline: () => Date.now() > until });
   } catch {
     return; // no player: nothing to play
   }
