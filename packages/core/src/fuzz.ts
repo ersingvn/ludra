@@ -17,7 +17,13 @@ export interface FuzzOptions {
   sessions?: number;
   /** Longest session, in seconds. Default 60. */
   seconds?: number;
-  /** Returns true when time is up. */
+  /**
+   * Most frames simulated in all, counting random sessions and the searches behind the softlock
+   * checks. Unlike a deadline, it stops at the same place on a busy machine as on an idle one, so
+   * the findings don't depend on load. Default: no limit.
+   */
+  work?: number;
+  /** Returns true when time is up. Results then depend on how fast the machine is: prefer `work`. */
   deadline?: () => boolean;
   /** Seeds the random inputs. Default 1. */
   seed?: number;
@@ -58,6 +64,10 @@ export interface FuzzResult {
   winnable?: boolean;
   /** True when the deadline cut the sessions short. */
   outOfTime: boolean;
+  /** True when the `work` budget ran out before every session was played. */
+  outOfWork: boolean;
+  /** Frames simulated in all: sessions plus softlock searches. */
+  work: number;
 }
 
 export function fuzz(make: () => World, options: FuzzOptions = {}): FuzzResult {
@@ -73,15 +83,20 @@ export function fuzz(make: () => World, options: FuzzOptions = {}): FuzzResult {
   const hasGoal = probe.entities.some((e) => e.goal);
   let checkSoftlocks = (options.softlocks ?? hasGoal) && probe.canSave;
   let winnable: boolean | undefined;
+  const work = options.work ?? Infinity;
+  let spent = 0;
+  /** A search's budget: its own, or what is left of `work` if that is less. */
+  const allow = (budget: number) => Math.max(0, Math.min(budget, work - spent));
   if (checkSoftlocks) {
     // A softlock is a place the game can't be won from: that only means something if it can be won at all.
-    const start = solve(make, { quick: true, budget: (options.checkBudget ?? 60_000) * 5, deadline: options.deadline });
+    const start = solve(make, { quick: true, budget: allow((options.checkBudget ?? 60_000) * 5), deadline: options.deadline });
+    spent += start.explored;
     winnable = start.solved ? true : start.exhausted ? false : undefined;
     checkSoftlocks = start.solved;
   }
   const quantum = probe.dimensions === 3 ? 1 : 16;
 
-  const result: FuzzResult = { sessions: 0, frames: 0, wins: 0, cells: 0, crashes: [], softlocks: [], deaths: [], ...(winnable !== undefined ? { winnable } : {}), outOfTime: false };
+  const result: FuzzResult = { sessions: 0, frames: 0, wins: 0, cells: 0, crashes: [], softlocks: [], deaths: [], ...(winnable !== undefined ? { winnable } : {}), outOfTime: false, outOfWork: false, work: 0 };
   const seen = new Set<string>();
   const checked = new Set<string>();
   /** Every place inside a softlock found so far, so one trap is reported once. */
@@ -96,12 +111,16 @@ export function fuzz(make: () => World, options: FuzzOptions = {}): FuzzResult {
       result.outOfTime = true;
       break;
     }
+    if (spent >= work) {
+      result.outOfWork = true;
+      break;
+    }
     result.sessions++;
     const world = make();
     const path: [number, number][] = [];
     let eventsSeen = 0;
     try {
-      while (world.frame < maxFrames && !world.over && !options.deadline?.()) {
+      while (world.frame < maxFrames && !world.over && spent < work && !options.deadline?.()) {
         // Hold one choice for 0.05 to 0.5 s, like someone mashing keys.
         const choice = Math.floor(random() * sets.length);
         const hold = 3 + Math.floor(random() * 28);
@@ -110,6 +129,7 @@ export function fuzz(make: () => World, options: FuzzOptions = {}): FuzzResult {
         for (let f = 0; f < hold && !world.over; f++) {
           world.step(sets[choice]!);
           result.frames++;
+          spent++;
         }
         for (; eventsSeen < world.events.length; eventsSeen++) {
           const event = world.events[eventsSeen]!;
@@ -129,7 +149,9 @@ export function fuzz(make: () => World, options: FuzzOptions = {}): FuzzResult {
         checked.add(key);
         const place = placeKey(p, quantum);
         if (trapped.has(place) || free.has(place)) continue;
-        if (isStuck(make, world, options.checkBudget ?? 60_000, trapped, free, quantum, options.deadline)) result.softlocks.push(finding(world, p, path, choices));
+        const check = isStuck(make, world, allow(options.checkBudget ?? 60_000), trapped, free, quantum, options.deadline);
+        spent += check.explored;
+        if (check.stuck) result.softlocks.push(finding(world, p, path, choices));
       }
     } catch (err) {
       if (!(err instanceof ScriptError)) throw err;
@@ -144,6 +166,7 @@ export function fuzz(make: () => World, options: FuzzOptions = {}): FuzzResult {
   }
 
   result.cells = seen.size;
+  result.work = spent;
   result.deaths = [...deaths]
     .map(([cause, places]) => ({ cause, count: [...places.values()].reduce((sum, p) => sum + p.count, 0), places: [...places.values()].sort((a, b) => b.count - a.count).slice(0, 5) }))
     .sort((a, b) => b.count - a.count);
@@ -154,7 +177,8 @@ export function fuzz(make: () => World, options: FuzzOptions = {}): FuzzResult {
  * True when the game can't be won from this moment: a quick search from a save of it runs out of
  * new places without a win. A search that runs out of budget proves nothing, so it says false.
  */
-function isStuck(make: () => World, world: World, budget: number, trapped: Set<string>, free: Set<string>, quantum: number, deadline?: () => boolean): boolean {
+function isStuck(make: () => World, world: World, budget: number, trapped: Set<string>, free: Set<string>, quantum: number, deadline?: () => boolean): { stuck: boolean; explored: number } {
+  if (budget <= 0) return { stuck: false, explored: 0 };
   const save = world.save();
   const from = () => {
     const w = make();
@@ -174,9 +198,9 @@ function isStuck(make: () => World, world: World, budget: number, trapped: Set<s
       if (p) free.add(placeKey(p, quantum));
     }
   }
-  if (answer.solved || !answer.exhausted) return false;
+  if (answer.solved || !answer.exhausted) return { stuck: false, explored: answer.explored };
   for (const place of places) trapped.add(place);
-  return true;
+  return { stuck: true, explored: answer.explored };
 }
 
 function finding(world: World, p: Entity, path: [number, number][], choices: readonly (readonly Action[])[]): FuzzFinding {
