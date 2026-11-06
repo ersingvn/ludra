@@ -11,8 +11,8 @@ const FONT = "system-ui, sans-serif";
 
 export function drawDialogue(
   ctx: CanvasRenderingContext2D,
-  world: { readonly talking: Talking | undefined },
-  view: { width: number; height: number; touch?: boolean },
+  world: { readonly talking: Talking | undefined; get?(id: string): { transform: { x: number; y: number } } | undefined },
+  view: { width: number; height: number; touch?: boolean; cameraY?: number; zoom?: number },
 ): void {
   const talking = world.talking;
   if (!talking) return;
@@ -31,7 +31,11 @@ export function drawDialogue(
   const choicesHeight = choiceLines.reduce((sum, c) => sum + c.length * lineHeight, 0) + (talking.choices.length > 0 ? lineHeight * 0.4 : 0);
   const hintHeight = Math.round(lineHeight * 0.9);
   const height = PAD * scale * 2 + speakerHeight + lines.length * lineHeight + choicesHeight + hintHeight;
-  const top = view.height - height - 16 * scale;
+  // At the bottom, unless that would cover who is talking (people stand on the ground): then at the top, below the HUD line.
+  const speaker = world.get?.(talking.entity);
+  const speakerY = speaker && view.cameraY !== undefined ? (speaker.transform.y - view.cameraY) * (view.zoom ?? 1) : undefined;
+  const bottom = view.height - height - 16 * scale;
+  const top = speakerY !== undefined && speakerY > bottom - 40 * scale ? 48 * scale : bottom;
 
   // The panel.
   ctx.fillStyle = "rgba(12, 14, 22, 0.88)";

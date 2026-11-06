@@ -1049,7 +1049,8 @@ class View {
     // On a touch screen the buttons for these are in that corner.
     if (!this.touch) ctx.fillText(`M: sound ${muted ? "off" : "on"} · R: restart`, viewWidth - 16, 28);
     // A conversation (the dialogue component) in the engine's own box; a game with drawUI draws it itself.
-    drawDialogue(ctx, world, { width: viewWidth, height: viewHeight, touch: viewInfo.touch });
+    // In 2D the camera says where the speaker is on screen, so the box can keep clear of it; 3D keeps it at the bottom.
+    drawDialogue(ctx, world, this.renderer ? { width: viewWidth, height: viewHeight, touch: viewInfo.touch } : { ...viewInfo, width: viewWidth, height: viewHeight });
 
     if (world.won || world.lost) {
       ctx.fillStyle = "rgba(0, 0, 0, 0.55)";

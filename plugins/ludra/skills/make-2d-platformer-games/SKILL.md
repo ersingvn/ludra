@@ -167,6 +167,30 @@ Lessons that save time:
 - **Prefabs**: `prefabs/<name>.prefab.json` holds `{ "components": { ... } }`. An entity uses one with `"prefab": "slime"` and only the components that differ: `"components": { "transform": { "x": 400, "y": 487 }, "patrol": { "speed": 120 } }` (merged field by field; `null` removes a component). Scripts spawn them: `world.spawn({ prefab: "bullet", components: { transform: { x, y } } })`. Use prefabs for anything placed more than once, so a change to the slime changes every slime.
 - **Scenes**: more scenes live in `scenes/`. A goal's `"next": "scenes/level-2.scene.json"` moves on after the win screen; `world.goto("scenes/level-1.scene.json")` moves on from anything (a title screen, a door). Score, deaths and lives carry over; R restarts the current scene, and after game over the whole run. Each scene is checked by `check` and tested on its own (`"scene"` in a test); `world.exit` tells draw hooks whether a win leads on.
 
+## Story: items, locks, flags and dialogue
+
+Adventures, RPGs and anything with a story, without a script. Run `npx @ludra/cli components dialogue` for every field.
+
+- **Items**: `"item": { "name": "key" }` on a sensor body. A player touching it takes it into `world.items` (no score) and fires `pickup`. `"count": 30` for a pile of gold. Items and flags carry over to the next scene like score.
+- **Locks**: `"lock": { "needs": "key" }` on a solid. A player carrying the key opens it (the entity is removed, the key used up unless `"take": false`) and `unlock` fires; without one, `locked` fires once per touch: give it a sound and a "locked" flash so the player knows why. A goal can wait for items too: `"goal": { "requires": { "gem": 3 } }`. `check` warns when something needs an item no entity or dialogue gives (`W_ITEM_NOWHERE`).
+- **Dialogue**: an NPC or a sign gets `"dialogue": { "lines": [ ... ] }`. The player presses **action** within `range` (default 48 px gap) to talk; action or jump goes on, up/down pick a choice, and the player stands still meanwhile.
+  ```json
+  "dialogue": [
+    { "when": { "quest": "done" }, "lines": [{ "speaker": "Smith", "text": "The bridge stands again." }] },
+    { "has": { "hammer": 1 }, "lines": [{ "speaker": "Smith", "text": "My hammer!", "take": { "hammer": 1 }, "set": { "quest": "done" }, "give": { "key": 1 } }] },
+    { "lines": [
+      { "speaker": "Smith", "text": "The bridge is out." },
+      { "text": "Will you fetch my hammer?", "choices": [
+        { "text": "Yes", "set": { "quest": "hammer" }, "next": "thanks" },
+        { "text": "No", "end": true } ] },
+      { "id": "thanks", "text": "Thank you! It's in the old mine." } ] }
+  ]
+  ```
+  A list of dialogues uses the **first** whose `when` (flags) and `has` (items) hold, so put the later story first. A line's `set`/`give`/`take` happen when it is shown, a choice's when picked; a choice with `when`/`has` shows only when they hold (a shop: `{ "text": "Sword", "has": { "gold": 30 }, "take": { "gold": 30 }, "give": { "sword": 1 } }`). `next` is a line index or a line's `id`; without `next` or `end` it goes to the line after.
+- **Flags**: `world.flags` is the story so far, name → number, string or true/false. Dialogue `set` writes them; scripts read and write them (`world.flags.metSmith = true`) and use `world.items.get/add/take/all()`.
+- **Test the story**: walk up and talk with inputs (`"right:0.4s, action:2f, wait:0.2s, action:2f, down:2f, action:2f"`), then assert `"flags.quest == \"hammer\""`, `"items.key >= 1"`, `"events.unlock == 1"`, `"events.talk >= 1"`. A test for a later scene starts with what the player brings: `"carry": { "items": { "key": 1 }, "flags": { "quest": "done" } }`. `ludra play` prints every line said and choice made. `review` flags a dialogue no test talks to, and silent `talk` and `pickup` events.
+- **The box**: the engine draws a calm box at the bottom with the speaker, the text and the choices. With your own `drawUI`, draw it yourself from `world.talking` (`{ entity, line, choice, text, speaker, choices }`, undefined when nobody talks): portraits, a typewriter reveal (`ctx.recent("say")` gives the time the line appeared), the game's font.
+
 ## Worlds: tilemaps, camera zones, tweens
 
 - **Tilemap**: draw a level as text. `"tilemap": { "tileSize": 40, "rows": ["#....c...#", "##########"], "legend": { ... } }` on an entity whose transform is the map's top-left corner.
