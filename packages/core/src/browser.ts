@@ -240,6 +240,22 @@ class Screen {
         }
       }
     }
+    this.show(fx);
+    return error;
+  }
+
+  /** Shows the frame the game just drew, through the shader if there is one. */
+  present(time: number): void {
+    if (this.fx?.lost) {
+      // The GPU took WebGL away mid-game: play on without the shader, as with no WebGL at all.
+      console.warn("[ludra] postfx: the GPU lost WebGL, so the game plays on without its shader.");
+      this.show(undefined);
+    }
+    this.fx?.render(this.canvas, time);
+  }
+
+  /** Puts the shader's canvas, or the game's own, in the page. */
+  private show(fx: PostFx | undefined): void {
     const target = fx?.canvas ?? this.canvas;
     if (target !== this.output) {
       target.id = this.canvas.id;
@@ -249,12 +265,6 @@ class Screen {
       this.output = target;
     }
     this.fx = fx;
-    return error;
-  }
-
-  /** Shows the frame the game just drew, through the shader if there is one. */
-  present(time: number): void {
-    this.fx?.render(this.canvas, time);
   }
 }
 
