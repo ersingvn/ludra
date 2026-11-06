@@ -24,3 +24,4 @@ export * from "./assertions.ts";
 export * from "./recording.ts";
 export * from "./ascii.ts";
 export * from "./drawcheck.ts";
+export * from "./progress.ts";

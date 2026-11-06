@@ -142,6 +142,10 @@ export type GameEvent = { frame: number; time: number; x: number; y: number; z?:
   | { type: "spot"; entity: string }
   /** A hunter lost its target and stopped searching. */
   | { type: "giveup"; entity: string }
+  /** A script saved the player's progress (world.progress.save()). */
+  | { type: "saved"; entity: string }
+  /** A script cleared the saved progress (world.progress.clear()). */
+  | { type: "cleared"; entity: string }
   /** Fired by a script with world.emit(name, data). */
   | { type: "custom"; name: string; entity: string; data?: unknown }
 );
@@ -173,6 +177,10 @@ export interface WorldOptions {
   physics?: PhysicsEngine;
   /** Values carried over from the previous scene, so a run keeps its score and lives. */
   carry?: { score?: number; deaths?: number; lives?: number };
+  /** Saved progress the host holds (localStorage in a browser): whether there is some, and its scene. Read by world.progress. */
+  progress?: { exists: boolean; scene?: string };
+  /** Start every player at this checkpoint (an entity id), as if it had just been reached: Continue does this. */
+  checkpoint?: string;
 }
 
 export interface WorldSnapshot {
@@ -237,6 +245,8 @@ export interface WorldSave {
     seed: number;
     spawnCount: number;
     physics: unknown;
+    progress: { exists: boolean; scene: string | undefined; resume: boolean };
+    checkpointReached: string | undefined;
   };
 }
 
@@ -304,6 +314,12 @@ export class World {
   lives: number | undefined;
   /** The scene to play next (a won goal's `next`, or world.goto). Hosts that can load scenes move on to it. */
   exit: string | undefined;
+  /** The checkpoint players last reached (or started at), for a host saving progress. */
+  checkpointReached: string | undefined;
+  /** Saved progress as scripts see it (world.progress). `resume`: the exit is world.progress.continue(), so the host starts it from the save. */
+  progress: { exists: boolean; scene: string | undefined; resume: boolean };
+  /** False when the scene opts out of saving (`"world": { "save": false }`). */
+  readonly saves: boolean;
   private readonly prefabs: Record<string, { components: Record<string, Record<string, unknown>> }>;
   private readonly reached = new Set<string>();
   /** Moves bodies; gameplay below only talks to it through velocities, grounded and overlaps. */
@@ -339,6 +355,8 @@ export class World {
     this.score = options.carry?.score ?? 0;
     this.deaths = options.carry?.deaths ?? 0;
     this.lives = options.carry?.lives ?? scene.world?.lives;
+    this.saves = scene.world?.save !== false;
+    this.progress = { exists: this.saves && (options.progress?.exists ?? false), scene: options.progress?.scene, resume: false };
     this.physics = options.physics ?? createPhysics(physicsEngineName(scene), { width: this.width, height: this.height, gravity: this.gravity });
     const world = this;
     this.physicsHost = {
@@ -352,6 +370,22 @@ export class World {
     };
     this.entities = [];
     for (const def of scene.entities) this.entities.push(this.createEntity(def));
+    if (options.checkpoint !== undefined) this.startAtCheckpoint(options.checkpoint);
+  }
+
+  /** Every player starts at a checkpoint, which counts as reached (no event: nothing was touched). */
+  private startAtCheckpoint(id: string): void {
+    const checkpoint = this.get(id);
+    // A save from an older version of the scene: start where the scene starts.
+    if (!checkpoint?.checkpoint || !checkpoint.body) return;
+    for (const player of this.players()) {
+      this.reached.add(`${player.id}>${checkpoint.id}`);
+      this.respawnAt(player, checkpoint);
+      player.transform.x = player.spawn!.x;
+      player.transform.y = player.spawn!.y;
+      player.transform.z = player.spawn!.z;
+    }
+    this.checkpointReached = checkpoint.id;
   }
 
   /** Validates raw scene JSON and builds a world, throwing on errors. */
@@ -455,6 +489,8 @@ export class World {
         seed: this.seed,
         spawnCount: this.spawnCount,
         physics: this.physics.save!(),
+        progress: { ...this.progress },
+        checkpointReached: this.checkpointReached,
       },
     };
   }
@@ -480,6 +516,8 @@ export class World {
     this.tweenEvents = s.tweenEvents;
     this.seed = s.seed;
     this.spawnCount = s.spawnCount;
+    this.progress = { ...s.progress };
+    this.checkpointReached = s.checkpointReached;
     this.physics.restore!(s.physics, this.physicsHost);
   }
 
@@ -556,7 +594,7 @@ export class World {
    * Runs an entity's `draw` or `drawUI` hook. Called by the renderer, never by the
    * simulation. `self` and `world` are read-only for the duration.
    */
-  callDrawHook(entity: Entity, hook: "draw" | "drawUI", extras: Omit<DrawContext, "self" | "world" | "params">): void {
+  callDrawHook(entity: Entity, hook: "draw" | "drawUI" | "drawMenu", extras: Omit<DrawContext, "self" | "world" | "params">): void {
     const script = entity.script;
     const fn = script?.module[hook];
     if (!script || !fn || entity.removed) return;
@@ -604,7 +642,7 @@ export class World {
   }
 
   /** True when any live entity's script has the given hook. */
-  hasHook(hook: "draw" | "drawUI" | "sound" | "render"): boolean {
+  hasHook(hook: "draw" | "drawUI" | "drawMenu" | "sound" | "render"): boolean {
     return this.entities.some((e) => !e.removed && typeof e.script?.module[hook] === "function");
   }
 
@@ -882,6 +920,40 @@ export class World {
         }
         const by = world.current?.entity;
         world.emit({ type: "custom", name, entity: by?.id ?? "script", data, x: by?.transform.x ?? 0, y: by?.transform.y ?? 0, ...(world.dimensions === 3 ? { z: by?.transform.z ?? 0 } : {}) });
+      },
+      progress: {
+        get exists() {
+          return world.progress.exists;
+        },
+        get scene() {
+          return world.progress.scene;
+        },
+        save: () => {
+          world.guard("world.progress.save");
+          if (!world.saves) return false;
+          const by = world.current?.entity;
+          world.progress.exists = true;
+          world.emit({ type: "saved", entity: by?.id ?? "script", x: by?.transform.x ?? 0, y: by?.transform.y ?? 0 });
+          return true;
+        },
+        clear: () => {
+          world.guard("world.progress.clear");
+          const by = world.current?.entity;
+          const had = world.progress.exists;
+          world.progress.exists = false;
+          world.progress.scene = undefined;
+          if (had) world.emit({ type: "cleared", entity: by?.id ?? "script", x: by?.transform.x ?? 0, y: by?.transform.y ?? 0 });
+        },
+        continue: () => {
+          world.guard("world.progress.continue");
+          const scene = world.progress.scene;
+          if (!world.progress.exists || scene === undefined || world.exit !== undefined) return false;
+          world.exit = scene;
+          world.progress.resume = true;
+          const by = world.current?.entity;
+          world.emit({ type: "goto", entity: by?.id ?? "script", scene, x: by?.transform.x ?? 0, y: by?.transform.y ?? 0 });
+          return true;
+        },
       },
       findPath: (from, to, options = {}) => {
         if (world.dimensions === 3) throw world.misuse("world.findPath works in 2D worlds for now. In 3D, steer with raycast toward the target.");
@@ -1300,17 +1372,23 @@ export class World {
         const key = `${player.id}>${checkpoint.id}`;
         if (this.reached.has(key) || !this.physics.overlaps(player, checkpoint)) continue;
         this.reached.add(key);
-        const c = checkpoint.transform;
-        if (this.dimensions === 3) {
-          // Standing on the checkpoint's bottom, +y up.
-          const bottom = c.y - checkpoint.body!.height / 2;
-          player.spawn = { x: c.x, y: player.character ? bottom + player.body!.height / 2 : c.y, z: c.z };
-        } else {
-          const bottom = c.y + checkpoint.body!.height / 2;
-          player.spawn = { x: c.x, y: player.platformer ? bottom - player.body!.height / 2 : c.y, z: 0 };
-        }
+        this.respawnAt(player, checkpoint);
+        this.checkpointReached = checkpoint.id;
         this.emit({ type: "checkpoint", entity: player.id, checkpoint: checkpoint.id, ...this.at(checkpoint) });
       }
+    }
+  }
+
+  /** Makes a checkpoint the player's respawn point, standing on the checkpoint's bottom edge. */
+  private respawnAt(player: Entity, checkpoint: Entity): void {
+    const c = checkpoint.transform;
+    if (this.dimensions === 3) {
+      // Standing on the checkpoint's bottom, +y up.
+      const bottom = c.y - checkpoint.body!.height / 2;
+      player.spawn = { x: c.x, y: player.character ? bottom + player.body!.height / 2 : c.y, z: c.z };
+    } else {
+      const bottom = c.y + checkpoint.body!.height / 2;
+      player.spawn = { x: c.x, y: player.platformer ? bottom - player.body!.height / 2 : c.y, z: 0 };
     }
   }
 

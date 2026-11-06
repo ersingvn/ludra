@@ -33,15 +33,15 @@ const STICK_DEADZONE = 0.5;
 /** What gamepads hold this frame, in the standard layout every browser maps pads to. */
 export interface PadState {
   actions: Set<Action>;
-  /** Start was just pressed: restart. */
-  restart: boolean;
+  /** Start was just pressed: pause (the pause menu). */
+  pause: boolean;
   /** Back/select was just pressed: mute. */
   mute: boolean;
 }
 
 /**
  * Reads gamepads once a frame. The left stick and the d-pad move, A (bottom) jumps, the other face
- * buttons are `action`, Start restarts and Back mutes. Any number of pads play as one player.
+ * buttons are `action`, Start pauses and Back mutes. Any number of pads play as one player.
  */
 export class Gamepads {
   private start = false;
@@ -65,7 +65,7 @@ export class Gamepads {
       start ||= button(9);
       back ||= button(8);
     }
-    const state = { actions, restart: start && !this.start, mute: back && !this.back };
+    const state = { actions, pause: start && !this.start, mute: back && !this.back };
     this.start = start;
     this.back = back;
     return state;
@@ -94,7 +94,7 @@ export class TouchControls {
   private readonly act: HTMLElement;
   private shown = false;
 
-  constructor(actions: readonly Action[], tools: { restart: () => void; mute: () => boolean; touched: () => void }) {
+  constructor(actions: readonly Action[], tools: { pause: () => void; mute: () => boolean; touched: () => void }) {
     const root = document.createElement("div");
     root.className = "ludra-touch";
     root.hidden = true;
@@ -109,7 +109,7 @@ export class TouchControls {
   .ludra-touch .act .b[data-action="action"] { margin-bottom: 46px; }
   .ludra-touch .tools { position: absolute; top: max(10px, env(safe-area-inset-top)); right: max(10px, env(safe-area-inset-right)); display: flex; gap: 8px; }
   .ludra-touch .tools button { width: 40px; height: 40px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.3); background: rgba(20,24,34,0.42); color: rgba(255,255,255,0.85); font-size: 18px; }
-</style><div class="pad move"></div><div class="pad act"></div><div class="tools"><button type="button" data-tool="mute" aria-label="Sound">♪</button><button type="button" data-tool="restart" aria-label="Restart">↻</button></div>`;
+</style><div class="pad move"></div><div class="pad act"></div><div class="tools"><button type="button" data-tool="mute" aria-label="Sound">♪</button><button type="button" data-tool="pause" aria-label="Pause">Ⅱ</button></div>`;
     this.root = root;
     this.move = root.querySelector(".move")!;
     this.act = root.querySelector(".act")!;
@@ -118,7 +118,7 @@ export class TouchControls {
     const tool = (event: Event) => (event.target as HTMLElement).closest("button")?.dataset.tool;
     root.addEventListener("pointerdown", (event) => {
       const which = tool(event);
-      if (which === "restart") return tools.restart();
+      if (which === "pause") return tools.pause();
       if (which === "mute") {
         (event.target as HTMLElement).textContent = tools.mute() ? "×" : "♪";
         return;
