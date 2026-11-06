@@ -11,6 +11,8 @@ export type FieldSpec =
   | { type: "points"; default?: [number, number][]; description: string }
   /** A list of strings (tilemap rows). */
   | { type: "strings"; default?: string[]; description: string }
+  /** A list of JSON objects, checked by the component's own rules (dialogue lines). */
+  | { type: "list"; default?: Record<string, unknown>[]; description: string }
   /** Degrees: a number in 2D, { "x", "y", "z" } in 3D. */
   | { type: "rotation"; default?: number; description: string }
   /** A direction: degrees in 2D, an { "x", "y", "z" } vector in 3D. */
@@ -31,7 +33,11 @@ export const COMPONENT_NAMES = [
   "topdown",
   "character",
   "collectible",
+  "item",
+  "lock",
+  "dialogue",
   "patrol",
+  "chase",
   "hazard",
   "goal",
   "checkpoint",
@@ -217,6 +223,20 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       speed: { type: "number", min: 0, default: 80, description: "Speed in px/s." },
     },
   },
+  chase: {
+    description:
+      'Hunts a target: once it sees it (within "sight" px, with nothing solid in between) it goes after it, around walls in a top-down world (gravity 0) or along the ground in a side view (it stops at ledges). When the target gets away it searches where it last saw it for "memory" seconds, then walks back home. Fires "spot" and "giveup" events, for effects and tests. With a "patrol", it patrols until it spots something. Needs a dynamic or kinematic body. In 3D it walks the ground on x/z around what is in its way and turns to face where it goes; sight, lose and speed are then in metres and m/s (defaults 10 m and 3.5 m/s).',
+    requires: ["transform", "body"],
+    fields: {
+      target: { type: "string", default: "player", description: 'Who it hunts: "player" (the first platformer, topdown or character) or an entity id.' },
+      speed: { type: "number", min: 0, default: 120, description: "Speed in px/s while it hunts, searches and goes home." },
+      sight: { type: "number", min: 0, default: 240, description: "How far it can spot the target from, in px." },
+      lose: { type: "number", min: 0, default: 0, description: "Past this distance in px it loses the target. 0 = 1.5 × sight." },
+      memory: { type: "number", min: 0, default: 2, description: "Seconds it searches where it last saw the target before it gives up." },
+      seeThroughWalls: { type: "boolean", default: false, description: "Spots the target through walls too (a sense of smell, a radar)." },
+      home: { type: "boolean", default: true, description: "Walks back to where it started after giving up. false = waits where it gave up." },
+    },
+  },
   hazard: {
     description:
       "Touching it kills a platformer, which respawns at its start position. Use for spikes, lava and enemies. Its body must be a sensor.",
@@ -226,11 +246,46 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       score: { type: "number", default: 0, description: "Points added when stomped." },
     },
   },
+  item: {
+    description:
+      'Something the player picks up and carries: a key, a hammer, gold. Touching it removes it and adds "count" of "name" to world.items (no score, unlike collectible). Fires "pickup". Items carry over to the next scene; "goal.requires", "lock" and dialogue use them. Its body must be a sensor.',
+    requires: ["transform", "body"],
+    fields: {
+      name: { type: "string", description: 'What it is, e.g. "key". Several entities can share a name: they add up.' },
+      count: { type: "number", min: 1, default: 1, description: "How many it gives." },
+    },
+  },
+  lock: {
+    description:
+      'A locked door or gate: a solid that opens (is removed) when a player carrying "count" of "needs" touches it. Fires "unlock"; without the item it fires "locked" once per touch, so the game can say so.',
+    requires: ["transform", "body"],
+    fields: {
+      needs: { type: "string", description: 'The item that opens it, e.g. "key".' },
+      count: { type: "number", min: 1, default: 1, description: "How many of it." },
+      take: { type: "boolean", default: true, description: "Uses the item up. false = the item opens it and stays (a pass, a lantern)." },
+    },
+  },
+  dialogue: {
+    description:
+      'Someone (or a sign) the player talks to: within "range", the player presses action. Lines show one by one (action or jump goes on); a line can offer choices (up/down pick, action takes) and set flags, give or take items, and jump to another line. The player can\'t move while talking. "when"/"has" pick a dialogue by the story so far; a list of dialogues uses the first that holds, so an NPC says new things as the story moves on. Fires talk, say, choose and endtalk; scripts read world.talking. The engine draws a box unless the game has its own drawUI.',
+    requires: ["transform"],
+    fields: {
+      lines: { type: "list", description: 'The lines, in order: [{ "speaker": "Smith", "text": "The bridge is out." }, ...]. Run `ludra components dialogue` for every field of a line.' },
+      range: { type: "number", min: 0, default: 0, description: "How near (gap between the two bodies) the player must be to talk. 0 = 48 px in 2D, 1.5 m in 3D." },
+      when: { type: "object", default: {}, description: 'Flags that must hold for this dialogue, e.g. { "quest": "done" }. false also matches a flag never set.' },
+      has: { type: "object", default: {}, description: 'Items the player must have for this dialogue, e.g. { "hammer": 1 }.' },
+    },
+  },
   goal: {
     description: "Touching it completes the level: the `won` flag is set and the simulation stops. Its body must be a sensor.",
     requires: ["transform", "body"],
     fields: {
       requireScore: { type: "number", min: 0, default: 0, description: "Score needed before the goal accepts the player." },
+      requires: {
+        type: "object",
+        default: {},
+        description: 'Items the player must carry before the goal accepts it, e.g. { "key": 1 } (see the "item" component). They are not used up.',
+      },
       next: {
         type: "string",
         default: "",
@@ -277,7 +332,7 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
   },
   checkpoint: {
     description:
-      "When a player touches it, that player respawns here after dying (standing on the checkpoint's bottom edge). Fires a checkpoint event once. Its body must be a sensor.",
+      "When a player touches it, that player respawns here after dying (standing on the checkpoint's bottom edge). Fires a checkpoint event once. In the browser, reaching it also saves the player's progress, and Continue starts there. Its body must be a sensor.",
     requires: ["transform", "body"],
     fields: {},
   },
@@ -541,6 +596,16 @@ export interface Topdown {
   clampToWorld: boolean;
 }
 
+export interface Chase {
+  target: string;
+  speed: number;
+  sight: number;
+  lose: number;
+  memory: number;
+  seeThroughWalls: boolean;
+  home: boolean;
+}
+
 export interface Collectible {
   score: number;
 }
@@ -647,6 +712,18 @@ export interface Joint {
 export interface Goal {
   requireScore: number;
   next: string;
+  requires: Record<string, number>;
+}
+
+export interface Item {
+  name: string;
+  count: number;
+}
+
+export interface Lock {
+  needs: string;
+  count: number;
+  take: boolean;
 }
 
 export interface Camera {

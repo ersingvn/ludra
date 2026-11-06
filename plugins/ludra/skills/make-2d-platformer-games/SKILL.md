@@ -104,6 +104,15 @@ The player has a `platformer` component and a `dynamic` body; gravity pulls ever
 - Enemies are `patrol` + `hazard` on kinematic sensors, on either axis. They can't be stomped. Make them cross the hero's path so passing them takes timing, then sweep `wait:` values to prove the window is wide.
 - A floor is an entity with only a tiled `sprite` on `layer` -1, sized to the world.
 
+### Enemies that hunt: `chase`
+
+- `chase` makes an enemy that thinks: it waits (or patrols, with a `patrol`), **spots** the hero within `sight` px when no wall is in between, hunts it **around walls**, searches where it last saw it for `memory` seconds when it gets away, **gives up** and walks home. No script needed:
+  `"chase": { "speed": 110, "sight": 220, "memory": 2 }` on a `dynamic` body (it bumps into walls) or a `kinematic` one. Add `hazard` (and `"sensor": true`) to make its touch deadly.
+- In a side view (gravity on) it runs along the ground toward the hero and stops at ledges, so a gap or a ledge is a way to escape it.
+- It fires `spot` and `giveup` events. Give `spot` an effect with a sound (a sting, a "!"): being seen without hearing it feels broken, and `review` says so. Tests can assert `"events.spot >= 1"` or `"events.spot == 0"` (a stealth route), and `"hunter.x"` where it ended up.
+- Stealth, guards, zombies, herding: walls that break line of sight are the level design. `seeThroughWalls: true` is a nose or a radar. `target` can be any entity id, not just the player: a guard dog that chases a thrown bone, a wolf after the sheep.
+- For anything else (fleeing, flanking, units that go where they're sent), a script calls `world.findPath(self, to, { size })` and steers toward `path[0]` each frame: the same deterministic pathfinding, around every static wall.
+
 ### Bouncing balls (breakout, Pong, pinball-like)
 
 - `body.bounce` is how much speed a dynamic body keeps when it hits a solid: `1` reflects it perfectly, `0.5` loses half each hit, `0` (default) stops it. Each hit emits a `bounce` event (good for a `blip` sound).
@@ -157,6 +166,34 @@ Lessons that save time:
 - **Checkpoints**: a sensor body with `checkpoint: {}`. The first touch makes it the player's respawn point (standing on its bottom edge) and fires `checkpoint` once. Put them before hard parts, where the player naturally stands, and light them up when reached (`ctx.recent("checkpoint", 1e9)`; the event's `data.checkpoint` is its id).
 - **Prefabs**: `prefabs/<name>.prefab.json` holds `{ "components": { ... } }`. An entity uses one with `"prefab": "slime"` and only the components that differ: `"components": { "transform": { "x": 400, "y": 487 }, "patrol": { "speed": 120 } }` (merged field by field; `null` removes a component). Scripts spawn them: `world.spawn({ prefab: "bullet", components: { transform: { x, y } } })`. Use prefabs for anything placed more than once, so a change to the slime changes every slime.
 - **Scenes**: more scenes live in `scenes/`. A goal's `"next": "scenes/level-2.scene.json"` moves on after the win screen; `world.goto("scenes/level-1.scene.json")` moves on from anything (a title screen, a door). Score, deaths and lives carry over; R restarts the current scene, and after game over the whole run. Each scene is checked by `check` and tested on its own (`"scene"` in a test); `world.exit` tells draw hooks whether a win leads on.
+- **Saving the player's game** needs nothing: in the browser (`ludra dev`, `ludra build`) progress is saved each time a scene other than the entry starts and at each checkpoint. Next visit, the entry scene shows **Continue / New game**; Continue starts the saved scene again with what the player had when it began (score, lives, items, flags), at the last checkpoint. Studio and recorded sessions never save.
+  - `"world": { "save": false }` on a scene: never saved there, no Continue (an arcade game that always starts fresh).
+  - Scripts: `world.progress.save()` saves what the run has right now (fires `saved`, so tests assert `"events.saved >= 1"`), `world.progress.clear()` (fires `cleared`), `world.progress.exists`, and `world.progress.continue()` (goes to the saved game, for a title that offers it in its own way).
+- **Pause menu**: Esc, P, Start on a gamepad or the Ⅱ touch button pause the game (the simulation clock stops) and show Resume, Restart, Sound and Quit to title (from any scene but the entry). Menus are drawn in the scene's first font. A script's `drawMenu(ctx)` hook draws both menus instead, in the game's own look, from `ctx.menu` (`title`, `items`, `selected`); the engine still handles keys, pad and taps (taps hit the default layout: centred rows 300 × 50 px).
+
+## Story: items, locks, flags and dialogue
+
+Adventures, RPGs and anything with a story, without a script. Run `npx @ludra/cli components dialogue` for every field.
+
+- **Items**: `"item": { "name": "key" }` on a sensor body. A player touching it takes it into `world.items` (no score) and fires `pickup`. `"count": 30` for a pile of gold. Items and flags carry over to the next scene like score.
+- **Locks**: `"lock": { "needs": "key" }` on a solid. A player carrying the key opens it (the entity is removed, the key used up unless `"take": false`) and `unlock` fires; without one, `locked` fires once per touch: give it a sound and a "locked" flash so the player knows why. A goal can wait for items too: `"goal": { "requires": { "gem": 3 } }`. `check` warns when something needs an item no entity or dialogue gives (`W_ITEM_NOWHERE`).
+- **Dialogue**: an NPC or a sign gets `"dialogue": { "lines": [ ... ] }`. The player presses **action** within `range` (default 48 px gap) to talk; action or jump goes on, up/down pick a choice, and the player stands still meanwhile.
+  ```json
+  "dialogue": [
+    { "when": { "quest": "done" }, "lines": [{ "speaker": "Smith", "text": "The bridge stands again." }] },
+    { "has": { "hammer": 1 }, "lines": [{ "speaker": "Smith", "text": "My hammer!", "take": { "hammer": 1 }, "set": { "quest": "done" }, "give": { "key": 1 } }] },
+    { "lines": [
+      { "speaker": "Smith", "text": "The bridge is out." },
+      { "text": "Will you fetch my hammer?", "choices": [
+        { "text": "Yes", "set": { "quest": "hammer" }, "next": "thanks" },
+        { "text": "No", "end": true } ] },
+      { "id": "thanks", "text": "Thank you! It's in the old mine." } ] }
+  ]
+  ```
+  A list of dialogues uses the **first** whose `when` (flags) and `has` (items) hold, so put the later story first. A line's `set`/`give`/`take` happen when it is shown, a choice's when picked; a choice with `when`/`has` shows only when they hold (a shop: `{ "text": "Sword", "has": { "gold": 30 }, "take": { "gold": 30 }, "give": { "sword": 1 } }`). `next` is a line index or a line's `id`; without `next` or `end` it goes to the line after.
+- **Flags**: `world.flags` is the story so far, name → number, string or true/false. Dialogue `set` writes them; scripts read and write them (`world.flags.metSmith = true`) and use `world.items.get/add/take/all()`.
+- **Test the story**: walk up and talk with inputs (`"right:0.4s, action:2f, wait:0.2s, action:2f, down:2f, action:2f"`), then assert `"flags.quest == \"hammer\""`, `"items.key >= 1"`, `"events.unlock == 1"`, `"events.talk >= 1"`. A test for a later scene starts with what the player brings: `"carry": { "items": { "key": 1 }, "flags": { "quest": "done" } }`. `ludra play` prints every line said and choice made. `review` flags a dialogue no test talks to, and silent `talk` and `pickup` events.
+- **The box**: the engine draws a calm box at the bottom with the speaker, the text and the choices. With your own `drawUI`, draw it yourself from `world.talking` (`{ entity, line, choice, text, speaker, choices }`, undefined when nobody talks): portraits, a typewriter reveal (`ctx.recent("say")` gives the time the line appeared), the game's font.
 
 ## Worlds: tilemaps, camera zones, tweens
 
@@ -206,6 +243,7 @@ See `examples/clockwork-keep` for all three together, with a test for each movin
   - `self.z`, `self.vz`, `self.rotationX`/`rotationY`, and `self.spin` (degrees per second around each axis).
   - `self.applyImpulse({ x, y, z }, at?)` and `self.applyForce({ x, y, z }, at?)`.
   - `world.raycast({ x, y, z }, { x, y, z })`, and `world.physics.raw` (Rapier 3D).
+  - **Enemies that hunt:** `"chase": { "sight": 10, "speed": 3.5 }` (metres, m/s) walks the ground around whatever blocks it and turns to face where it goes. A deadly one is a `kinematic` sensor capsule with `chase` and `hazard`: it glides at its height and kills on touch. A `dynamic` one (not a sensor) is pushed around and pushes back, and stays upright. `world.findPath(self, to, { size, height })` gives the same ground paths to scripts (companions, units, fleeing).
   - **Masses are kilograms** (density 1 × volume: the player is about 0.45 kg), so an impulse is mass × the speed change: `other.applyImpulse({ y: 12 * other.mass })` launches at 12 m/s.
   - Tweens also take `z`, `rotationX` and `rotationY`.
 - **Testing.** `play --watch` adds z and vz columns; assertions can use `.z`, `.vz`, `.rotationX`, `.rotationY`. Positions are floats: assert ranges (`"player.z < -7.5"`), not exact values. Find timings by sweeping, as in 2D.

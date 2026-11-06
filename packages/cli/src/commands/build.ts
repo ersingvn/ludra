@@ -139,6 +139,8 @@ await startGame(document.getElementById("game"), game.scenes[game.entry], {
   loadPhysics: async (name) => {${engines.has("rapier") ? `\n    if (name === "rapier") await (await import(${url(paths.physicsEntry)})).loadRapierPhysics();` : ""}${engines.has("rapier3d") ? `\n    if (name === "rapier3d") await (await import(${url(rapier3dModule)})).loadRapier3DPhysics();` : ""}
   },${threeD ? `\n  loadRenderer3D: async () => (await import(${url(paths.threeEntry)})).createRenderer3D,` : ""}
   debugKey: false,
+  entryPath: game.entry,
+  save: ${JSON.stringify(project.config.name)},
   actions: ${JSON.stringify(gameActions(project))},
 });
 `;

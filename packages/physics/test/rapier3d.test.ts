@@ -383,3 +383,60 @@ describe("3D scripts", () => {
     assert.ok(Math.abs(t.z - -3) < 1e-6 && Math.abs(t.rotationY - 90) < 1e-6, JSON.stringify(t));
   });
 });
+
+describe("3D findPath and chase", () => {
+  before(() => loadRapier3DPhysics());
+
+  const wall: EntityDef = { id: "wall", components: { transform: { x: 0, y: 1.5, z: 0 }, body: { width: 8, height: 3, depth: 0.5 } } };
+  const curb: EntityDef = { id: "curb", components: { transform: { x: 0, y: 0.1, z: -3 }, body: { width: 8, height: 0.2, depth: 0.5 } } };
+  const walker = (id: string, x: number, z: number, extra: Record<string, unknown> = {}): EntityDef => ({
+    id,
+    components: { transform: { x, y: 0.9, z }, body: { type: "dynamic", width: 0.6, height: 1.8, shape: "capsule" }, ...extra },
+  });
+
+  test("findPath walks around a wall, over a curb, and keeps the walker's height", () => {
+    let path: { x: number; y: number; z?: number }[] | undefined;
+    const probe: Script = { update: ({ self, world }) => void (path ??= world.findPath(self, { x: 0, y: 0.9, z: -6 }, { size: 0.6 })) };
+    run(scene([wall, curb, walker("walker", 0, 4, { script: { src: "probe.ts" } })]), 0.05, "", new Map([["probe.ts", probe]]));
+    assert.ok(path && path.length >= 2, `goes around: ${JSON.stringify(path)}`);
+    assert.deepEqual(path.at(-1), { x: 0, y: 0.9, z: -6 });
+    // Past the wall's end (|x| > 4 + half the walker), and straight over the low curb.
+    assert.ok(path.some((p) => Math.abs(p.x) > 4.3), JSON.stringify(path));
+    assert.ok(path.every((p) => p.y === 0.9));
+  });
+
+  test("a hunter spots the hero, walks around a wall to it, turning as it goes", () => {
+    const s = scene([wall, hero(0, 0.9, -3), walker("hunter", 0, 4, { chase: { sight: 12, seeThroughWalls: true } })]);
+    const world = run(s, 6);
+    const h = world.get("hunter")!.transform;
+    const p = world.get("hero")!.transform;
+    assert.ok(world.events.some((e) => e.type === "spot"));
+    assert.ok(Math.hypot(h.x - p.x, h.z - p.z) < 1, `reached it: ${h.x}, ${h.z} vs ${p.x}, ${p.z}`);
+    assert.ok(h.y > 0.5 && h.y < 1.3, `stayed on the ground, upright: ${h.y}`);
+    assert.notEqual(h.rotationY, 0, "turned to face its way");
+    assert.equal(h.rotationX, 0);
+  });
+
+  test("a 3D hunter uses metres: it walks, it doesn't teleport", () => {
+    const world = run(scene([hero(0, 0.9, -3), walker("hunter", 0, 4, { chase: {} })]), 1);
+    const h = world.get("hunter")!;
+    assert.equal(h.chase!.speed, 3.5);
+    assert.ok(h.transform.z < 4 && h.transform.z > 4 - 3.6, `about 3.5 m in a second: ${h.transform.z}`);
+  });
+
+  test("a kinematic sensor hunter with a hazard glides to the hero around a wall and kills it", () => {
+    const ghost: EntityDef = {
+      id: "ghost",
+      components: { transform: { x: 0, y: 0.9, z: 4 }, body: { type: "kinematic", width: 0.6, height: 1.8, shape: "capsule", sensor: true }, chase: { sight: 12, seeThroughWalls: true }, hazard: {} },
+    };
+    const world = run(scene([wall, hero(0, 0.9, -3), ghost]), 6);
+    assert.ok(world.events.some((e) => e.type === "spot"));
+    assert.ok(world.events.some((e) => e.type === "die"), "caught the hero");
+    assert.equal(world.get("ghost")!.transform.y, 0.9, "glides at its height");
+  });
+
+  test("walls hide the hero from a 3D hunter", () => {
+    const world = run(scene([wall, hero(0, 0.9, -3), walker("hunter", 0, 4, { chase: { sight: 12 } })]), 2);
+    assert.ok(!world.events.some((e) => e.type === "spot"));
+  });
+});

@@ -43,9 +43,9 @@ export function checkDrawHooks(scene: SceneDef, scripts: ScriptModules, options:
   for (let frame = 0; frame <= CHECK_FRAMES.at(-1)!; frame++) {
     if (CHECK_FRAMES.includes(frame)) {
       for (const e of [...world.entities]) {
-        for (const hook of ["draw", "drawUI", "sound", "render"] as const) {
+        for (const hook of ["draw", "drawUI", "drawMenu", "sound", "render"] as const) {
           if (!e.script?.module[hook]) continue;
-          const key = `${e.id}:${hook === "drawUI" ? "draw" : hook}`;
+          const key = `${e.id}:${hook === "drawUI" || hook === "drawMenu" ? "draw" : hook}`;
           if (!locals.has(key)) locals.set(key, {});
           try {
             if (hook === "render") {
@@ -82,6 +82,7 @@ export function checkDrawHooks(scene: SceneDef, scripts: ScriptModules, options:
               shake: () => {},
               random: () => 0.5,
               pixelText: () => {},
+              ...(hook === "drawMenu" ? { menu: { title: "Paused", items: ["Resume", "Restart", "Sound: on", "Quit to title"], selected: 0 } } : {}),
             });
           } catch (err) {
             const key = `${e.script.src}:${hook}`;

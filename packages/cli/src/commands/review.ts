@@ -44,7 +44,7 @@ const AREAS: Record<Area, string> = {
 };
 
 /** Events players cause or feel directly: silence on these reads as unfinished. */
-const IMPORTANT_EVENTS = new Set(["collect", "die", "stomp", "win", "gameover", "checkpoint", "jump"]);
+const IMPORTANT_EVENTS = new Set(["collect", "die", "stomp", "win", "gameover", "checkpoint", "jump", "spot", "talk", "pickup"]);
 const LISTED = 5;
 
 interface SceneInfo {
@@ -166,6 +166,13 @@ function reviewScene(project: Project, info: SceneInfo, hasTests: boolean, add: 
     if (hasTests && !mentioned) {
       add("issue", "proof", "R_UNTESTED_MECHANIC", label, `${src} (on ${list(ids)}) has no test that checks what it does.`, `Add a test that isolates it and asserts its effect: ${ids[0] ? `"${ids[0]}.state.<key> == ..."` : ""}${emitted[0] ? ` or "events.${emitted[0]} >= 1"` : ""}.`);
     }
+  }
+
+  // Someone to talk to that no test talks to: nobody has read the conversation through.
+  const talkedTo = new Set(results.flatMap((r) => r.talked ?? []));
+  const unheard = scene.entities.filter((e) => e.components.dialogue && !talkedTo.has(e.id)).map((e) => e.id);
+  if (hasTests && unheard.length > 0) {
+    add("issue", "proof", "R_UNTESTED_DIALOGUE", label, `No test talks to ${list(unheard)}, so nobody has played the conversation through.`, `Add a test that walks up, presses action and picks the choices (e.g. "inputs": "right:0.5s, action:2f, wait:0.2s, action:2f, down:2f, action:2f"), asserting "events.talk >= 1" and the flags or items it sets ("flags.<name> == ...").`);
   }
 
   // ---------------------------------------------------------------- feel

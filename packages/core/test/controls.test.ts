@@ -47,19 +47,19 @@ describe("gamepads", () => {
     assert.deepEqual([...gamepads.poll().actions], ["left"], "empty slots and unplugged pads count for nothing");
   });
 
-  it("restart and mute once per press of Start and Back", () => {
+  it("pause and mute once per press of Start and Back", () => {
     const gamepads = new Gamepads();
     pads = [pad([0, 0], [9, 8])];
     const first = gamepads.poll();
-    assert.equal(first.restart, true);
+    assert.equal(first.pause, true);
     assert.equal(first.mute, true);
     const held = gamepads.poll();
-    assert.equal(held.restart, false);
+    assert.equal(held.pause, false);
     assert.equal(held.mute, false);
     pads = [pad([0, 0])];
     gamepads.poll();
     pads = [pad([0, 0], [9])];
-    assert.equal(gamepads.poll().restart, true);
+    assert.equal(gamepads.poll().pause, true);
   });
 
   it("are nothing where there's no Gamepad API", () => {

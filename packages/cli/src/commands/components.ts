@@ -7,6 +7,7 @@ import {
   isComponentName,
   PARTICLE_FIELDS,
   SCRIPT_API_REFERENCE,
+  DIALOGUE_REFERENCE,
   SOUND_PRESETS,
   SOUND_REFERENCE,
   type FieldSpec,
@@ -45,6 +46,8 @@ export function components(name: string | undefined, options: { json?: boolean }
     printFields(spec.fields);
     if (n === "script" && name === "script") console.log(`\n${SCRIPT_API_REFERENCE.replace(/^/gm, "  ")}`);
     else if (n === "script") console.log(paint("dim", "  Run `ludra components script` for the script API."));
+    if (n === "dialogue" && name === "dialogue") console.log(`\n${DIALOGUE_REFERENCE.replace(/^/gm, "  ")}`);
+    else if (n === "dialogue") console.log(paint("dim", "  Run `ludra components dialogue` for lines and choices."));
     console.log();
   }
 
@@ -76,6 +79,7 @@ function typeLabel(spec: FieldSpec): string {
   if (spec.type === "frames") return 'frames ("0", "1-4", "0,2")';
   if (spec.type === "points") return "points [[x, y], ...]";
   if (spec.type === "strings") return '["...", "..."]';
+  if (spec.type === "list") return "[{ ... }, ...]";
   if (spec.type === "rotation") return "degrees | { x, y, z }";
   if (spec.type === "axis") return "degrees | { x, y, z }";
   return spec.type;
