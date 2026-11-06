@@ -33,6 +33,7 @@ import {
   type SpawnDef,
 } from "./script.ts";
 import { atan2 } from "./dmath.ts";
+import { buildGrid, findPath, type NavGrid, type NavPoint } from "./nav.ts";
 import { createPhysics, physicsEngineName } from "./engines.ts";
 import type { CameraZone } from "./camera.ts";
 import { advanceTween, createTween, startTween, type Tween, type TweenState } from "./tween.ts";
@@ -295,6 +296,9 @@ export class World {
   private spawnCount = 0;
   private readonly handles = new WeakMap<Entity, ScriptEntity>();
   private scriptApi: ScriptWorld | undefined;
+  /** Navigation grids by cell and walker size, kept while the walls stay the same. */
+  private navGrids = new Map<string, NavGrid>();
+  private navWalls = "";
   private scriptInput: ScriptInput = { held: () => false, pressed: () => false };
   /** The script hook currently running, for error messages and event attribution. */
   private current: { entity: Entity; hook: string } | undefined;
@@ -857,6 +861,21 @@ export class World {
         const by = world.current?.entity;
         world.emit({ type: "custom", name, entity: by?.id ?? "script", data, x: by?.transform.x ?? 0, y: by?.transform.y ?? 0, ...(world.dimensions === 3 ? { z: by?.transform.z ?? 0 } : {}) });
       },
+      findPath: (from, to, options = {}) => {
+        if (world.dimensions === 3) throw world.misuse("world.findPath works in 2D worlds for now. In 3D, steer with raycast toward the target.");
+        const point = (p: unknown, name: string): NavPoint => {
+          const q = p as { x?: unknown; y?: unknown } | null;
+          if (typeof q !== "object" || q === null || typeof q.x !== "number" || typeof q.y !== "number" || !Number.isFinite(q.x) || !Number.isFinite(q.y)) {
+            throw world.misuse(`world.findPath: ${name} must be a point like { x: 100, y: 200 }, or an entity's transform.`);
+          }
+          return { x: q.x, y: q.y };
+        };
+        const size = options.size ?? 24;
+        if (typeof size !== "number" || !(size > 0)) throw world.misuse("world.findPath: size is the walker's width in px, a positive number.");
+        const cell = options.cell ?? Math.min(32, Math.max(8, Math.round(size / 2)));
+        if (typeof cell !== "number" || !(cell >= 2)) throw world.misuse("world.findPath: cell is the grid's cell in px, 2 or more.");
+        return findPath(world.navGrid(cell, size / 2), point(from, "from"), point(to, "to"));
+      },
       raycast: (from, to, options = {}) => {
         const ignore = [options.ignore ?? []].flat().map((target) => world.resolve(target)).filter((e): e is Entity => !!e);
         const hit = world.physics.raycast(world.physicsHost, from, to, { ignore, sensors: options.sensors });
@@ -877,6 +896,24 @@ export class World {
       },
     };
     return this.scriptApi;
+  }
+
+  /** The world as cells a walker of half-size `inflate` can or can't stand in, rebuilt when a wall changes. */
+  private navGrid(cell: number, inflate: number): NavGrid {
+    const walls = this.entities.filter((e) => e.body && e.body.type === "static" && !e.body.sensor);
+    const key = walls.map((e) => `${e.id}:${e.transform.x}:${e.transform.y}:${e.body!.width}:${e.body!.height}`).join("|");
+    if (key !== this.navWalls) {
+      this.navGrids.clear();
+      this.navWalls = key;
+    }
+    const id = `${cell}:${inflate}`;
+    let grid = this.navGrids.get(id);
+    if (!grid) {
+      const obstacles = walls.map((e) => ({ x: e.transform.x, y: e.transform.y, width: e.body!.width, height: e.body!.height }));
+      grid = buildGrid(this.width, this.height, cell, inflate, obstacles);
+      this.navGrids.set(id, grid);
+    }
+    return grid;
   }
 
   private spawn(def: SpawnDef): ScriptEntity {

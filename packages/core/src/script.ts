@@ -129,6 +129,14 @@ export interface ScriptWorld {
     options?: { ignore?: ScriptEntity | string | (ScriptEntity | string)[]; sensors?: boolean },
   ): ScriptRayHit | undefined;
   /**
+   * A way around walls from `from` to `to` (2D), as waypoints to walk in order: the start is left out
+   * and the last one is `to`, or the nearest place a walker can stand when `to` is inside a wall.
+   * Undefined when there's no way. Walls are static bodies that aren't sensors. `size` is the walker's
+   * width in px (default 24): the path keeps its whole body clear. `cell` is the grid's cell in px
+   * (default half the size, 8 to 32): smaller finds narrower gaps and costs more. Deterministic.
+   */
+  findPath(from: { x: number; y: number }, to: { x: number; y: number }, options?: { size?: number; cell?: number }): { x: number; y: number }[] | undefined;
+  /**
    * The physics engine. Under rapier, `raw` is { RAPIER, world, body(entity), collider(entity),
    * joint(entity, index?), toRapier(point), fromRapier(point) }: the whole Rapier API, for anything Ludra's components
    * don't cover. Rapier runs y-up, so convert points with toRapier/fromRapier.
@@ -336,7 +344,10 @@ ctx.world     time, frame, width, height, deaths, won, lost, exit (read); score,
               emit(name, data?) custom event: counted by "events.<name>" in tests, usable as an effects key
               random()          deterministic, seeded by world.seed. Never use Math.random or Date
               raycast(from, to, { ignore?, sensors? }) -> { entity, x, y, distance, normal } | undefined
-              physics.name      "arcade" or "rapier"
+              findPath(from, to, { size?, cell? }) -> [{ x, y }, ...] | undefined   2D: a way around walls
+                                (static bodies) for a walker size px wide, as waypoints to walk in order; ends
+                                at to. Enemies, companions, units: steer toward path[0] each frame
+              physics.name     "arcade" or "rapier"
               physics.raw       rapier only: { RAPIER, world, body(e), collider(e), toRapier(p), fromRapier(p) }:
                                 the whole Rapier API (Rapier is y-up: convert points). Not in draw hooks.
 ctx.input     held(action), pressed(action)   actions: left right up down jump action
