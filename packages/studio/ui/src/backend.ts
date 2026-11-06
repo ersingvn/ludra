@@ -18,22 +18,25 @@ export class ServerBackend implements Backend {
   readonly gameUrl: string;
   readonly gameOrigin: string;
   private readonly base: string;
+  /** The `?token=` part every studio request carries, or "" when the server has none. */
+  private readonly auth: string;
 
-  constructor(server: string) {
+  constructor(server: string, token = "") {
     this.base = server.replace(/\/+$/, "");
-    this.gameUrl = `${this.base}/?studio=1`;
+    this.auth = token ? `?token=${encodeURIComponent(token)}` : "";
+    this.gameUrl = `${this.base}/?studio=1${token ? `&token=${encodeURIComponent(token)}` : ""}`;
     this.gameOrigin = new URL(this.base).origin;
   }
 
   async project(): Promise<ProjectInfo> {
-    const res = await fetch(`${this.base}/__ludra/project`);
+    const res = await fetch(`${this.base}/__ludra/project${this.auth}`);
     if (!res.ok) throw new Error(`GET /__ludra/project: ${res.status}`);
     return (await res.json()) as ProjectInfo;
   }
 
   listen(onEvent: (event: ServerEvent) => void, onConnection: (state: Connection) => void): () => void {
     onConnection("connecting");
-    const source = new EventSource(`${this.base}/__ludra/events`);
+    const source = new EventSource(`${this.base}/__ludra/events${this.auth}`);
     source.onopen = () => onConnection("live");
     // EventSource reconnects on its own; say so while it does.
     source.onerror = () => onConnection(source.readyState === EventSource.CLOSED ? "lost" : "connecting");
@@ -48,7 +51,7 @@ export class ServerBackend implements Backend {
   }
 
   async run<T>(command: Command, args: string[] = []): Promise<RunResponse<T>> {
-    const res = await fetch(`${this.base}/__ludra/run`, {
+    const res = await fetch(`${this.base}/__ludra/run${this.auth}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ command, args }),

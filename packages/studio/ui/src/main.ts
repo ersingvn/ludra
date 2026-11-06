@@ -22,7 +22,7 @@ async function boot(): Promise<void> {
     backend = b;
     startMock = (studio) => b.start(studio);
   } else {
-    backend = new ServerBackend(server);
+    backend = new ServerBackend(server, params.get("token") ?? "");
   }
 
   const app = $("#app");

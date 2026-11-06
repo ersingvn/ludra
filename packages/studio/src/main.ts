@@ -5,6 +5,7 @@
  */
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type MenuItemConstructorOptions } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { createServer } from "node:net";
@@ -71,6 +72,8 @@ function remember(dir: string): void {
 interface Server {
   dir: string;
   url: string;
+  /** What every studio request carries, so only this window reaches the server (docs/studio.md). */
+  token: string;
   child: ChildProcess;
   /** The last lines it printed, to show if it dies. */
   log: string[];
@@ -107,8 +110,9 @@ async function startServer(dir: string): Promise<Server> {
   const port = args.port && server === undefined ? args.port : await freePort();
   const { command, env } = cliCommand();
   const [program, ...rest] = command;
+  const token = randomBytes(24).toString("hex");
   const child = spawn(program!, [...rest, "dev", dir, "--studio", "--no-record", "--port", String(port)], {
-    env: { ...process.env, ...env, FORCE_COLOR: "0", NO_COLOR: "1" },
+    env: { ...process.env, ...env, LUDRA_STUDIO_TOKEN: token, FORCE_COLOR: "0", NO_COLOR: "1" },
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   });
@@ -120,7 +124,7 @@ async function startServer(dir: string): Promise<Server> {
   child.stdout?.on("data", keep);
   child.stderr?.on("data", keep);
   const url = `http://127.0.0.1:${port}`;
-  const next: Server = { dir, url, child, log };
+  const next: Server = { dir, url, token, child, log };
 
   // Ready once it answers; dead if it exits first.
   const exited = new Promise<never>((_, fail) => child.once("exit", (code) => fail(new Error(`The game server stopped (exit ${code}).\n\n${log.join("\n")}`))));
@@ -218,10 +222,10 @@ function load(win: BrowserWindow, s: Server): void {
   const name = projectName(s.dir);
   win.setTitle(`${name} · Ludra Studio`);
   if (existsSync(UI)) {
-    void win.loadURL(`${UI.href}?server=${encodeURIComponent(s.url)}`);
+    void win.loadURL(`${UI.href}?server=${encodeURIComponent(s.url)}&token=${s.token}`);
   } else {
     // A repo checkout without the UI built: show the game alone, so the shell can still be tried.
-    void win.loadURL(`${s.url}/?studio=1`);
+    void win.loadURL(`${s.url}/?studio=1&token=${s.token}`);
   }
 }
 
