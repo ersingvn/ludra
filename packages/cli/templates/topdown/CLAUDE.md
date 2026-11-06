@@ -42,6 +42,7 @@ Never call a change done until `ludra check`, `ludra test` and `ludra review` ar
 - The scene has its own `"sounds"` (used by `effects`) and `"music"` (tracks of notes). Change them with the game's mood; `npx @ludra/cli components sounds` shows every field. A script's `sound` hook gets the real Web Audio API for sound that follows the game.
 - Bigger levels: a `tilemap` draws a level as rows of characters, `cameraZone` frames rooms and vistas, and `tween` eases lifts, doors and pickups. See `npx @ludra/cli components tilemap` (and `cameraZone`, `tween`).
 - Art and effects never change gameplay. Make it playable first, then dress it in the look `game.md` chose: SVG in `assets/`, or draw hooks when code paints it better (lighting, rock, water).
+- The browser saves the player's progress by itself (when a later scene starts, at checkpoints) and the entry scene offers Continue / New game; Esc pauses. `"world": { "save": false }` makes a scene always start fresh; `world.progress.save()` saves at a moment of your choosing (fires `saved`).
 
 ## Looks
 

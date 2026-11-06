@@ -463,10 +463,10 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
     }
   };
 
-  /** Continue / New game, when there's a saved game and the entry scene doesn't draw its own interface. */
+  /** Continue / New game on the entry scene, when there's a saved game. drawMenu hooks give it the game's own look. */
   function titleMenu(): Menu | undefined {
     const saved = store?.load();
-    if (!saved || !world.saves || world.hasHook("drawUI")) return undefined;
+    if (!saved || !world.saves) return undefined;
     if (!isEntry(saved.scene) && !options.loadScene) return undefined;
     return {
       kind: "title",
