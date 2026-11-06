@@ -213,6 +213,11 @@ class Screen {
   output: HTMLCanvasElement;
   private readonly canvas: HTMLCanvasElement;
   private fx: PostFx | undefined;
+  /**
+   * WebGL failed once on this page. Asking again would only crash the GPU again, and after a few
+   * crashes the browser draws everything in software, so the whole game slows down, not just the shader.
+   */
+  private noWebGL = false;
 
   constructor(canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext("2d");
@@ -229,10 +234,11 @@ class Screen {
     if (postfx && shader !== undefined) {
       try {
         if (shader instanceof Error) throw shader;
-        fx = new PostFx(this.canvas.width, this.canvas.height, shader, postfx);
+        if (!this.noWebGL) fx = new PostFx(this.canvas.width, this.canvas.height, shader, postfx);
       } catch (err) {
         if (err instanceof NoWebGL) {
           // The player can't fix this and the game works without it: play on, unfinished by a shader.
+          this.noWebGL = true;
           console.warn("[ludra]", err.message);
         } else {
           error = `postfx: ${message(err)}`;
@@ -249,6 +255,7 @@ class Screen {
     if (this.fx?.lost) {
       // The GPU took WebGL away mid-game: play on without the shader, as with no WebGL at all.
       console.warn("[ludra] postfx: the GPU lost WebGL, so the game plays on without its shader.");
+      this.noWebGL = true;
       this.show(undefined);
     }
     this.fx?.render(this.canvas, time);
