@@ -1,6 +1,7 @@
 import { SoundPlayer } from "./audio.ts";
 import { CameraRig } from "./camera.ts";
 import { actionsUsed, Gamepads, TouchControls } from "./controls.ts";
+import { entityBox, inputKey, REPLAY_LIMIT, replayScene, type GameControl } from "./studio-link.ts";
 import { physicsEngineName } from "./engines.ts";
 import { parseFrames, type Sprite } from "./components.ts";
 import { collectAssetPaths } from "./effects.ts";
@@ -17,6 +18,7 @@ import type { Action, PostFxDef, SceneDef } from "./types.ts";
 import { World, type Entity, type GameEvent } from "./world.ts";
 
 export { Recorder };
+export { connectStudio, type GameControl, type StudioLink } from "./studio-link.ts";
 
 const KEYMAP: Record<string, Action> = {
   ArrowLeft: "left",
@@ -126,6 +128,10 @@ export interface GameOptions {
   actions?: readonly Action[];
   /** On-screen buttons once someone touches the page. Defaults to true. Gamepads always work. */
   touch?: boolean;
+  /** The entry scene's path, as Studio names scenes. */
+  entryPath?: string;
+  /** Receives the controls Ludra Studio drives the game with: pause, step, inspect, hot reload. */
+  onControl?: (control: GameControl) => void;
   /** Writes down the session, and turns on the keys that mark moments. `ludra dev` passes one. */
   recorder?: Recorder;
 }
@@ -207,6 +213,11 @@ class Screen {
   output: HTMLCanvasElement;
   private readonly canvas: HTMLCanvasElement;
   private fx: PostFx | undefined;
+  /**
+   * WebGL failed once on this page. Asking again would only crash the GPU again, and after a few
+   * crashes the browser draws everything in software, so the whole game slows down, not just the shader.
+   */
+  private noWebGL = false;
 
   constructor(canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext("2d");
@@ -223,10 +234,11 @@ class Screen {
     if (postfx && shader !== undefined) {
       try {
         if (shader instanceof Error) throw shader;
-        fx = new PostFx(this.canvas.width, this.canvas.height, shader, postfx);
+        if (!this.noWebGL) fx = new PostFx(this.canvas.width, this.canvas.height, shader, postfx);
       } catch (err) {
         if (err instanceof NoWebGL) {
           // The player can't fix this and the game works without it: play on, unfinished by a shader.
+          this.noWebGL = true;
           console.warn("[ludra]", err.message);
         } else {
           error = `postfx: ${message(err)}`;
@@ -234,6 +246,23 @@ class Screen {
         }
       }
     }
+    this.show(fx);
+    return error;
+  }
+
+  /** Shows the frame the game just drew, through the shader if there is one. */
+  present(time: number): void {
+    if (this.fx?.lost) {
+      // The GPU took WebGL away mid-game: play on without the shader, as with no WebGL at all.
+      console.warn("[ludra] postfx: the GPU lost WebGL, so the game plays on without its shader.");
+      this.noWebGL = true;
+      this.show(undefined);
+    }
+    this.fx?.render(this.canvas, time);
+  }
+
+  /** Puts the shader's canvas, or the game's own, in the page. */
+  private show(fx: PostFx | undefined): void {
     const target = fx?.canvas ?? this.canvas;
     if (target !== this.output) {
       target.id = this.canvas.id;
@@ -243,12 +272,6 @@ class Screen {
       this.output = target;
     }
     this.fx = fx;
-    return error;
-  }
-
-  /** Shows the frame the game just drew, through the shader if there is one. */
-  present(time: number): void {
-    this.fx?.render(this.canvas, time);
   }
 }
 
@@ -311,6 +334,21 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
   const soundLocals = new Map<string, Record<string, unknown>>();
   let touch: TouchControls | undefined;
   let touched = false;
+  /** The scene a game over goes back to: the first one, or its hot-reloaded version. */
+  let entryScene = firstScene;
+  /** Every frame's input since the scene started, for a hot reload to replay. One past the limit means too far. */
+  let frameInputs: string[] = [];
+  let paused = false;
+  let pendingSteps = 0;
+  let fps = 60;
+  const listeners: { scene?: () => void; crash?: (message: string) => void }[] = [];
+  const sceneStarted = () => {
+    frameInputs = [];
+    for (const l of listeners) l.scene?.();
+  };
+  const crashed = (text: string) => {
+    for (const l of listeners) l.crash?.(text);
+  };
 
   const enter = async (next: SceneDef, carry: Carry | undefined, path?: string) => {
     const { images, shader } = await loadScene(next, options, scripts);
@@ -336,15 +374,16 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
       crash = message(err);
       world = new World({ ...next, entities: [] });
     }
+    sceneStarted();
   };
   await enter(firstScene, undefined);
 
   // Game over starts the whole game again; otherwise R restarts the current scene as it began.
   const restart = () => {
     if (loading) return;
-    if (world.lost && scene !== firstScene) {
+    if (world.lost && scenePath !== undefined) {
       loading = true;
-      void enter(firstScene, undefined).finally(() => (loading = false));
+      void enter(entryScene, undefined).finally(() => (loading = false));
       return;
     }
     world = new World(scene, { scripts, carry: startCarry });
@@ -355,6 +394,7 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
     soundLocals.clear();
     crash = sceneError;
     exitSince = undefined;
+    sceneStarted();
   };
 
   const moveOn = (path: string) => {
@@ -433,11 +473,29 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
   }
   let pressedBefore: ReadonlySet<Action> = new Set();
 
+  const stepOnce = (input: ReadonlySet<Action>) => {
+    try {
+      world.step(input);
+      options.recorder?.step(world, input);
+      if (frameInputs.length <= REPLAY_LIMIT) frameInputs.push(inputKey(input));
+    } catch (err) {
+      // A script threw: freeze the game and show why, instead of failing silently.
+      crash = message(err);
+      console.error("[ludra]", err);
+      options.recorder?.crash(world, input, crash);
+      crashed(crash);
+    }
+    tapped.clear();
+    view.step(world, (sound) => sounds.play(sound));
+  };
+
   let last = performance.now();
   let accumulator = 0;
   let raf = 0;
   const frame = (now: number) => {
-    accumulator += Math.min(MAX_FRAME_TIME, (now - last) / 1000);
+    if (now > last) fps = fps * 0.9 + (1000 / (now - last)) * 0.1;
+    // Paused (by Studio), the clock stands still and only asked-for steps run.
+    if (!paused) accumulator += Math.min(MAX_FRAME_TIME, (now - last) / 1000);
     last = now;
     const pad = gamepads.poll();
     if (pad.restart) restart();
@@ -445,19 +503,13 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
     const pressed = touch && touch.held.size > 0 ? new Set([...pad.actions, ...touch.held]) : pad.actions;
     for (const action of pressed) if (!pressedBefore.has(action)) tapped.add(action);
     pressedBefore = pressed;
+    const input = () => (tapped.size > 0 || pressed.size > 0 ? new Set([...held, ...pressed, ...tapped]) : held);
+    if (paused) {
+      for (; pendingSteps > 0 && !crash && !loading; pendingSteps--) stepOnce(input());
+      pendingSteps = 0;
+    }
     while (accumulator >= FIXED_DT && !crash && !loading) {
-      const input = tapped.size > 0 || pressed.size > 0 ? new Set([...held, ...pressed, ...tapped]) : held;
-      try {
-        world.step(input);
-        options.recorder?.step(world, input);
-      } catch (err) {
-        // A script threw: freeze the game and show why, instead of failing silently.
-        crash = message(err);
-        console.error("[ludra]", err);
-        options.recorder?.crash(world, input, crash);
-      }
-      tapped.clear();
-      view.step(world, (sound) => sounds.play(sound));
+      stepOnce(input());
       accumulator -= FIXED_DT;
     }
 
@@ -503,7 +555,10 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
       view.draw(ctx, world, sounds.muted, options.loadScene !== undefined);
     } catch (err) {
       // A draw hook threw. Same treatment as a simulation error.
-      if (!crash) console.error("[ludra]", err);
+      if (!crash) {
+        console.error("[ludra]", err);
+        crashed(message(err));
+      }
       crash ??= message(err);
     }
     if (fade > 0 || loading) {
@@ -516,6 +571,101 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
     raf = requestAnimationFrame(frame);
   };
   raf = requestAnimationFrame(frame);
+
+  if (options.onControl) {
+    const control: GameControl = {
+      get world() {
+        return world;
+      },
+      get scene() {
+        return scene;
+      },
+      get scenePath() {
+        return scenePath ?? options.entryPath ?? "";
+      },
+      get paused() {
+        return paused;
+      },
+      get fps() {
+        return fps;
+      },
+      get canvas() {
+        return screen.output;
+      },
+      pause: () => {
+        paused = true;
+        accumulator = 0;
+      },
+      resume: () => {
+        paused = false;
+        last = performance.now();
+      },
+      step: (frames) => {
+        if (paused) pendingSteps += frames;
+      },
+      restart,
+      goto: async (path) => {
+        if (!options.loadScene) throw new Error("This page can't load other scenes.");
+        loading = true;
+        try {
+          await enter(await options.loadScene(path), undefined, path);
+        } finally {
+          loading = false;
+        }
+      },
+      mute: (on) => {
+        sounds.muted = on;
+      },
+      focus: () => {
+        if (screen.output.tabIndex < 0) screen.output.tabIndex = 0;
+        window.focus();
+        screen.output.focus();
+      },
+      highlight: (id) => {
+        view.highlight = id ?? undefined;
+      },
+      pointToWorld: (clientX, clientY) => {
+        const seen = view.lastView;
+        if (!seen) return undefined;
+        const r = screen.output.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) return undefined;
+        const px = ((clientX - r.left) / r.width) * screen.output.width;
+        const py = ((clientY - r.top) / r.height) * screen.output.height;
+        return { x: seen.cameraX + px / seen.zoom, y: seen.cameraY + py / seen.zoom };
+      },
+      hot: async (next) => {
+        // Everything that waits first, while the old version plays on; then the swap, in one go.
+        const { images, shader } = await loadScene(next, options, scripts);
+        await usePhysics(next, options);
+        const renderer = await useRenderer3D(next, options, canvas.width, canvas.height);
+        const replayed = replayScene(next, frameInputs, { scripts, ...(startCarry ? { carry: startCarry } : {}) });
+        const soundChanged = JSON.stringify([scene.sounds, scene.music]) !== JSON.stringify([next.sounds, next.music]);
+        if (scenePath === undefined) entryScene = next;
+        scene = next;
+        world = replayed.world;
+        const highlighted = view.highlight;
+        view.renderer?.dispose();
+        view = new View(next, images, renderer);
+        view.touch = touched;
+        view.debug = debug;
+        view.highlight = highlighted;
+        if (!options.actions) touch?.setActions(actionsUsed([next]));
+        if (soundChanged || replayed.result !== "kept") sounds.setScene(next.sounds, next.music);
+        soundEvents = replayed.result === "kept" ? world.events.length : 0;
+        if (replayed.result !== "kept") soundLocals.clear();
+        sceneError = screen.use(next.postfx, shader);
+        crash = sceneError;
+        exitSince = undefined;
+        if (replayed.result === "kept") return { result: "kept", frame: world.frame };
+        sceneStarted();
+        return { result: "restarted", frame: world.frame, reason: replayed.reason };
+      },
+      on: (listener) => {
+        listeners.push(listener);
+      },
+    };
+    options.onControl(control);
+  }
 
   return () => {
     cancelAnimationFrame(raf);
@@ -686,6 +836,26 @@ class View {
   debug = false;
   /** On-screen touch buttons are showing. */
   touch = false;
+  /** Studio's selection, outlined in the game (2D). Never set in a build. */
+  highlight: string | undefined;
+  /** The camera of the last 2D frame drawn, to turn a click into a world point. */
+  lastView: DrawContext["view"] | undefined;
+
+  private drawHighlight(ctx: CanvasRenderingContext2D, world: World, zoom: number): void {
+    const e = world.entities.find((x) => x.id === this.highlight);
+    if (!e) return;
+    const b = entityBox(e);
+    const pad = 3 / zoom;
+    ctx.save();
+    ctx.lineWidth = 2 / zoom;
+    ctx.setLineDash([6 / zoom, 4 / zoom]);
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.7)";
+    ctx.strokeRect(b.x - pad, b.y - pad, b.w + pad * 2, b.h + pad * 2);
+    ctx.lineDashOffset = 5 / zoom;
+    ctx.strokeStyle = "#ffd24a";
+    ctx.strokeRect(b.x - pad, b.y - pad, b.w + pad * 2, b.h + pad * 2);
+    ctx.restore();
+  }
   /** Entities left out of the drawing. The game still runs them. */
   hidden: ReadonlySet<string> = new Set();
   /** Draw without shake, so two drawings of one moment differ only in what was hidden. */
@@ -848,7 +1018,9 @@ class View {
     }
     this.particles.draw(ctx);
     if (this.debug) this.drawDebug(ctx, world, zoom);
+    if (this.highlight) this.drawHighlight(ctx, world, zoom);
     ctx.restore();
+    this.lastView = viewInfo;
     return viewInfo;
   }
 

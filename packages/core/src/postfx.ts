@@ -23,6 +23,8 @@ void main() {
 /** No WebGL on this machine: not the game's fault, and a finish a game can go without. */
 export class NoWebGL extends Error {}
 
+const LOST = "postfx needs WebGL, and this GPU lost it.";
+
 export class PostFx {
   readonly canvas: HTMLCanvasElement;
   private readonly gl: WebGLRenderingContext;
@@ -39,23 +41,38 @@ export class PostFx {
     // preserveDrawingBuffer keeps the frame readable for screenshots.
     const gl = this.canvas.getContext("webgl", { preserveDrawingBuffer: true, premultipliedAlpha: false });
     if (!gl) throw new NoWebGL("postfx needs WebGL, which this browser doesn't provide.");
+    // A GPU that crashes on WebGL hands out a context and loses it at once: no WebGL either.
+    if (gl.isContextLost()) throw new NoWebGL(LOST);
+    this.canvas.addEventListener("webglcontextlost", () => (this.lost = true));
     this.gl = gl;
+    try {
+      ({ program: this.program, texture: this.texture, time: this.time, uniforms: this.uniforms } = this.setUp(gl, width, height, source, def));
+    } catch (err) {
+      // Compiling on a lost context fails with no message: that's the GPU, not the shader.
+      if (gl.isContextLost()) throw new NoWebGL(LOST);
+      throw err;
+    }
+  }
 
+  /** True once the GPU took the context away, after which nothing it draws shows. */
+  lost = false;
+
+  private setUp(gl: WebGLRenderingContext, width: number, height: number, source: string, def: PostFxDef) {
     const custom = Object.keys(def.uniforms ?? {});
     // #line 1 makes compiler errors point at lines of the shader file itself.
     const header = ENGINE_HEADER + custom.map((name) => `uniform float ${name};\n`).join("") + "#line 1\n";
-    this.program = link(gl, VERTEX_SHADER, header + stripDeclarations(source, ["u_image", "u_resolution", "u_time", "v_uv", ...custom]), def.shader);
-    gl.useProgram(this.program);
+    const program = link(gl, VERTEX_SHADER, header + stripDeclarations(source, ["u_image", "u_resolution", "u_time", "v_uv", ...custom]), def.shader);
+    gl.useProgram(program);
 
     const buffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]), gl.STATIC_DRAW);
-    const position = gl.getAttribLocation(this.program, "a_position");
+    const position = gl.getAttribLocation(program, "a_position");
     gl.enableVertexAttribArray(position);
     gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
 
-    this.texture = gl.createTexture()!;
-    gl.bindTexture(gl.TEXTURE_2D, this.texture);
+    const texture = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, texture);
     for (const [key, value] of [
       [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE],
       [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE],
@@ -66,10 +83,11 @@ export class PostFx {
     }
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
 
-    gl.uniform1i(gl.getUniformLocation(this.program, "u_image"), 0);
-    gl.uniform2f(gl.getUniformLocation(this.program, "u_resolution"), width, height);
-    this.time = gl.getUniformLocation(this.program, "u_time");
-    this.uniforms = custom.map((name) => ({ location: gl.getUniformLocation(this.program, name), value: def.uniforms![name]! }));
+    gl.uniform1i(gl.getUniformLocation(program, "u_image"), 0);
+    gl.uniform2f(gl.getUniformLocation(program, "u_resolution"), width, height);
+    const time = gl.getUniformLocation(program, "u_time");
+    const uniforms = custom.map((name) => ({ location: gl.getUniformLocation(program, name), value: def.uniforms![name]! }));
+    return { program, texture, time, uniforms };
   }
 
   /** Draws `source` (the frame the game just rendered) through the shader. */

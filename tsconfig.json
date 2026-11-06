@@ -12,6 +12,12 @@
     },
     {
       "path": "packages/cli"
+    },
+    {
+      "path": "packages/studio"
+    },
+    {
+      "path": "packages/studio/ui"
     }
   ]
 }

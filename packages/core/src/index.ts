@@ -18,6 +18,7 @@ export * from "./engines.ts";
 export * from "./simulate.ts";
 export { fuzz, type FuzzFinding, type FuzzOptions, type FuzzResult } from "./fuzz.ts";
 export { actionsUsed } from "./controls.ts";
+export { entityAt, entityBox, entityJson, entitySummary, inputKey, REPLAY_LIMIT, replayScene, type EntitySummary, type Replayed } from "./studio-link.ts";
 export { findPlayer, measureWindows, solve, type SolveOptions, type SolveResult, type TimingWindow } from "./solve.ts";
 export * from "./assertions.ts";
 export * from "./recording.ts";

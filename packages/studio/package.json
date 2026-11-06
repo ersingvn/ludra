@@ -1,0 +1,41 @@
+{
+  "name": "@ludra/studio",
+  "version": "0.97.0",
+  "description": "Ludra Studio: a desktop app to watch an AI agent make a game, live, with every change shown in place.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ersingvn/ludra.git",
+    "directory": "packages/studio"
+  },
+  "homepage": "https://github.com/ersingvn/ludra#readme",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "type": "module",
+  "main": "dist/main.js",
+  "bin": {
+    "ludra-studio": "bin/ludra-studio.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/launch.d.ts",
+      "ludra-dev": "./src/launch.ts",
+      "default": "./dist/launch.js"
+    }
+  },
+  "files": [
+    "dist",
+    "bin",
+    "ui"
+  ],
+  "scripts": {
+    "prepack": "tsc -b --clean && tsc -b"
+  },
+  "dependencies": {
+    "electron": "^45.2.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

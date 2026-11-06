@@ -15,6 +15,7 @@ import { play } from "./commands/play.ts";
 import { test } from "./commands/test.ts";
 import { review } from "./commands/review.ts";
 import { solve } from "./commands/solve.ts";
+import { studio } from "./commands/studio.ts";
 import { paint } from "./format.ts";
 import { CliError } from "./project.ts";
 
@@ -86,6 +87,11 @@ Usage
   ludra dev [folder] [--port 5173]             Play the game in the browser with live reload. Records each session
                                                in recordings/, and 1 2 3 4 N mark how a moment felt
       --no-record                              Don't record
+      --studio                                 What Ludra Studio needs: /__ludra/project, /events, /run, and
+                                               ?studio=1 pages that hot-reload in place (docs/studio.md)
+  ludra studio [folder] [--port 5173]          Open the game in Ludra Studio, the desktop app: watch it live while an
+                                               agent edits it, with entities, an inspector, diffs and check/test/review
+                                               (needs @ludra/studio installed)
   ludra feedback [folder] [--json]             What players felt: marks, deaths and where they stopped, by scene
   ludra build [folder] [--out build] [--json]  The game as one HTML file, and a zip of it for itch.io
   ludra replay <recording|folder> [options]    Play a recording again and show each take; exit 1 when one no longer
@@ -133,6 +139,7 @@ async function main(argv: string[]): Promise<number> {
       seconds: { type: "string" },
       "no-softlocks": { type: "boolean" },
       "no-record": { type: "boolean" },
+      studio: { type: "boolean" },
       take: { type: "string" },
       test: { type: "boolean" },
       mark: { type: "string" },
@@ -165,6 +172,8 @@ async function main(argv: string[]): Promise<number> {
       return components(target, values);
     case "dev":
       return dev(target ?? ".", values);
+    case "studio":
+      return studio(target ?? ".", values);
     case "replay":
       return replay(target ?? ".", values);
     case "feedback":
