@@ -53,13 +53,22 @@ export type TakeEnd =
  * One run of one scene: from when its World was made until it ended. A take holds everything
  * needed to play it again, because a World only ever advances through its inputs.
  */
+/** What a take started with from the scene before: replaying a later scene needs the same. */
+export interface RecordedCarry {
+  score: number;
+  deaths: number;
+  lives?: number;
+  items?: Record<string, number>;
+  flags?: Record<string, number | string | boolean>;
+}
+
 export interface Take {
   /** Path of the scene, relative to the project. */
   scene: string;
   /** Identifies the scene and scripts this was played on. See the CLI's `gameHash`. */
   version: string;
-  /** What the game carried in from the scene before. */
-  carry?: { score: number; deaths: number; lives?: number };
+  /** What the game carried in from the scene before. Items and flags only when there were some. */
+  carry?: RecordedCarry;
   /** The inputs, as an input script in whole frames. */
   inputs: string;
   frames: number;
@@ -146,14 +155,26 @@ export class Recorder {
   }
 
   /** A new World started. Ends the take before it, as `restarted` unless it already ended. */
-  begin(world: World, scene: string | undefined, carry?: { score: number; deaths: number; lives: number | undefined }): void {
+  begin(
+    world: World,
+    scene: string | undefined,
+    carry?: { score: number; deaths: number; lives: number | undefined; items?: Record<string, number>; flags?: Record<string, number | string | boolean> },
+  ): void {
     if (this.world) this.end(this.world, "restarted");
     const path = scene ?? this.options.entry;
     this.index++;
     this.take = {
       scene: path,
       version: this.options.version(path),
-      carry: carry ? { score: carry.score, deaths: carry.deaths, ...(carry.lives === undefined ? {} : { lives: carry.lives }) } : undefined,
+      carry: carry
+        ? {
+            score: carry.score,
+            deaths: carry.deaths,
+            ...(carry.lives === undefined ? {} : { lives: carry.lives }),
+            ...(carry.items && Object.keys(carry.items).length > 0 ? { items: { ...carry.items } } : {}),
+            ...(carry.flags && Object.keys(carry.flags).length > 0 ? { flags: { ...carry.flags } } : {}),
+          }
+        : undefined,
       inputs: "",
       frames: 0,
       checks: [],

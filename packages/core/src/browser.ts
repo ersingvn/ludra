@@ -332,8 +332,8 @@ function samePath(a: string, b: string): boolean {
 }
 
 /** A carry as recordings write it down. */
-function recorded(carry: ProgressCarry | undefined): { score: number; deaths: number; lives: number | undefined } | undefined {
-  return carry && { score: carry.score ?? 0, deaths: carry.deaths ?? 0, lives: carry.lives };
+function recorded(carry: ProgressCarry | undefined): Parameters<Recorder["begin"]>[2] {
+  return carry && { score: carry.score ?? 0, deaths: carry.deaths ?? 0, lives: carry.lives, items: carry.items, flags: carry.flags };
 }
 
 /** Seconds the win screen shows before the next scene, and the fade into a world.goto scene. */
