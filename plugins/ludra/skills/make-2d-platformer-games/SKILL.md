@@ -171,6 +171,30 @@ Lessons that save time:
   - Scripts: `world.progress.save()` saves what the run has right now (fires `saved`, so tests assert `"events.saved >= 1"`), `world.progress.clear()` (fires `cleared`), `world.progress.exists`, and `world.progress.continue()` (goes to the saved game, for a title that offers it in its own way).
 - **Pause menu**: Esc, P, Start on a gamepad or the Ⅱ touch button pause the game (the simulation clock stops) and show Resume, Restart, Sound and Quit to title (from any scene but the entry). Menus are drawn in the scene's first font. A script's `drawMenu(ctx)` hook draws both menus instead, in the game's own look, from `ctx.menu` (`title`, `items`, `selected`); the engine still handles keys, pad and taps (taps hit the default layout: centred rows 300 × 50 px).
 
+## Story: items, locks, flags and dialogue
+
+Adventures, RPGs and anything with a story, without a script. Run `npx @ludra/cli components dialogue` for every field.
+
+- **Items**: `"item": { "name": "key" }` on a sensor body. A player touching it takes it into `world.items` (no score) and fires `pickup`. `"count": 30` for a pile of gold. Items and flags carry over to the next scene like score.
+- **Locks**: `"lock": { "needs": "key" }` on a solid. A player carrying the key opens it (the entity is removed, the key used up unless `"take": false`) and `unlock` fires; without one, `locked` fires once per touch: give it a sound and a "locked" flash so the player knows why. A goal can wait for items too: `"goal": { "requires": { "gem": 3 } }`. `check` warns when something needs an item no entity or dialogue gives (`W_ITEM_NOWHERE`).
+- **Dialogue**: an NPC or a sign gets `"dialogue": { "lines": [ ... ] }`. The player presses **action** within `range` (default 48 px gap) to talk; action or jump goes on, up/down pick a choice, and the player stands still meanwhile.
+  ```json
+  "dialogue": [
+    { "when": { "quest": "done" }, "lines": [{ "speaker": "Smith", "text": "The bridge stands again." }] },
+    { "has": { "hammer": 1 }, "lines": [{ "speaker": "Smith", "text": "My hammer!", "take": { "hammer": 1 }, "set": { "quest": "done" }, "give": { "key": 1 } }] },
+    { "lines": [
+      { "speaker": "Smith", "text": "The bridge is out." },
+      { "text": "Will you fetch my hammer?", "choices": [
+        { "text": "Yes", "set": { "quest": "hammer" }, "next": "thanks" },
+        { "text": "No", "end": true } ] },
+      { "id": "thanks", "text": "Thank you! It's in the old mine." } ] }
+  ]
+  ```
+  A list of dialogues uses the **first** whose `when` (flags) and `has` (items) hold, so put the later story first. A line's `set`/`give`/`take` happen when it is shown, a choice's when picked; a choice with `when`/`has` shows only when they hold (a shop: `{ "text": "Sword", "has": { "gold": 30 }, "take": { "gold": 30 }, "give": { "sword": 1 } }`). `next` is a line index or a line's `id`; without `next` or `end` it goes to the line after.
+- **Flags**: `world.flags` is the story so far, name → number, string or true/false. Dialogue `set` writes them; scripts read and write them (`world.flags.metSmith = true`) and use `world.items.get/add/take/all()`.
+- **Test the story**: walk up and talk with inputs (`"right:0.4s, action:2f, wait:0.2s, action:2f, down:2f, action:2f"`), then assert `"flags.quest == \"hammer\""`, `"items.key >= 1"`, `"events.unlock == 1"`, `"events.talk >= 1"`. A test for a later scene starts with what the player brings: `"carry": { "items": { "key": 1 }, "flags": { "quest": "done" } }`. `ludra play` prints every line said and choice made. `review` flags a dialogue no test talks to, and silent `talk` and `pickup` events.
+- **The box**: the engine draws a calm box at the bottom with the speaker, the text and the choices. With your own `drawUI`, draw it yourself from `world.talking` (`{ entity, line, choice, text, speaker, choices }`, undefined when nobody talks): portraits, a typewriter reveal (`ctx.recent("say")` gives the time the line appeared), the game's font.
+
 ## Worlds: tilemaps, camera zones, tweens
 
 - **Tilemap**: draw a level as text. `"tilemap": { "tileSize": 40, "rows": ["#....c...#", "##########"], "legend": { ... } }` on an entity whose transform is the map's top-left corner.

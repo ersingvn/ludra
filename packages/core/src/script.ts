@@ -96,6 +96,20 @@ export interface ScriptWorld {
   readonly lost: boolean;
   /** The scene this one hands over to (a won goal's next, or world.goto), once it does. */
   readonly exit: string | undefined;
+  /** What the player carries (the `item` component picks things up). Carried to the next scene. */
+  readonly items: {
+    /** How many of `name` the player has (0 when none). */
+    get(name: string): number;
+    add(name: string, n?: number): void;
+    /** Removes `n` (default 1) when the player has that many; false and no change otherwise. */
+    take(name: string, n?: number): boolean;
+    /** A copy: item name → count. */
+    all(): Record<string, number>;
+  };
+  /** Story state: flag name → number, string or boolean ("metSmith", "quest"). Read and write like an object. Carried to the next scene. */
+  flags: Record<string, number | string | boolean>;
+  /** The open conversation (`dialogue` component), or undefined: who, which line, its text, speaker and choices, the highlighted choice. */
+  readonly talking: { entity: string; line: number; choice: number; text: string; speaker: string; choices: string[] } | undefined;
   get(id: string): ScriptEntity | undefined;
   /** Every entity, or only those with the given component. */
   all(component?: string): ScriptEntity[];
@@ -367,6 +381,9 @@ ctx.self      the entity: id, x, y, vx, vy, rotation, angularVelocity, 3D: z, vz
               state (object kept between frames, testable as "<id>.state.<key>");
               has("component"), touches(otherOrId)
 ctx.world     time, frame, width, height, deaths, won, lost, exit (read); score, lives (read/write)
+              items.get(name), items.add(name, n?), items.take(name, n?) -> bool, items.all()   the inventory
+              flags             story state: world.flags.metSmith = true; if (world.flags.quest === "done") ...
+              talking           the open conversation { entity, line, choice, text, speaker, choices } | undefined
               get(id), all(component?), player()
               spawn({ id?, prefab?, components? }) -> entity    destroy(entityOrId)
               kill(entityOrId)  players respawn, others are destroyed

@@ -11,6 +11,8 @@ export type FieldSpec =
   | { type: "points"; default?: [number, number][]; description: string }
   /** A list of strings (tilemap rows). */
   | { type: "strings"; default?: string[]; description: string }
+  /** A list of JSON objects, checked by the component's own rules (dialogue lines). */
+  | { type: "list"; default?: Record<string, unknown>[]; description: string }
   /** Degrees: a number in 2D, { "x", "y", "z" } in 3D. */
   | { type: "rotation"; default?: number; description: string }
   /** A direction: degrees in 2D, an { "x", "y", "z" } vector in 3D. */
@@ -31,6 +33,9 @@ export const COMPONENT_NAMES = [
   "topdown",
   "character",
   "collectible",
+  "item",
+  "lock",
+  "dialogue",
   "patrol",
   "chase",
   "hazard",
@@ -241,11 +246,46 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       score: { type: "number", default: 0, description: "Points added when stomped." },
     },
   },
+  item: {
+    description:
+      'Something the player picks up and carries: a key, a hammer, gold. Touching it removes it and adds "count" of "name" to world.items (no score, unlike collectible). Fires "pickup". Items carry over to the next scene; "goal.requires", "lock" and dialogue use them. Its body must be a sensor.',
+    requires: ["transform", "body"],
+    fields: {
+      name: { type: "string", description: 'What it is, e.g. "key". Several entities can share a name: they add up.' },
+      count: { type: "number", min: 1, default: 1, description: "How many it gives." },
+    },
+  },
+  lock: {
+    description:
+      'A locked door or gate: a solid that opens (is removed) when a player carrying "count" of "needs" touches it. Fires "unlock"; without the item it fires "locked" once per touch, so the game can say so.',
+    requires: ["transform", "body"],
+    fields: {
+      needs: { type: "string", description: 'The item that opens it, e.g. "key".' },
+      count: { type: "number", min: 1, default: 1, description: "How many of it." },
+      take: { type: "boolean", default: true, description: "Uses the item up. false = the item opens it and stays (a pass, a lantern)." },
+    },
+  },
+  dialogue: {
+    description:
+      'Someone (or a sign) the player talks to: within "range", the player presses action. Lines show one by one (action or jump goes on); a line can offer choices (up/down pick, action takes) and set flags, give or take items, and jump to another line. The player can\'t move while talking. "when"/"has" pick a dialogue by the story so far; a list of dialogues uses the first that holds, so an NPC says new things as the story moves on. Fires talk, say, choose and endtalk; scripts read world.talking. The engine draws a box unless the game has its own drawUI.',
+    requires: ["transform"],
+    fields: {
+      lines: { type: "list", description: 'The lines, in order: [{ "speaker": "Smith", "text": "The bridge is out." }, ...]. Run `ludra components dialogue` for every field of a line.' },
+      range: { type: "number", min: 0, default: 0, description: "How near (gap between the two bodies) the player must be to talk. 0 = 48 px in 2D, 1.5 m in 3D." },
+      when: { type: "object", default: {}, description: 'Flags that must hold for this dialogue, e.g. { "quest": "done" }. false also matches a flag never set.' },
+      has: { type: "object", default: {}, description: 'Items the player must have for this dialogue, e.g. { "hammer": 1 }.' },
+    },
+  },
   goal: {
     description: "Touching it completes the level: the `won` flag is set and the simulation stops. Its body must be a sensor.",
     requires: ["transform", "body"],
     fields: {
       requireScore: { type: "number", min: 0, default: 0, description: "Score needed before the goal accepts the player." },
+      requires: {
+        type: "object",
+        default: {},
+        description: 'Items the player must carry before the goal accepts it, e.g. { "key": 1 } (see the "item" component). They are not used up.',
+      },
       next: {
         type: "string",
         default: "",
@@ -672,6 +712,18 @@ export interface Joint {
 export interface Goal {
   requireScore: number;
   next: string;
+  requires: Record<string, number>;
+}
+
+export interface Item {
+  name: string;
+  count: number;
+}
+
+export interface Lock {
+  needs: string;
+  count: number;
+  take: boolean;
 }
 
 export interface Camera {
