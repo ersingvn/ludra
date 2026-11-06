@@ -32,6 +32,7 @@ export const COMPONENT_NAMES = [
   "character",
   "collectible",
   "patrol",
+  "chase",
   "hazard",
   "goal",
   "checkpoint",
@@ -215,6 +216,20 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
       axis: { type: "enum", values: ["x", "y", "z"], default: "x", description: "x = right and back, y = down and back (3D: up), z = toward the viewer and back (3D only)." },
       distance: { type: "number", min: 0, description: "Travel in pixels from the start position along +axis." },
       speed: { type: "number", min: 0, default: 80, description: "Speed in px/s." },
+    },
+  },
+  chase: {
+    description:
+      'Hunts a target: once it sees it (within "sight" px, with nothing solid in between) it goes after it, around walls in a top-down world (gravity 0) or along the ground in a side view (it stops at ledges). When the target gets away it searches where it last saw it for "memory" seconds, then walks back home. Fires "spot" and "giveup" events, for effects and tests. With a "patrol", it patrols until it spots something. Needs a dynamic or kinematic body. 2D.',
+    requires: ["transform", "body"],
+    fields: {
+      target: { type: "string", default: "player", description: 'Who it hunts: "player" (the first platformer or topdown) or an entity id.' },
+      speed: { type: "number", min: 0, default: 120, description: "Speed in px/s while it hunts, searches and goes home." },
+      sight: { type: "number", min: 0, default: 240, description: "How far it can spot the target from, in px." },
+      lose: { type: "number", min: 0, default: 0, description: "Past this distance in px it loses the target. 0 = 1.5 × sight." },
+      memory: { type: "number", min: 0, default: 2, description: "Seconds it searches where it last saw the target before it gives up." },
+      seeThroughWalls: { type: "boolean", default: false, description: "Spots the target through walls too (a sense of smell, a radar)." },
+      home: { type: "boolean", default: true, description: "Walks back to where it started after giving up. false = waits where it gave up." },
     },
   },
   hazard: {
@@ -539,6 +554,16 @@ export interface Topdown {
   speed: number;
   directions: "8" | "4" | "x" | "y";
   clampToWorld: boolean;
+}
+
+export interface Chase {
+  target: string;
+  speed: number;
+  sight: number;
+  lose: number;
+  memory: number;
+  seeThroughWalls: boolean;
+  home: boolean;
 }
 
 export interface Collectible {

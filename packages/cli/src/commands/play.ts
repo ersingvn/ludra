@@ -288,6 +288,10 @@ function describeEvent(event: GameEvent): string {
       return event.cause === "script" ? `game over (from ${event.entity}'s script)` : `${event.entity} is out of lives: game over`;
     case "goto":
       return `${event.entity} → ${event.scene}`;
+    case "spot":
+      return `${event.entity} spotted its target and hunts it`;
+    case "giveup":
+      return `${event.entity} lost its target and gave up`;
     case "custom":
       return `from ${event.entity}'s script${event.data === undefined ? "" : ` ${JSON.stringify(event.data)}`}`;
     default:

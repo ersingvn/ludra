@@ -44,7 +44,7 @@ const AREAS: Record<Area, string> = {
 };
 
 /** Events players cause or feel directly: silence on these reads as unfinished. */
-const IMPORTANT_EVENTS = new Set(["collect", "die", "stomp", "win", "gameover", "checkpoint", "jump"]);
+const IMPORTANT_EVENTS = new Set(["collect", "die", "stomp", "win", "gameover", "checkpoint", "jump", "spot"]);
 const LISTED = 5;
 
 interface SceneInfo {

@@ -4,6 +4,7 @@ import {
   type Camera,
   type Camera3D,
   type Character,
+  type Chase,
   type Light,
   type Mesh,
   type Collectible,
@@ -61,6 +62,21 @@ export interface PatrolState extends Patrol {
   originZ: number;
 }
 
+/** What a hunter is doing: waiting (or patrolling), hunting, searching where the target was, or going home. */
+export interface ChaseState extends Chase {
+  mode: "idle" | "hunt" | "search" | "home";
+  homeX: number;
+  homeY: number;
+  /** Where it last saw the target. */
+  lastX: number;
+  lastY: number;
+  /** Frames of searching left. */
+  searchLeft: number;
+  /** The way it's walking, next waypoint first, and frames until it looks for a new one. */
+  path: { x: number; y: number }[];
+  repathIn: number;
+}
+
 export interface CharacterState extends Character {
   coyoteTimer: number;
   jumping: boolean;
@@ -92,6 +108,7 @@ export interface Entity {
   spawn?: { x: number; y: number; z: number };
   collectible?: Collectible;
   patrol?: PatrolState;
+  chase?: ChaseState;
   hazard?: Hazard;
   goal?: Goal;
   checkpoint?: Record<string, never>;
@@ -121,6 +138,10 @@ export type GameEvent = { frame: number; time: number; x: number; y: number; z?:
   | { type: "checkpoint"; entity: string; checkpoint: string }
   | { type: "gameover"; entity: string; cause: string }
   | { type: "goto"; entity: string; scene: string }
+  /** A hunter (`chase`) saw its target and goes after it. */
+  | { type: "spot"; entity: string }
+  /** A hunter lost its target and stopped searching. */
+  | { type: "giveup"; entity: string }
   /** Fired by a script with world.emit(name, data). */
   | { type: "custom"; name: string; entity: string; data?: unknown }
 );
@@ -366,6 +387,7 @@ export class World {
     this.updateScripts(input, pressed);
     if (this.over) return;
     this.updatePatrols();
+    this.updateChases();
     this.updateTweens();
     this.physics.step(this.physicsHost);
     this.updateTouches();
@@ -1093,6 +1115,117 @@ export class World {
     }
   }
 
+  /** Moves each hunter: spot, hunt, search, go home (see the `chase` component). */
+  private updateChases(): void {
+    if (this.dimensions === 3) return;
+    for (const e of this.entities) {
+      const c = e.chase;
+      const b = e.body;
+      if (!c || !b || b.type === "static") continue;
+      const target = c.target === "player" ? this.entities.find(isPlayer) : this.get(c.target);
+      const lose = c.lose > 0 ? c.lose : c.sight * 1.5;
+      const range = c.mode === "hunt" ? lose : c.sight;
+      const sees = !!target && target !== e && this.sees(e, target, range, c.seeThroughWalls);
+
+      if (sees) {
+        if (c.mode !== "hunt") {
+          c.mode = "hunt";
+          c.repathIn = 0;
+          this.emit({ type: "spot", entity: e.id, x: e.transform.x, y: e.transform.y });
+        }
+        c.lastX = target!.transform.x;
+        c.lastY = target!.transform.y;
+      } else if (c.mode === "hunt") {
+        c.mode = "search";
+        c.searchLeft = Math.round(c.memory / FIXED_DT);
+        c.repathIn = 0;
+      }
+      if (c.mode === "search" && (c.searchLeft-- <= 0 || this.near(e, c.lastX, c.lastY))) {
+        c.mode = c.home ? "home" : "idle";
+        c.repathIn = 0;
+        this.emit({ type: "giveup", entity: e.id, x: e.transform.x, y: e.transform.y });
+      }
+      if (c.mode === "home" && this.near(e, c.homeX, c.homeY)) c.mode = "idle";
+
+      if (c.mode === "idle") {
+        // A patrol takes over again; without one, it waits.
+        if (!e.patrol) {
+          b.vx = 0;
+          if (this.gravity === 0 || b.type === "kinematic") b.vy = 0;
+        }
+        continue;
+      }
+      const toX = c.mode === "home" ? c.homeX : c.lastX;
+      const toY = c.mode === "home" ? c.homeY : c.lastY;
+      if (this.gravity === 0) this.walkTopDown(e, c, toX, toY);
+      else this.walkSideView(e, c, toX);
+    }
+  }
+
+  /** True when `target` is within `range` px of `e` and nothing solid stands between them (unless it sees through walls). */
+  private sees(e: Entity, target: Entity, range: number, throughWalls: boolean): boolean {
+    const dx = target.transform.x - e.transform.x;
+    const dy = target.transform.y - e.transform.y;
+    if (dx * dx + dy * dy > range * range) return false;
+    if (throughWalls) return true;
+    const hit = this.physics.raycast(this.physicsHost, e.transform, target.transform, { ignore: [e] });
+    return !hit || hit.entity === target || !hit.entity.body || hit.entity.body.type !== "static";
+  }
+
+  private near(e: Entity, x: number, y: number): boolean {
+    const dx = x - e.transform.x;
+    const dy = this.gravity === 0 ? y - e.transform.y : 0;
+    const reach = Math.max(4, (e.chase?.speed ?? 0) * FIXED_DT);
+    return dx * dx + dy * dy <= reach * reach;
+  }
+
+  /** Top-down: along a path around walls, looked for again 4 times a second. */
+  private walkTopDown(e: Entity, c: ChaseState, x: number, y: number): void {
+    const b = e.body!;
+    if (c.repathIn-- <= 0 || c.path.length === 0) {
+      c.repathIn = 15;
+      const size = Math.max(b.width, b.height);
+      c.path = findPath(this.navGrid(Math.min(32, Math.max(8, Math.round(size / 2))), size / 2), e.transform, { x, y }) ?? [];
+    }
+    const reach = Math.max(2, c.speed * FIXED_DT);
+    while (c.path.length > 1) {
+      const p = c.path[0]!;
+      const dx = p.x - e.transform.x;
+      const dy = p.y - e.transform.y;
+      if (dx * dx + dy * dy > reach * reach) break;
+      c.path.shift();
+    }
+    const next = c.path[0];
+    if (!next) {
+      b.vx = 0;
+      b.vy = 0;
+      return;
+    }
+    const dx = next.x - e.transform.x;
+    const dy = next.y - e.transform.y;
+    const length = Math.sqrt(dx * dx + dy * dy);
+    // Slow down onto the last waypoint instead of overshooting it.
+    const speed = c.path.length === 1 ? Math.min(c.speed, length / FIXED_DT) : c.speed;
+    b.vx = length > 0 ? (dx / length) * speed : 0;
+    b.vy = length > 0 ? (dy / length) * speed : 0;
+  }
+
+  /** Side view: left or right along the ground, never off a ledge. Gravity does the rest. */
+  private walkSideView(e: Entity, c: ChaseState, x: number): void {
+    const b = e.body!;
+    const dx = x - e.transform.x;
+    let vx = Math.abs(dx) <= Math.max(2, c.speed * FIXED_DT) ? dx / FIXED_DT : Math.sign(dx) * c.speed;
+    if (vx !== 0 && b.type === "dynamic") {
+      // Is there ground a step ahead? A hunter that walks off a ledge is a lemming, not a threat.
+      const aheadX = e.transform.x + Math.sign(vx) * (b.width / 2 + 4);
+      const feet = e.transform.y + b.height / 2;
+      const hit = this.physics.raycast(this.physicsHost, { x: aheadX, y: feet - 2 }, { x: aheadX, y: feet + 24 }, { ignore: [e] });
+      if (!hit) vx = 0;
+    }
+    b.vx = vx;
+    if (b.type === "kinematic") b.vy = 0;
+  }
+
   /** Points each patrolling body toward the end of its path it is heading for. */
   private updatePatrols(): void {
     for (const e of this.entities) {
@@ -1234,6 +1367,9 @@ function createEntity(def: EntityDef): Entity {
   if (entity.platformer || entity.topdown || entity.character) entity.spawn = { x: transform.x, y: transform.y, z: transform.z };
   if (c.collectible) entity.collectible = resolveComponent<Collectible>("collectible", c.collectible);
   if (c.patrol) entity.patrol = { ...resolveComponent<Patrol>("patrol", c.patrol), originX: transform.x, originY: transform.y, originZ: transform.z };
+  if (c.chase) {
+    entity.chase = { ...resolveComponent<Chase>("chase", c.chase), mode: "idle", homeX: transform.x, homeY: transform.y, lastX: transform.x, lastY: transform.y, searchLeft: 0, path: [], repathIn: 0 };
+  }
   if (c.hazard) entity.hazard = resolveComponent<Hazard>("hazard", c.hazard);
   if (c.goal) entity.goal = resolveComponent<Goal>("goal", c.goal);
   if (c.checkpoint) entity.checkpoint = {};

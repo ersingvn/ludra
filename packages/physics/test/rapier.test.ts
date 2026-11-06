@@ -550,3 +550,23 @@ describe("validation", () => {
     assert.ok(validateScene({ world: { physics: "box2d" }, entities: [] }).diagnostics.some((d) => d.path === "world.physics"));
   });
 });
+
+describe("chase on rapier", () => {
+  before(() => loadRapierPhysics());
+
+  test("a hunter finds its way around a wall in a top-down rapier world", () => {
+    const scene: SceneDef = {
+      world: { physics: "rapier", gravity: 0 },
+      entities: [
+        { id: "hero", components: { transform: { x: 420, y: 400 }, body: { type: "dynamic", width: 20, height: 20 }, topdown: { speed: 300 } } },
+        { id: "hunter", components: { transform: { x: 200, y: 400 }, body: { type: "dynamic", width: 20, height: 20, shape: "circle" }, chase: { speed: 120 } } },
+        { id: "w", components: { transform: { x: 300, y: 225 }, body: { type: "static", width: 20, height: 250 } } },
+      ],
+    };
+    const world = run(scene, 5, "up:0.6s");
+    const h = world.get("hunter")!.transform;
+    const p = world.get("hero")!.transform;
+    assert.ok(world.events.some((e) => e.type === "spot"));
+    assert.ok(Math.hypot(h.x - p.x, h.y - p.y) < 30, `found it: ${h.x}, ${h.y} vs ${p.x}, ${p.y}`);
+  });
+});

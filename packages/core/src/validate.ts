@@ -278,6 +278,14 @@ export function validateScene(input: unknown): ValidationResult {
         );
       }
     }
+    if ("chase" in components && body && bodyType === "static") {
+      error(
+        "E_CHASE_NEEDS_MOVING_BODY",
+        `${path}.components.body.type`,
+        `Entity ${label} has "chase" but its body is static, so it can't move.`,
+        'Set "type": "dynamic" (it bumps into walls) or "kinematic" (it glides) on its body.',
+      );
+    }
     if ("patrol" in components && body && bodyType !== "kinematic") {
       error(
         "E_PATROL_NEEDS_KINEMATIC_BODY",
@@ -417,6 +425,7 @@ const ONLY_2D: Record<string, string> = {
   emitter: "Particles in 3D come with the 3D renderer.",
   camera: '3D uses "camera3d".',
   cameraZone: '3D uses "camera3d".',
+  chase: "In 3D, hunt with a script: steer toward world.player() and check world.raycast for line of sight.",
 };
 
 /** Keeps 2D and 3D apart: fields, shapes and components that only mean something in one of them. */

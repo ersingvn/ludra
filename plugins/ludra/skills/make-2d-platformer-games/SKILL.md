@@ -104,6 +104,15 @@ The player has a `platformer` component and a `dynamic` body; gravity pulls ever
 - Enemies are `patrol` + `hazard` on kinematic sensors, on either axis. They can't be stomped. Make them cross the hero's path so passing them takes timing, then sweep `wait:` values to prove the window is wide.
 - A floor is an entity with only a tiled `sprite` on `layer` -1, sized to the world.
 
+### Enemies that hunt: `chase`
+
+- `chase` makes an enemy that thinks: it waits (or patrols, with a `patrol`), **spots** the hero within `sight` px when no wall is in between, hunts it **around walls**, searches where it last saw it for `memory` seconds when it gets away, **gives up** and walks home. No script needed:
+  `"chase": { "speed": 110, "sight": 220, "memory": 2 }` on a `dynamic` body (it bumps into walls) or a `kinematic` one. Add `hazard` (and `"sensor": true`) to make its touch deadly.
+- In a side view (gravity on) it runs along the ground toward the hero and stops at ledges, so a gap or a ledge is a way to escape it.
+- It fires `spot` and `giveup` events. Give `spot` an effect with a sound (a sting, a "!"): being seen without hearing it feels broken, and `review` says so. Tests can assert `"events.spot >= 1"` or `"events.spot == 0"` (a stealth route), and `"hunter.x"` where it ended up.
+- Stealth, guards, zombies, herding: walls that break line of sight are the level design. `seeThroughWalls: true` is a nose or a radar. `target` can be any entity id, not just the player: a guard dog that chases a thrown bone, a wolf after the sheep.
+- For anything else (fleeing, flanking, units that go where they're sent), a script calls `world.findPath(self, to, { size })` and steers toward `path[0]` each frame: the same deterministic pathfinding, around every static wall.
+
 ### Bouncing balls (breakout, Pong, pinball-like)
 
 - `body.bounce` is how much speed a dynamic body keeps when it hits a solid: `1` reflects it perfectly, `0.5` loses half each hit, `0` (default) stops it. Each hit emits a `bounce` event (good for a `blip` sound).
