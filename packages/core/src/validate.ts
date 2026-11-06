@@ -425,7 +425,6 @@ const ONLY_2D: Record<string, string> = {
   emitter: "Particles in 3D come with the 3D renderer.",
   camera: '3D uses "camera3d".',
   cameraZone: '3D uses "camera3d".',
-  chase: "In 3D, hunt with a script: steer toward world.player() and check world.raycast for line of sight.",
 };
 
 /** Keeps 2D and 3D apart: fields, shapes and components that only mean something in one of them. */

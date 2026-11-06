@@ -104,10 +104,10 @@ describe("chase", () => {
     assert.deepEqual(w.get("hunter")!.transform, first);
   });
 
-  test("check says when a hunter can't move or is in a 3D world", () => {
+  test("check says when a hunter can't move, and a 3D hunter is fine", () => {
     const stuck = validateScene({ world: { gravity: 0 }, entities: [hunter(0, 0, {}, { type: "static" })] });
     assert.ok(stuck.diagnostics.some((d) => d.code === "E_CHASE_NEEDS_MOVING_BODY"));
     const threeD = validateScene({ world: { dimensions: 3, physics: "rapier" }, entities: [{ id: "h", components: { transform: { x: 0, y: 0 }, body: { type: "dynamic", width: 1, height: 1 }, chase: {} } }] } as SceneDef);
-    assert.ok(threeD.diagnostics.some((d) => d.code === "W_2D_ONLY" && d.path.endsWith("chase")));
+    assert.ok(!threeD.diagnostics.some((d) => d.path.endsWith("chase")), JSON.stringify(threeD.diagnostics));
   });
 });

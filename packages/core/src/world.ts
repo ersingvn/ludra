@@ -33,8 +33,8 @@ import {
   type ScriptWorld,
   type SpawnDef,
 } from "./script.ts";
-import { atan2 } from "./dmath.ts";
-import { buildGrid, findPath, type NavGrid, type NavPoint } from "./nav.ts";
+import { atan2, cos, sin } from "./dmath.ts";
+import { buildGrid, findPath, type NavGrid } from "./nav.ts";
 import { createPhysics, physicsEngineName } from "./engines.ts";
 import type { CameraZone } from "./camera.ts";
 import { advanceTween, createTween, startTween, type Tween, type TweenState } from "./tween.ts";
@@ -67,13 +67,15 @@ export interface ChaseState extends Chase {
   mode: "idle" | "hunt" | "search" | "home";
   homeX: number;
   homeY: number;
+  homeZ: number;
   /** Where it last saw the target. */
   lastX: number;
   lastY: number;
+  lastZ: number;
   /** Frames of searching left. */
   searchLeft: number;
   /** The way it's walking, next waypoint first, and frames until it looks for a new one. */
-  path: { x: number; y: number }[];
+  path: { x: number; y: number; z?: number }[];
   repathIn: number;
 }
 
@@ -320,6 +322,7 @@ export class World {
   /** Navigation grids by cell and walker size, kept while the walls stay the same. */
   private navGrids = new Map<string, NavGrid>();
   private navWalls = "";
+  private navGrids3D = new Map<string, { grid: NavGrid; x0: number; z0: number }>();
   private scriptInput: ScriptInput = { held: () => false, pressed: () => false };
   /** The script hook currently running, for error messages and event attribution. */
   private current: { entity: Entity; hook: string } | undefined;
@@ -498,6 +501,15 @@ export class World {
 
   private createEntity(def: EntityDef): Entity {
     const entity = createEntity(def);
+    if (entity.chase && this.dimensions === 3) {
+      // The defaults are pixels; a 3D world is in metres. A hunter left at 120 m/s would teleport.
+      const given = (def.components.chase ?? {}) as Record<string, unknown>;
+      if (given.speed === undefined) entity.chase.speed = CHASE_3D.speed;
+      if (given.sight === undefined) entity.chase.sight = CHASE_3D.sight;
+      // A walker stays upright: a capsule that tips over has its feet in the floor and can't find a way.
+      // It still turns to face where it goes: the chase sets rotationY, and physics keeps it.
+      if (entity.body?.type === "dynamic") entity.body.fixedRotation = true;
+    }
     const component = def.components.script;
     if (component) {
       const resolved = resolveComponent<ScriptComponent>("script", component);
@@ -884,19 +896,26 @@ export class World {
         world.emit({ type: "custom", name, entity: by?.id ?? "script", data, x: by?.transform.x ?? 0, y: by?.transform.y ?? 0, ...(world.dimensions === 3 ? { z: by?.transform.z ?? 0 } : {}) });
       },
       findPath: (from, to, options = {}) => {
-        if (world.dimensions === 3) throw world.misuse("world.findPath works in 2D worlds for now. In 3D, steer with raycast toward the target.");
-        const point = (p: unknown, name: string): NavPoint => {
-          const q = p as { x?: unknown; y?: unknown } | null;
-          if (typeof q !== "object" || q === null || typeof q.x !== "number" || typeof q.y !== "number" || !Number.isFinite(q.x) || !Number.isFinite(q.y)) {
-            throw world.misuse(`world.findPath: ${name} must be a point like { x: 100, y: 200 }, or an entity's transform.`);
+        const is3D = world.dimensions === 3;
+        const point = (p: unknown, name: string): { x: number; y: number; z: number } => {
+          const q = p as { x?: unknown; y?: unknown; z?: unknown } | null;
+          const ok = (v: unknown) => typeof v === "number" && Number.isFinite(v);
+          if (typeof q !== "object" || q === null || !ok(q.x) || !ok(q.y) || (is3D && !ok(q.z))) {
+            throw world.misuse(`world.findPath: ${name} must be a point like ${is3D ? "{ x: 1, y: 0, z: -4 }" : "{ x: 100, y: 200 }"}, or an entity's transform.`);
           }
-          return { x: q.x, y: q.y };
+          return { x: q.x as number, y: q.y as number, z: is3D ? (q.z as number) : 0 };
         };
-        const size = options.size ?? 24;
-        if (typeof size !== "number" || !(size > 0)) throw world.misuse("world.findPath: size is the walker's width in px, a positive number.");
-        const cell = options.cell ?? Math.min(32, Math.max(8, Math.round(size / 2)));
-        if (typeof cell !== "number" || !(cell >= 2)) throw world.misuse("world.findPath: cell is the grid's cell in px, 2 or more.");
-        return findPath(world.navGrid(cell, size / 2), point(from, "from"), point(to, "to"));
+        const unit = is3D ? "m" : "px";
+        const size = options.size ?? (is3D ? 0.8 : 24);
+        if (typeof size !== "number" || !(size > 0)) throw world.misuse(`world.findPath: size is the walker's width in ${unit}, a positive number.`);
+        const cell = options.cell ?? defaultCell(size, is3D);
+        if (typeof cell !== "number" || !(cell > 0)) throw world.misuse(`world.findPath: cell is the grid's cell in ${unit}, a positive number.`);
+        const a = point(from, "from");
+        const b = point(to, "to");
+        if (!is3D) return findPath(world.navGrid(cell, size / 2), a, b);
+        const height = options.height ?? 1.8;
+        if (typeof height !== "number" || !(height > 0)) throw world.misuse("world.findPath: height is the walker's height in m, a positive number.");
+        return world.findPath3D(a, b, size, height, cell);
       },
       raycast: (from, to, options = {}) => {
         const ignore = [options.ignore ?? []].flat().map((target) => world.resolve(target)).filter((e): e is Entity => !!e);
@@ -918,6 +937,56 @@ export class World {
       },
     };
     return this.scriptApi;
+  }
+
+  /**
+   * A way on the ground in a 3D world, around whatever is in a walker's way: static bodies that reach
+   * above a step (`STEP_3D`) over its feet and below its head. The ground, low curbs and terrain meshes
+   * (shape "mesh") are walked on, not around. Waypoints keep the walker's own height (y).
+   */
+  private findPath3D(from: { x: number; y: number; z: number }, to: { x: number; y: number; z: number }, size: number, height: number, cell: number): { x: number; y: number; z: number }[] | undefined {
+    // Its feet: `from` is the walker's center, so half its height below.
+    const feet = from.y - height / 2;
+    const { grid, x0, z0 } = this.navGrid3D(cell, size / 2, feet, feet + height);
+    const path = findPath(grid, { x: from.x - x0, y: from.z - z0 }, { x: to.x - x0, y: to.z - z0 });
+    return path?.map((p, i) => ({ x: p.x + x0, y: i === path.length - 1 ? to.y : from.y, z: p.y + z0 }));
+  }
+
+  /** The x/z grid for walkers between `feet` and `top` (y, metres), with its origin. */
+  private navGrid3D(cell: number, inflate: number, feet: number, top: number): { grid: NavGrid; x0: number; z0: number } {
+    const solids = this.entities.filter((e) => e.body && e.body.type === "static" && !e.body.sensor);
+    const footprints: { x: number; z: number; hw: number; hd: number; bottom: number; top: number; mesh: boolean }[] = solids.map((e) => {
+      const b = e.body!;
+      const depth = b.depth > 0 ? b.depth : b.width;
+      // Turned around y: the box's x/z footprint grows to hold the turned box.
+      const turn = (e.transform.rotationY * Math.PI) / 180;
+      const c = Math.abs(cos(turn));
+      const s = Math.abs(sin(turn));
+      return { x: e.transform.x, z: e.transform.z, hw: (b.width * c + depth * s) / 2, hd: (b.width * s + depth * c) / 2, bottom: e.transform.y - b.height / 2, top: e.transform.y + b.height / 2, mesh: b.shape === "mesh" };
+    });
+    const key = `3d|${cell}|${inflate}|${Math.round(feet * 20)}|${Math.round(top * 20)}|${solids.map((e) => `${e.id}:${e.transform.x}:${e.transform.y}:${e.transform.z}:${e.transform.rotationY}`).join("|")}`;
+    const cached = this.navGrids3D.get(key);
+    if (cached) return cached;
+    // The grid covers every solid, ground included, with room around.
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const f of footprints) {
+      minX = Math.min(minX, f.x - f.hw);
+      maxX = Math.max(maxX, f.x + f.hw);
+      minZ = Math.min(minZ, f.z - f.hd);
+      maxZ = Math.max(maxZ, f.z + f.hd);
+    }
+    if (footprints.length === 0) [minX, maxX, minZ, maxZ] = [-50, 50, -50, 50];
+    const pad = 2 + inflate;
+    const x0 = minX - pad;
+    const z0 = minZ - pad;
+    const obstacles = footprints
+      .filter((f) => !f.mesh && f.top > feet + STEP_3D && f.bottom < top)
+      .map((f) => ({ x: f.x - x0, y: f.z - z0, width: f.hw * 2, height: f.hd * 2 }));
+    const grid = buildGrid(maxX - minX + 2 * pad, maxZ - minZ + 2 * pad, cell, inflate, obstacles);
+    if (this.navGrids3D.size > 32) this.navGrids3D.clear();
+    const entry = { grid, x0, z0 };
+    this.navGrids3D.set(key, entry);
+    return entry;
   }
 
   /** The world as cells a walker of half-size `inflate` can or can't stand in, rebuilt when a wall changes. */
@@ -1117,7 +1186,6 @@ export class World {
 
   /** Moves each hunter: spot, hunt, search, go home (see the `chase` component). */
   private updateChases(): void {
-    if (this.dimensions === 3) return;
     for (const e of this.entities) {
       const c = e.chase;
       const b = e.body;
@@ -1135,24 +1203,30 @@ export class World {
         }
         c.lastX = target!.transform.x;
         c.lastY = target!.transform.y;
+        c.lastZ = target!.transform.z;
       } else if (c.mode === "hunt") {
         c.mode = "search";
         c.searchLeft = Math.round(c.memory / FIXED_DT);
         c.repathIn = 0;
       }
-      if (c.mode === "search" && (c.searchLeft-- <= 0 || this.near(e, c.lastX, c.lastY))) {
+      if (c.mode === "search" && (c.searchLeft-- <= 0 || this.near(e, c.lastX, c.lastY, c.lastZ))) {
         c.mode = c.home ? "home" : "idle";
         c.repathIn = 0;
         this.emit({ type: "giveup", entity: e.id, x: e.transform.x, y: e.transform.y });
       }
-      if (c.mode === "home" && this.near(e, c.homeX, c.homeY)) c.mode = "idle";
+      if (c.mode === "home" && this.near(e, c.homeX, c.homeY, c.homeZ)) c.mode = "idle";
 
       if (c.mode === "idle") {
         // A patrol takes over again; without one, it waits.
         if (!e.patrol) {
           b.vx = 0;
-          if (this.gravity === 0 || b.type === "kinematic") b.vy = 0;
+          b.vz = 0;
+          if ((this.gravity === 0 && this.dimensions === 2) || b.type === "kinematic") b.vy = 0;
         }
+        continue;
+      }
+      if (this.dimensions === 3) {
+        this.walk3D(e, c, c.mode === "home" ? c.homeX : c.lastX, c.mode === "home" ? c.homeZ : c.lastZ);
         continue;
       }
       const toX = c.mode === "home" ? c.homeX : c.lastX;
@@ -1166,17 +1240,55 @@ export class World {
   private sees(e: Entity, target: Entity, range: number, throughWalls: boolean): boolean {
     const dx = target.transform.x - e.transform.x;
     const dy = target.transform.y - e.transform.y;
-    if (dx * dx + dy * dy > range * range) return false;
+    const dz = target.transform.z - e.transform.z;
+    if (dx * dx + dy * dy + dz * dz > range * range) return false;
     if (throughWalls) return true;
+    // Before the first physics step, Rapier's rays don't see anything yet: wait a frame on every engine.
+    if (this.frame <= 1) return false;
     const hit = this.physics.raycast(this.physicsHost, e.transform, target.transform, { ignore: [e] });
     return !hit || hit.entity === target || !hit.entity.body || hit.entity.body.type !== "static";
   }
 
-  private near(e: Entity, x: number, y: number): boolean {
+  private near(e: Entity, x: number, y: number, z: number): boolean {
     const dx = x - e.transform.x;
-    const dy = this.gravity === 0 ? y - e.transform.y : 0;
-    const reach = Math.max(4, (e.chase?.speed ?? 0) * FIXED_DT);
-    return dx * dx + dy * dy <= reach * reach;
+    // On the ground (side view, 3D) only the way along the ground counts.
+    const dy = this.gravity === 0 && this.dimensions === 2 ? y - e.transform.y : 0;
+    const dz = this.dimensions === 3 ? z - e.transform.z : 0;
+    const reach = Math.max(this.dimensions === 3 ? 0.15 : 4, (e.chase?.speed ?? 0) * FIXED_DT);
+    return dx * dx + dy * dy + dz * dz <= reach * reach;
+  }
+
+  /** 3D: along the ground on x/z, around what's in the way, looked for again 4 times a second. Gravity keeps y. */
+  private walk3D(e: Entity, c: ChaseState, x: number, z: number): void {
+    const b = e.body!;
+    if (c.repathIn-- <= 0 || c.path.length === 0) {
+      c.repathIn = 15;
+      const size = Math.max(b.width, b.depth > 0 ? b.depth : b.width);
+      c.path = this.findPath3D(e.transform, { x, y: e.transform.y, z }, size, b.height, defaultCell(size, true)) ?? [];
+    }
+    const reach = Math.max(0.05, c.speed * FIXED_DT);
+    while (c.path.length > 1) {
+      const p = c.path[0]!;
+      const dx = p.x - e.transform.x;
+      const dz = p.z! - e.transform.z;
+      if (dx * dx + dz * dz > reach * reach) break;
+      c.path.shift();
+    }
+    const next = c.path[0];
+    if (!next) {
+      b.vx = 0;
+      b.vz = 0;
+      return;
+    }
+    const dx = next.x - e.transform.x;
+    const dz = next.z! - e.transform.z;
+    const length = Math.sqrt(dx * dx + dz * dz);
+    const speed = c.path.length === 1 ? Math.min(c.speed, length / FIXED_DT) : c.speed;
+    b.vx = length > 0 ? (dx / length) * speed : 0;
+    b.vz = length > 0 ? (dz / length) * speed : 0;
+    if (b.type === "kinematic") b.vy = 0;
+    // Face the way it goes, so a model looks where it walks.
+    if (length > 0) e.transform.rotationY = (atan2(-dx, -dz) * 180) / Math.PI;
   }
 
   /** Top-down: along a path around walls, looked for again 4 times a second. */
@@ -1368,7 +1480,7 @@ function createEntity(def: EntityDef): Entity {
   if (c.collectible) entity.collectible = resolveComponent<Collectible>("collectible", c.collectible);
   if (c.patrol) entity.patrol = { ...resolveComponent<Patrol>("patrol", c.patrol), originX: transform.x, originY: transform.y, originZ: transform.z };
   if (c.chase) {
-    entity.chase = { ...resolveComponent<Chase>("chase", c.chase), mode: "idle", homeX: transform.x, homeY: transform.y, lastX: transform.x, lastY: transform.y, searchLeft: 0, path: [], repathIn: 0 };
+    entity.chase = { ...resolveComponent<Chase>("chase", c.chase), mode: "idle", homeX: transform.x, homeY: transform.y, homeZ: transform.z, lastX: transform.x, lastY: transform.y, lastZ: transform.z, searchLeft: 0, path: [], repathIn: 0 };
   }
   if (c.hazard) entity.hazard = resolveComponent<Hazard>("hazard", c.hazard);
   if (c.goal) entity.goal = resolveComponent<Goal>("goal", c.goal);
@@ -1413,6 +1525,17 @@ function readTweened(e: Entity, property: Tween["property"]): number {
 function writeTweened(e: Entity, property: Tween["property"], value: number): void {
   if (property !== "scale" && property !== "opacity") e.transform[property] = value;
   else if (e.sprite) e.sprite[property] = Math.max(0, value);
+}
+
+/** How high a step a walker in 3D climbs without going around it, in metres. */
+const STEP_3D = 0.3;
+
+/** A 3D hunter's defaults, in metres and m/s: a brisk walk, and a room or two of sight. */
+const CHASE_3D = { speed: 3.5, sight: 10 };
+
+/** A grid cell for a walker of `size`: half its width, within sensible bounds. */
+function defaultCell(size: number, is3D: boolean): number {
+  return is3D ? Math.min(1, Math.max(0.25, size / 2)) : Math.min(32, Math.max(8, Math.round(size / 2)));
 }
 
 function isPlayer(e: Entity): boolean {

@@ -27,6 +27,7 @@ A 3D game built with Ludra, a game engine designed for AI agents: Sky Islands. H
 - **Crystals** are sensor bodies with `collectible`, and two tweens make them turn and bob.
 - **The raft** is a kinematic box with a `patrol` along z, whose ends overlap each shore so the player can step on and off at the ends.
 - **The storm puff** is a kinematic sensor sphere with `hazard` (`stompable`) and a patrol along x.
+- **Enemies that hunt** are kinematic sensor capsules with `hazard` and `"chase": { "sight": 10, "speed": 3.5 }` (metres): they spot the player when nothing is in between, walk the ground around obstacles to it, search, give up and go home. Give the `spot` event a sound.
 - **The beacon** is a `checkpoint`.
 - **The portal** is a `goal` that needs 5 crystals.
 - **Falling** below `world.fallLimit` (-12) costs a life and respawns the player at the start or the last checkpoint.

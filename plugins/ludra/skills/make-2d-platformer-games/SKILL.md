@@ -215,6 +215,7 @@ See `examples/clockwork-keep` for all three together, with a test for each movin
   - `self.z`, `self.vz`, `self.rotationX`/`rotationY`, and `self.spin` (degrees per second around each axis).
   - `self.applyImpulse({ x, y, z }, at?)` and `self.applyForce({ x, y, z }, at?)`.
   - `world.raycast({ x, y, z }, { x, y, z })`, and `world.physics.raw` (Rapier 3D).
+  - **Enemies that hunt:** `"chase": { "sight": 10, "speed": 3.5 }` (metres, m/s) walks the ground around whatever blocks it and turns to face where it goes. A deadly one is a `kinematic` sensor capsule with `chase` and `hazard`: it glides at its height and kills on touch. A `dynamic` one (not a sensor) is pushed around and pushes back, and stays upright. `world.findPath(self, to, { size, height })` gives the same ground paths to scripts (companions, units, fleeing).
   - **Masses are kilograms** (density 1 × volume: the player is about 0.45 kg), so an impulse is mass × the speed change: `other.applyImpulse({ y: 12 * other.mass })` launches at 12 m/s.
   - Tweens also take `z`, `rotationX` and `rotationY`.
 - **Testing.** `play --watch` adds z and vz columns; assertions can use `.z`, `.vz`, `.rotationX`, `.rotationY`. Positions are floats: assert ranges (`"player.z < -7.5"`), not exact values. Find timings by sweeping, as in 2D.

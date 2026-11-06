@@ -134,8 +134,15 @@ export interface ScriptWorld {
    * Undefined when there's no way. Walls are static bodies that aren't sensors. `size` is the walker's
    * width in px (default 24): the path keeps its whole body clear. `cell` is the grid's cell in px
    * (default half the size, 8 to 32): smaller finds narrower gaps and costs more. Deterministic.
+   * 3D: a way on the ground (x/z) around whatever stands in the way of a walker `size` m wide (default 0.8)
+   * and `height` m tall (default 1.8) whose center is `from`; the ground, steps up to 0.3 m and terrain
+   * meshes are walked on. Waypoints are { x, y, z }.
    */
-  findPath(from: { x: number; y: number }, to: { x: number; y: number }, options?: { size?: number; cell?: number }): { x: number; y: number }[] | undefined;
+  findPath(
+    from: { x: number; y: number; z?: number },
+    to: { x: number; y: number; z?: number },
+    options?: { size?: number; cell?: number; height?: number },
+  ): { x: number; y: number; z?: number }[] | undefined;
   /**
    * The physics engine. Under rapier, `raw` is { RAPIER, world, body(entity), collider(entity),
    * joint(entity, index?), toRapier(point), fromRapier(point) }: the whole Rapier API, for anything Ludra's components
@@ -346,7 +353,8 @@ ctx.world     time, frame, width, height, deaths, won, lost, exit (read); score,
               raycast(from, to, { ignore?, sensors? }) -> { entity, x, y, distance, normal } | undefined
               findPath(from, to, { size?, cell? }) -> [{ x, y }, ...] | undefined   2D: a way around walls
                                 (static bodies) for a walker size px wide, as waypoints to walk in order; ends
-                                at to. Enemies, companions, units: steer toward path[0] each frame
+                                at to. Enemies, companions, units: steer toward path[0] each frame.
+                                3D: { x, y, z } points, around what blocks a walker (size 0.8 m, height 1.8 m)
               physics.name     "arcade" or "rapier"
               physics.raw       rapier only: { RAPIER, world, body(e), collider(e), toRapier(p), fromRapier(p) }:
                                 the whole Rapier API (Rapier is y-up: convert points). Not in draw hooks.

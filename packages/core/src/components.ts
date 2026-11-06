@@ -220,10 +220,10 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
   },
   chase: {
     description:
-      'Hunts a target: once it sees it (within "sight" px, with nothing solid in between) it goes after it, around walls in a top-down world (gravity 0) or along the ground in a side view (it stops at ledges). When the target gets away it searches where it last saw it for "memory" seconds, then walks back home. Fires "spot" and "giveup" events, for effects and tests. With a "patrol", it patrols until it spots something. Needs a dynamic or kinematic body. 2D.',
+      'Hunts a target: once it sees it (within "sight" px, with nothing solid in between) it goes after it, around walls in a top-down world (gravity 0) or along the ground in a side view (it stops at ledges). When the target gets away it searches where it last saw it for "memory" seconds, then walks back home. Fires "spot" and "giveup" events, for effects and tests. With a "patrol", it patrols until it spots something. Needs a dynamic or kinematic body. In 3D it walks the ground on x/z around what is in its way and turns to face where it goes; sight, lose and speed are then in metres and m/s (defaults 10 m and 3.5 m/s).',
     requires: ["transform", "body"],
     fields: {
-      target: { type: "string", default: "player", description: 'Who it hunts: "player" (the first platformer or topdown) or an entity id.' },
+      target: { type: "string", default: "player", description: 'Who it hunts: "player" (the first platformer, topdown or character) or an entity id.' },
       speed: { type: "number", min: 0, default: 120, description: "Speed in px/s while it hunts, searches and goes home." },
       sight: { type: "number", min: 0, default: 240, description: "How far it can spot the target from, in px." },
       lose: { type: "number", min: 0, default: 0, description: "Past this distance in px it loses the target. 0 = 1.5 × sight." },
