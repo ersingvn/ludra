@@ -1,4 +1,4 @@
-import type { Command, EditRequest, EditResult, FileText, ProjectInfo, RunResponse, ServerEvent, UndoResult } from "./protocol.ts";
+import type { Command, RunCommand, EditRequest, EditResult, FileText, ProjectInfo, RunResponse, ServerEvent, UndoResult } from "./protocol.ts";
 
 export type Connection = "connecting" | "live" | "lost";
 
@@ -11,7 +11,7 @@ export interface Backend {
   project(): Promise<ProjectInfo>;
   /** Server-sent events. Returns a function that stops listening. */
   listen(onEvent: (event: ServerEvent) => void, onConnection: (state: Connection) => void): () => void;
-  run<T>(command: Command, args?: string[]): Promise<RunResponse<T>>;
+  run<T>(command: RunCommand, args?: string[]): Promise<RunResponse<T>>;
   /** A file's text and version (GET /__ludra/file). */
   file(path: string): Promise<FileText>;
   /** Writes edits to a scene file. Refusals (400, 409, 422) come back as { ok: false }; only network failures throw. */
@@ -91,7 +91,7 @@ export class ServerBackend implements Backend {
     return fetch(`${this.base}/__ludra/${endpoint}${this.auth}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   }
 
-  async run<T>(command: Command, args: string[] = []): Promise<RunResponse<T>> {
+  async run<T>(command: RunCommand, args: string[] = []): Promise<RunResponse<T>> {
     const res = await fetch(`${this.base}/__ludra/run${this.auth}`, {
       method: "POST",
       headers: { "content-type": "application/json" },

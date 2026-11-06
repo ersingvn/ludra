@@ -31,12 +31,18 @@ export class MockSceneFile {
   private done: Done[] = [];
   private undone: Done[] = [];
 
+  private readonly changed: (files: FileChange[], by: "studio" | "files", label?: string) => void;
+  private readonly apply: (ops: GameOp[]) => void;
+
   constructor(
     /** Tells Studio a file changed (the /events stream). */
-    private readonly changed: (files: FileChange[], by: "studio" | "files", label?: string) => void,
+    changed: (files: FileChange[], by: "studio" | "files", label?: string) => void,
     /** Shows a change in the mock game. */
-    private readonly apply: (ops: GameOp[]) => void,
-  ) {}
+    apply: (ops: GameOp[]) => void,
+  ) {
+    this.changed = changed;
+    this.apply = apply;
+  }
 
   get version(): string {
     return `mock-${this.n}`;
@@ -132,7 +138,7 @@ function editOne(entities: MockEntity[], edit: Edit, ops: GameOp[]): string | un
       if (!entity || typeof entity.id !== "string" || entity.id === "") return "add needs an entity with an id.";
       if (index(entity.id) >= 0) return `The id "${entity.id}" is taken. Pick another.`;
       if (typeof edit.after === "string" && index(edit.after) < 0) return `There is no entity "${edit.after}" to add after.`;
-      const op: GameOp = { op: "add", entity: clone({ components: {}, ...entity }), after: edit.after };
+      const op: GameOp = { op: "add", entity: clone({ ...entity, components: entity.components ?? {} }), after: edit.after };
       applyOp(entities, op);
       ops.push(op);
       return undefined;

@@ -2,7 +2,7 @@
 // on a timer, so every panel has something real-looking to show.
 
 import type { Backend, Connection } from "../backend.ts";
-import type { CheckResult, Command, Diagnostic, EditRequest, EditResult, FileChange, FileText, ReviewResult, RunResponse, ServerEvent, TestRunResult, UndoResult } from "../protocol.ts";
+import type { CheckResult, Command, RunCommand, Diagnostic, EditRequest, EditResult, FileChange, FileText, ReviewResult, RunResponse, ServerEvent, TestRunResult, UndoResult } from "../protocol.ts";
 import type { Studio } from "../studio.ts";
 import { MockSceneFile, type GameOp } from "./edits.ts";
 import { MOCK_BLOCKS, MOCK_PREFABS, MOCK_PROJECT, type MockEntity } from "./scene.ts";
@@ -302,7 +302,7 @@ export class MockBackend implements Backend {
     setTimeout(() => void studio.runCommand("review", true), 1400);
   }
 
-  async run<T>(command: Command, args: string[] = []): Promise<RunResponse<T>> {
+  async run<T>(command: RunCommand, args: string[] = []): Promise<RunResponse<T>> {
     if (command === "add") return { ok: true, exitCode: 0, result: this.addBlock(args) as T };
     await delay(command === "review" ? (args.includes("--fast") ? 900 : 2200) : command === "test" ? 1100 : 450);
     let result: CheckResult | TestRunResult | ReviewResult;

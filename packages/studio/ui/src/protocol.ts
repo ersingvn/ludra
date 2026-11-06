@@ -35,7 +35,9 @@ export type ServerEvent =
       label?: string;
     };
 
-export type Command = "check" | "test" | "review" | "add";
+export type Command = "check" | "test" | "review";
+/** What /__ludra/run takes: the commands, and `add` for the palette ([block, "--at", "x,y", "--id", name]). */
+export type RunCommand = Command | "add";
 
 /** A file's text and its version (a hash of the text), from GET /__ludra/file. */
 export interface FileText {
@@ -50,7 +52,6 @@ export interface EntityJson {
   name?: string;
   prefab?: string;
   components?: Record<string, unknown>;
-  [key: string]: unknown;
 }
 
 /**
