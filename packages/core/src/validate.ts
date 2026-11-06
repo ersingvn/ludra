@@ -79,6 +79,9 @@ export function validateScene(input: unknown): ValidationResult {
       if (lives !== undefined && (typeof lives !== "number" || !Number.isInteger(lives) || lives < 1)) {
         error("E_INVALID_WORLD", "world.lives", `world.lives must be a whole number of at least 1, got ${describe(lives)}.`, "Leave it out for unlimited retries.");
       }
+      if (raw.world.save !== undefined && typeof raw.world.save !== "boolean") {
+        error("E_INVALID_WORLD", "world.save", `world.save must be true or false, got ${describe(raw.world.save)}.`, 'Use "save": false for a game that always starts fresh; leave it out to save the player\'s progress.');
+      }
     }
   }
 

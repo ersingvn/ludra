@@ -292,6 +292,10 @@ function describeEvent(event: GameEvent): string {
       return `${event.entity} spotted its target and hunts it`;
     case "giveup":
       return `${event.entity} lost its target and gave up`;
+    case "saved":
+      return `${event.entity}'s script saved the player's progress`;
+    case "cleared":
+      return `${event.entity}'s script cleared the saved progress`;
     case "custom":
       return `from ${event.entity}'s script${event.data === undefined ? "" : ` ${JSON.stringify(event.data)}`}`;
     default:

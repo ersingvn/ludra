@@ -292,7 +292,7 @@ export const COMPONENTS: Record<ComponentName, ComponentSpec> = {
   },
   checkpoint: {
     description:
-      "When a player touches it, that player respawns here after dying (standing on the checkpoint's bottom edge). Fires a checkpoint event once. Its body must be a sensor.",
+      "When a player touches it, that player respawns here after dying (standing on the checkpoint's bottom edge). Fires a checkpoint event once. In the browser, reaching it also saves the player's progress, and Continue starts there. Its body must be a sensor.",
     requires: ["transform", "body"],
     fields: {},
   },

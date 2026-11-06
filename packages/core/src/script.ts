@@ -117,6 +117,22 @@ export interface ScriptWorld {
   goto(scene: string): void;
   /** Fires a custom event that tests can count (`events.<name>`) and `effects` can react to. */
   emit(name: string, data?: unknown): void;
+  /**
+   * The player's saved game. The browser saves on its own when a scene starts and at each
+   * checkpoint; scripts can save at other moments too. Tests keep it in memory.
+   */
+  readonly progress: {
+    /** True when there is a saved game (never in a scene with "world": { "save": false }). */
+    readonly exists: boolean;
+    /** The scene the saved game continues in, when the host knows it. */
+    readonly scene: string | undefined;
+    /** Saves what the run has now (score, deaths, lives, items, flags, last checkpoint). Fires "saved". False when the scene doesn't save. */
+    save(): boolean;
+    /** Forgets the saved game ("New game"). Fires "cleared" when there was one. */
+    clear(): void;
+    /** Moves on to the saved game, like goto: a game's own title screen calls it for Continue. False when there's none. */
+    continue(): boolean;
+  };
   /** A number in [0, 1). Seeded by `world.seed`, so runs stay deterministic. Never use Math.random. */
   random(): number;
   /**
@@ -213,6 +229,8 @@ export interface DrawContext {
   random(): number;
   /** Sharp bitmap text with Turkish and Latin marks, for a low-resolution look. (x, y) is its top. */
   pixelText(text: string, x: number, y: number, options?: PixelTextOptions): void;
+  /** drawMenu only: the menu that is open. `selected` is the index in `items` the player is on. */
+  menu?: { title: string; items: string[]; selected: number };
 }
 
 /**
@@ -310,6 +328,11 @@ export interface Script {
    */
   drawUI?(ctx: DrawContext): void;
   /**
+   * Paints the pause and title menus instead of the engine's (browser only). `ctx.menu` says
+   * what is open: its title, items and the selected one. The engine still handles the keys.
+   */
+  drawMenu?(ctx: DrawContext): void;
+  /**
    * Makes sound with the real Web Audio API, every rendered frame in the browser once the
    * player has pressed a key (browsers block audio before that). Tests never call it.
    */
@@ -321,7 +344,7 @@ export interface Script {
   render?(ctx: RenderContext): void;
 }
 
-export const SCRIPT_HOOKS = ["start", "update", "touch", "draw", "drawUI", "sound", "render"] as const;
+export const SCRIPT_HOOKS = ["start", "update", "touch", "draw", "drawUI", "drawMenu", "sound", "render"] as const;
 
 /** Printed by `ludra components script`. Keep in sync with the interfaces above. */
 export const SCRIPT_API_REFERENCE = `A script file default-exports hooks. Only "import type" is allowed: scripts run without a bundler.
@@ -333,6 +356,7 @@ export const SCRIPT_API_REFERENCE = `A script file default-exports hooks. Only "
     touch(ctx, other) {},    // when this entity starts touching another body (after physics)
     draw(ctx) {},            // paint this entity in world space (browser only, every rendered frame)
     drawUI(ctx) {},          // paint screen-space UI; replaces the default HUD and win screen
+    drawMenu(ctx) {},        // paint the pause / title menu yourself (ctx.menu: title, items, selected)
     sound(ctx) {},           // make sound with the real Web Audio API (browser only, every rendered frame)
     render(ctx) {},          // 3D: build and animate anything with the real three.js (browser only, every frame)
   } satisfies Script;
@@ -355,6 +379,9 @@ ctx.world     time, frame, width, height, deaths, won, lost, exit (read); score,
                                 (static bodies) for a walker size px wide, as waypoints to walk in order; ends
                                 at to. Enemies, companions, units: steer toward path[0] each frame.
                                 3D: { x, y, z } points, around what blocks a walker (size 0.8 m, height 1.8 m)
+              progress.exists  a saved game exists; progress.save() fires "saved", progress.clear() fires "cleared";
+                                progress.continue() goes to the saved game (for a title screen with its own drawUI).
+                                The browser saves by itself when a scene starts and at checkpoints
               physics.name     "arcade" or "rapier"
               physics.raw       rapier only: { RAPIER, world, body(e), collider(e), toRapier(p), fromRapier(p) }:
                                 the whole Rapier API (Rapier is y-up: convert points). Not in draw hooks.
