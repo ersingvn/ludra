@@ -1,6 +1,6 @@
 {
   "name": "@ludra/studio",
-  "version": "0.97.0",
+  "version": "0.98.0",
   "description": "Ludra Studio: a desktop app to watch an AI agent make a game, live, with every change shown in place.",
   "license": "MIT",
   "repository": {
