@@ -111,6 +111,47 @@ When `/__ludra/events` reports a change to a scene, prefab, script or asset that
 Replay is capped at 2 minutes of game time (7,200 frames). Past that, it restarts with the reason "too far in
 to replay".
 
+### Engine notes (as built on `feat/studio-engine`)
+
+What the engine does where the contract above leaves room. The UI can rely on these:
+
+- **Only the three studio endpoints send `Access-Control-Allow-Origin: *`.** The game page and its files
+  (`/`, `/__ludra/scene`, `/__ludra/script/...`) don't, because the iframe loads them from their own origin.
+  Otherwise any web site open in a browser could read the game's code from `127.0.0.1`.
+- **A token, for the shell to set.** When `ludra dev --studio` runs with `LUDRA_STUDIO_TOKEN` in its
+  environment, every studio request must carry it as `?token=...`. Without it the answer is 401.
+  EventSource can't send headers, so it goes in the query. The shell should make a random one, put it in
+  the child's environment, and pass it on to the UI. The UI adds it to `/project`, `/events` and `/run`, and
+  to the iframe's URL (`/?studio=1&token=...`), and the game page passes it on to its own `/events`.
+  Without a token, the endpoints are open to any page, as the contract first said.
+- **The studio endpoints only answer a local Host** (`localhost`, `127.0.0.1`, `[::1]`, any port), so a web page
+  that points its own name at this machine can't read the project through them. Anything else gets 403.
+- **`/__ludra/run` takes only these `args`:** `review`: `--fast`, `--strict`. `check` and `test`: none.
+  Anything else is a 400 with `{ error }` saying what it takes. An unknown command and a non-POST request are
+  400 and 405.
+- **`diff`**: a file rewritten past 2,000 edits gets an all-removed, all-added diff instead of a minimal one.
+  Like any diff, it's cut at 400 lines, and the last line then says `… N more lines`. A removed file's diff
+  removes every line, and an added one adds them.
+- **`ready`**: `width` and `height` are the game canvas in pixels. `physics` is the engine's name
+  (`arcade`, `rapier`, `rapier3d`).
+- **`status`**: `lives` is `null` when the scene has unlimited retries. A `status` goes out right after
+  `pause`, `resume` and every `hot`.
+- **`entities` and `entity`**: the engine doesn't keep a name or a prefab after validation, so those fields are
+  left out. `components` lists the live component states, `script` included. `entity.data` is
+  `{ id, components, state }`. Another entity it refers to is `{ entity: "<id>" }`, and functions are left
+  out. `entities` goes out again when an entity is added or removed or its components change, not when it
+  moves.
+- **`pick` and `highlight` work in 2D.** They use the entity's body, or its sprite, or a 24 px square. Where
+  several overlap, the smallest one under the cursor wins. In 3D, `picked` is `null` and `highlight` draws
+  nothing yet.
+- **`event`**: past 20 a second, the rest of a burst is dropped rather than sent late.
+- **`hot`**: changes to a prefab, a script or an asset are hot. So is a change to a scene, but only to the
+  running one. A changed script loads again, not from the module cache. A scene that doesn't pass check is
+  `rejected` with `error.diagnostics`, and so is one that can't be loaded, such as a script with a syntax
+  error. Its `reason` says which.
+- **A page that opens on a broken scene** sends `error` with the diagnostics and reloads on the next change.
+
+
 ## UI (UI part)
 
 Dark, dense and calm, like a pro tool (Godot or Unity), not like a website. Layout:

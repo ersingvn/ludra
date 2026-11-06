@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { collectAssetPaths } from "@ludra/core";
 import { CliError, isInside, listScenes, readScene, scriptPaths, type Project } from "./project.ts";
 import { gameHash, saveTake, type TakeUpload } from "./recordings.ts";
+import type { StudioApi } from "./studio-api.ts";
 
 export const PROJECT_PREFIX = "/__ludra/project/";
 export const SCRIPT_PREFIX = "/__ludra/script/";
@@ -115,15 +116,19 @@ function serveModule(res: ServerResponse, dir: string, path: string): void {
 export function createGameServer(
   project: Project,
   indexHtml: (page: { browserModule: string; physicsModule: string; threeModule: string; importMap: string }) => string,
-  options: { record?: boolean } = {},
+  options: { record?: boolean; studio?: (version: () => string) => StudioApi } = {},
 ): GameServer {
   const paths = enginePaths();
   const { browserModule, physicsModule } = paths;
   const importMap = `<script type="importmap">${JSON.stringify({ imports: paths.imports })}</script>`;
 
+  const studio = options.studio?.(() => version(project));
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     try {
+      // Studio's window is a file:// page, so its endpoints answer any page (docs/studio.md). Only
+      // those: the game page and its files stay readable by this server's own pages alone.
+      if (studio && studio.handle(req, res, url)) return;
       if (url.pathname === RECORDING_PATH && options.record) {
         receiveTake(project, req, res);
       } else if (url.pathname === "/") {
@@ -187,6 +192,7 @@ export function createGameServer(
       res.end((err as Error).message);
     }
   });
+  server.on("close", () => studio?.close());
   return { server, browserModule, physicsModule, threeModule: paths.threeModule, importMap };
 }
 
@@ -230,7 +236,7 @@ function receiveTake(project: Project, req: IncomingMessage, res: ServerResponse
 }
 
 /** Changes whenever a scene, prefab or any file they reference changes, so the page knows to reload. */
-function version(project: Project): string {
+export function version(project: Project): string {
   if (!existsSync(project.entryPath)) return "missing";
   const files: string[] = [];
   for (const path of listScenes(project)) {

@@ -87,6 +87,8 @@ Usage
   ludra dev [folder] [--port 5173]             Play the game in the browser with live reload. Records each session
                                                in recordings/, and 1 2 3 4 N mark how a moment felt
       --no-record                              Don't record
+      --studio                                 What Ludra Studio needs: /__ludra/project, /events, /run, and
+                                               ?studio=1 pages that hot-reload in place (docs/studio.md)
   ludra studio [folder] [--port 5173]          Open the game in Ludra Studio, the desktop app: watch it live while an
                                                agent edits it, with entities, an inspector, diffs and check/test/review
                                                (needs @ludra/studio installed)
@@ -137,6 +139,7 @@ async function main(argv: string[]): Promise<number> {
       seconds: { type: "string" },
       "no-softlocks": { type: "boolean" },
       "no-record": { type: "boolean" },
+      studio: { type: "boolean" },
       take: { type: "string" },
       test: { type: "boolean" },
       mark: { type: "string" },
