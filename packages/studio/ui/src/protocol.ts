@@ -8,6 +8,10 @@ export interface ProjectInfo {
   entry: string;
   scenes: string[];
   window: { width: number; height: number; pixelated?: boolean };
+  /** Prefab names (prefabs/<name>.prefab.json), for the palette. */
+  prefabs?: string[];
+  /** The block library (`ludra blocks`), for the palette. */
+  blocks?: { name: string; description: string; tags: string[] }[];
 }
 
 export type FileKind = "scene" | "prefab" | "script" | "asset" | "config" | "test" | "design" | "other";
@@ -21,9 +25,60 @@ export interface FileChange {
 
 export type ServerEvent =
   | { type: "hello"; version: number | string }
-  | { type: "change"; version: number | string; at: string; files: FileChange[] };
+  | {
+      type: "change";
+      version: number | string;
+      at: string;
+      files: FileChange[];
+      /** "studio" when this server wrote it (an edit, undo or redo, with its label); "files" for anything else (the agent, an editor, git). */
+      by?: "studio" | "files";
+      label?: string;
+    };
 
-export type Command = "check" | "test" | "review";
+export type Command = "check" | "test" | "review" | "add";
+
+/** A file's text and its version (a hash of the text), from GET /__ludra/file. */
+export interface FileText {
+  path: string;
+  version: string;
+  text: string;
+}
+
+/** An entity as a scene file holds it. */
+export interface EntityJson {
+  id: string;
+  name?: string;
+  prefab?: string;
+  components?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+/**
+ * One change to a scene file (POST /__ludra/edit). `field` is a dotted path inside the entity
+ * ("components.transform.x", "components.sprite", "id" to rename) or the scene ("world.gravity").
+ * A `set` without `value` removes the field. `add` goes last, or right after `after`; `after: null` puts it first.
+ */
+export type Edit =
+  | { op: "set"; entity: string; field: string; value?: unknown }
+  | { op: "add"; entity: EntityJson; after?: string | null }
+  | { op: "remove"; entity: string }
+  | { op: "scene"; field: string; value?: unknown };
+
+export interface EditRequest {
+  path: string;
+  /** The version the edits were made against: stale → 409. */
+  version: string;
+  edits: Edit[];
+  /** What the person did, e.g. "Moved coin-3": for undo and Activity. */
+  label?: string;
+}
+
+/** 409: the file changed since `version` (fetch it again). 422: the result has errors. 400: a bad edit. */
+export type EditResult =
+  | { ok: true; version: string; diagnostics: Diagnostic[] }
+  | { ok: false; status: 400 | 409 | 422; error?: string; version?: string; diagnostics?: Diagnostic[] };
+
+export type UndoResult = { ok: true; path: string; label: string } | { ok: false; status?: number; error?: string };
 
 export interface RunResponse<T = unknown> {
   ok: boolean;
