@@ -649,6 +649,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how it fits together.
 - ~~**v0.94: sharper eyes and taste.** Contact sheets (many frames in one image), visual diffs between versions, a free debug camera and a top-down map in 3D, readability checks on frames, and a `game.md` of design intent that `review` measures the game against.~~ Done.
 - ~~**v0.95: humans in the loop.** Record a person's session in `ludra dev`, let them mark moments ("too hard", "boring here"), and turn any recording into a test with one command, so the agent sees exactly what the player felt.~~ Done.
 - ~~**v0.96: shipping.** A single-file web build ready for itch.io, touch and gamepad controls, performance budgets in `review`.~~ Done.
+- ~~**v0.97: Ludra Studio.** A desktop app (`ludra studio`) to watch an agent make a game live: every change shows up in place with its diff, the game keeps its state through hot reload, and entities, an inspector, problems, tests and review sit beside it. See [`docs/studio.md`](docs/studio.md).~~ Done.
 - **v1.0.** Any genre in 2D or 3D, as far as the agent wants to take it, with a `make-games` skill and complete docs: an engine where an AI makes games people want to play.
 
 ## Contributing
