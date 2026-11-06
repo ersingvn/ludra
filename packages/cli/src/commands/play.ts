@@ -292,6 +292,20 @@ function describeEvent(event: GameEvent): string {
       return `${event.entity} spotted its target and hunts it`;
     case "giveup":
       return `${event.entity} lost its target and gave up`;
+    case "pickup":
+      return `${event.entity} picked up ${event.item}: ${event.name}${event.count === 1 ? "" : ` ×${event.count}`}`;
+    case "unlock":
+      return `${event.entity} opened ${event.lock} with ${event.needs}`;
+    case "locked":
+      return `${event.lock} is locked (needs ${event.needs})`;
+    case "talk":
+      return `${event.player} talks to ${event.entity}`;
+    case "say":
+      return `${event.speaker || event.entity}: "${event.text}" (line ${event.line})`;
+    case "choose":
+      return `picked "${event.text}" (choice ${event.choice} on line ${event.line})`;
+    case "endtalk":
+      return `the talk with ${event.entity} ends`;
     case "custom":
       return `from ${event.entity}'s script${event.data === undefined ? "" : ` ${JSON.stringify(event.data)}`}`;
     default:

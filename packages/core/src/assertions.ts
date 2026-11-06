@@ -230,6 +230,8 @@ export interface TestResult {
   error?: string;
   /** Names of the events that fired during the run (built-in types and custom names). */
   events: string[];
+  /** Entities the player talked to (`dialogue`), so review knows which conversations a test opens. */
+  talked?: string[];
 }
 
 export function runTest(scene: SceneDef, test: TestCase, options: WorldOptions = {}): TestResult {
@@ -269,5 +271,6 @@ export function runTest(scene: SceneDef, test: TestCase, options: WorldOptions =
     return evaluateAssertion(a, snapshots.get(frame)!, world.events);
   });
   const events = [...new Set(world.events.map((e) => (e.type === "custom" ? e.name : e.type)))];
-  return { name: test.name, pass: results.every((r) => r.pass), duration: frames * FIXED_DT, results, events };
+  const talked = [...new Set(world.events.flatMap((e) => (e.type === "talk" ? [e.entity] : [])))];
+  return { name: test.name, pass: results.every((r) => r.pass), duration: frames * FIXED_DT, results, events, ...(talked.length > 0 ? { talked } : {}) };
 }
