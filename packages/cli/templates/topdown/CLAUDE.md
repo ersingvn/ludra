@@ -35,6 +35,7 @@ Never call a change done until `ludra check`, `ludra test` and `ludra review` ar
 - The hero uses `topdown`: arrow keys move it in 8 directions at `speed` px/s. Inputs like `"right+up:0.5s"` move diagonally. A `dynamic` body collides with walls.
 - Walls are `static` bodies. Hazards, collectibles and goals need `"sensor": true`.
 - Enemies are kinematic sensor bodies with a `patrol` (`axis` "x" or "y") and a `hazard`. In top-down games they can't be stomped.
+- Enemies that hunt: `"chase": { "speed": 90, "sight": 180 }` (with `hazard`) waits or patrols, spots the hero when no wall is in between, hunts it around walls, searches, gives up and walks home. Give the `spot` event a sound. Walls that block sight are the level design; run `npx @ludra/cli solve` to find a way past them. For other behavior, a script can call `world.findPath(self, to)`.
 - A floor is an entity with only a tiled `sprite` (no body) on `layer` -1, sized to the world.
 - The level is done when a test proves `won == true` with `deaths == 0`, and every enemy crossing works across a wide timing window (sweep `wait:` values with `play`).
 - For a game that is about physics (stacking, ropes, hinges, rolling, vehicles), set `"physics": "rapier"` in `"world"`: rotation, round and free shapes, friction, mass and joints. See the skill's physics section and `npx @ludra/cli components body` / `joint`.
