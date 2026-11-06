@@ -24,3 +24,15 @@ export * from "./assertions.ts";
 export * from "./recording.ts";
 export * from "./ascii.ts";
 export * from "./drawcheck.ts";
+export {
+  DIALOGUE_REFERENCE,
+  type Conversation,
+  type Dialogue,
+  type DialogueChoice,
+  type DialogueLine,
+  type Flag,
+  type StoryCondition,
+  type StoryEffects,
+  type Talking,
+} from "./story.ts";
+export { drawDialogue } from "./dialogue-ui.ts";

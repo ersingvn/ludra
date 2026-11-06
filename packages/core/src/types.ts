@@ -4,7 +4,7 @@ export type Action = "left" | "right" | "up" | "down" | "jump" | "action";
 
 export const ACTIONS: readonly Action[] = ["left", "right", "up", "down", "jump", "action"];
 
-export const EVENT_TYPES = ["jump", "land", "collect", "die", "stomp", "win", "bounce", "checkpoint", "gameover", "goto", "spot", "giveup"] as const;
+export const EVENT_TYPES = ["jump", "land", "collect", "die", "stomp", "win", "bounce", "checkpoint", "gameover", "goto", "spot", "giveup", "pickup", "unlock", "locked", "talk", "say", "choose", "endtalk"] as const;
 export type GameEventType = (typeof EVENT_TYPES)[number];
 
 /** What happens visually and audibly when a game event fires. See `EFFECT_FIELDS`. */

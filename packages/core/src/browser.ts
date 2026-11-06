@@ -3,6 +3,7 @@ import { CameraRig } from "./camera.ts";
 import { actionsUsed, Gamepads, TouchControls } from "./controls.ts";
 import { entityBox, inputKey, REPLAY_LIMIT, replayScene, type GameControl } from "./studio-link.ts";
 import { physicsEngineName } from "./engines.ts";
+import { drawDialogue } from "./dialogue-ui.ts";
 import { parseFrames, type Sprite } from "./components.ts";
 import { collectAssetPaths } from "./effects.ts";
 import { InputScript } from "./input.ts";
@@ -1047,6 +1048,8 @@ class View {
     ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
     // On a touch screen the buttons for these are in that corner.
     if (!this.touch) ctx.fillText(`M: sound ${muted ? "off" : "on"} · R: restart`, viewWidth - 16, 28);
+    // A conversation (the dialogue component) in the engine's own box; a game with drawUI draws it itself.
+    drawDialogue(ctx, world, { width: viewWidth, height: viewHeight, touch: viewInfo.touch });
 
     if (world.won || world.lost) {
       ctx.fillStyle = "rgba(0, 0, 0, 0.55)";

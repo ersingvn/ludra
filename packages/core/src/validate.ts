@@ -2,6 +2,7 @@ import { ANIMATION_STATES, COMPONENT_NAMES, COMPONENTS, isComponentName, isFrame
 import { AUDIO_EXTENSIONS, EFFECT_FIELDS, FONT_EXTENSIONS, IMAGE_EXTENSIONS, MODEL_EXTENSIONS, SOUND_PRESETS } from "./effects.ts";
 import { isKnownSound, validateMusic, validateSounds } from "./sound.ts";
 import { expandTilemaps } from "./tilemap.ts";
+import { dialogueGives, validateDialogue, validateStoryEntity } from "./story.ts";
 import { EVENT_TYPES, type Diagnostic, type SceneDef } from "./types.ts";
 
 export interface ValidationResult {
@@ -104,6 +105,9 @@ export function validateScene(input: unknown): ValidationResult {
   let hasSolid = false;
   let availableScore = 0;
   const goals: { path: string; label: string; requireScore: number }[] = [];
+  /** Item names something in the scene gives (item entities, dialogue), and what goals and locks need. */
+  const itemSources = new Set<string>();
+  const itemNeeds: { path: string; label: string; name: string; what: string }[] = [];
 
   raw.entities.forEach((entity: unknown, i: number) => {
     const path = `entities[${i}]`;
@@ -142,6 +146,12 @@ export function validateScene(input: unknown): ValidationResult {
           `Unknown component "${name}" on entity ${label}.`,
           `${suggestion ? `Did you mean "${suggestion}"? ` : ""}Run \`ludra components\` to list every component.`,
         );
+        continue;
+      }
+      if (name === "dialogue") {
+        // One dialogue or a list of them, with lines and choices: checked by the story rules.
+        validateDialogue(value, componentPath, label, error, warn);
+        dialogueGives(value).forEach((item) => itemSources.add(item));
         continue;
       }
       if ((name === "joint" || name === "tween") && Array.isArray(value)) {
@@ -372,6 +382,7 @@ export function validateScene(input: unknown): ValidationResult {
     if (isObject(components.collectible)) availableScore += numberOr(components.collectible.score, 1);
     if (isObject(components.hazard) && components.hazard.stompable === true) availableScore += numberOr(components.hazard.score, 0);
     if (isObject(components.goal)) goals.push({ path: `${path}.components.goal.requireScore`, label, requireScore: numberOr(components.goal.requireScore, 0) });
+    validateStoryEntity(components, path, label, error, warn, itemSources, itemNeeds);
 
     if ("platformer" in components || "topdown" in components || "character" in components) hasPlayer = true;
     // Only bodies that gravity actually pulls down need something to stand on.
@@ -402,6 +413,15 @@ export function validateScene(input: unknown): ValidationResult {
         `Lower requireScore to at most ${availableScore}, or add more collectibles.`,
       );
     }
+  }
+  for (const need of itemNeeds) {
+    if (itemSources.has(need.name)) continue;
+    warn(
+      "W_ITEM_NOWHERE",
+      need.path,
+      `${need.what} on entity ${need.label} needs "${need.name}", but nothing in this scene gives it (no "item" named "${need.name}", no dialogue "give").`,
+      `Fine if an earlier scene gives it (items carry over) or a script calls world.items.add("${need.name}"). Otherwise add an entity with "item": { "name": "${need.name}" }.`,
+    );
   }
   if (!hasPlayer) {
     warn("W_NO_PLAYER", "entities", is3D ? 'No entity has a "character" component, so nothing responds to input (fine if scripts read input).' : 'No entity has a "platformer" or "topdown" component, so nothing responds to input (fine if scripts read input).');
@@ -496,6 +516,7 @@ const RAPIER_PLATFORMER_FIELDS = ["maxSlope", "stepHeight", "push"] as const;
 /** Components that only work on sensor bodies, and what goes wrong otherwise. */
 const SENSOR_COMPONENTS: [ComponentName, string][] = [
   ["collectible", "players would bump into it instead of picking it up"],
+  ["item", "players would bump into it instead of picking it up"],
   ["hazard", "players would stand on it instead of being hurt"],
   ["goal", "players would bump into it instead of reaching it"],
   ["checkpoint", "players would bump into it instead of passing through"],
@@ -738,6 +759,8 @@ function checkField(spec: FieldSpec, value: unknown): string | undefined {
       return isObject(value) ? undefined : `must be an object like { "speed": 80 }, got ${describe(value)}.`;
     case "strings":
       return Array.isArray(value) && value.every((s) => typeof s === "string") ? undefined : `must be a list of strings, got ${describe(value)}.`;
+    case "list":
+      return Array.isArray(value) && value.every(isObject) ? undefined : `must be a list of objects, got ${describe(value)}.`;
     case "axis":
       if (typeof value === "number" && Number.isFinite(value)) return undefined;
       return isObject(value) && Object.entries(value).every(([k, v]) => ["x", "y", "z"].includes(k) && typeof v === "number" && Number.isFinite(v)) && Object.values(value).some((v) => v !== 0)

@@ -17,6 +17,11 @@ export function actionsUsed(scenes: readonly SceneDef[], scriptSources: readonly
         if (directions !== "y") add("left", "right");
         if (directions !== "x") add("up", "down");
       }
+      // Talking needs action, and up/down when a line offers choices.
+      if (c.dialogue) {
+        add("action");
+        if (JSON.stringify(c.dialogue).includes('"choices"')) add("up", "down");
+      }
     }
   }
   for (const source of scriptSources) {

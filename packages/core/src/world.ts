@@ -11,6 +11,8 @@ import {
   type Emitter,
   type Goal,
   type Hazard,
+  type Item,
+  type Lock,
   type Joint,
   type Patrol,
   type Platformer,
@@ -34,6 +36,22 @@ import {
   type SpawnDef,
 } from "./script.ts";
 import { atan2 } from "./dmath.ts";
+import {
+  addItem,
+  applyEffects,
+  DEFAULT_RANGE_2D,
+  DEFAULT_RANGE_3D,
+  pickDialogue,
+  resolveDialogues,
+  resolveNext,
+  shownChoices,
+  takeItem,
+  talkingView,
+  type Conversation,
+  type Dialogue,
+  type Flag,
+  type Talking,
+} from "./story.ts";
 import { buildGrid, findPath, type NavGrid, type NavPoint } from "./nav.ts";
 import { createPhysics, physicsEngineName } from "./engines.ts";
 import type { CameraZone } from "./camera.ts";
@@ -111,6 +129,12 @@ export interface Entity {
   chase?: ChaseState;
   hazard?: Hazard;
   goal?: Goal;
+  /** Picked up into world.items. */
+  item?: Item;
+  /** A door that opens with an item. */
+  lock?: Lock;
+  /** What it says when the player talks to it: the first whose when/has holds. */
+  dialogue?: Dialogue[];
   checkpoint?: Record<string, never>;
   /** Every joint this entity's `joint` component declares (one object or a list). */
   joints?: Joint[];
@@ -142,6 +166,20 @@ export type GameEvent = { frame: number; time: number; x: number; y: number; z?:
   | { type: "spot"; entity: string }
   /** A hunter lost its target and stopped searching. */
   | { type: "giveup"; entity: string }
+  /** A player picked up an `item` entity (`item`), adding `count` of `name` to world.items. */
+  | { type: "pickup"; entity: string; item: string; name: string; count: number }
+  /** A player carrying the item opened a `lock` (`lock` is its id). */
+  | { type: "unlock"; entity: string; lock: string; needs: string }
+  /** A player without the item touched a `lock`. */
+  | { type: "locked"; entity: string; lock: string; needs: string }
+  /** A conversation opened: `entity` is who the player talks to. */
+  | { type: "talk"; entity: string; player: string }
+  /** A line was shown. */
+  | { type: "say"; entity: string; line: number; text: string; speaker: string }
+  /** The player picked a choice (`choice` is its index in the line's choices). */
+  | { type: "choose"; entity: string; line: number; choice: number; text: string }
+  /** A conversation ended. */
+  | { type: "endtalk"; entity: string }
   /** Fired by a script with world.emit(name, data). */
   | { type: "custom"; name: string; entity: string; data?: unknown }
 );
@@ -172,7 +210,7 @@ export interface WorldOptions {
   /** The physics engine that moves bodies. Defaults to the one the scene names (`world.physics`), arcade if none. */
   physics?: PhysicsEngine;
   /** Values carried over from the previous scene, so a run keeps its score and lives. */
-  carry?: { score?: number; deaths?: number; lives?: number };
+  carry?: { score?: number; deaths?: number; lives?: number; items?: Record<string, number>; flags?: Record<string, Flag> };
 }
 
 export interface WorldSnapshot {
@@ -184,6 +222,11 @@ export interface WorldSnapshot {
   lost: boolean;
   /** Lives left; undefined when the scene has unlimited retries. */
   lives?: number;
+  /** What the player carries, by item name. Left out while the player carries nothing (as flags while none is set). */
+  items?: Record<string, number>;
+  flags?: Record<string, Flag>;
+  /** Who the player is talking to, when a conversation is open. */
+  talking?: string;
   entities: Record<string, EntitySnapshot>;
 }
 
@@ -217,6 +260,8 @@ const TOUCH_MARGIN = 1;
 const EPSILON = 1e-4;
 
 const SAVED = Symbol("saved");
+/** What the player's controls get while a conversation has the keys. */
+const NO_INPUT: ReadonlySet<Action> = new Set();
 
 /** A moment of a world, from `World.save`. Its contents are the engine's own business. */
 export interface WorldSave {
@@ -237,6 +282,10 @@ export interface WorldSave {
     seed: number;
     spawnCount: number;
     physics: unknown;
+    items: Record<string, number>;
+    flags: Record<string, Flag>;
+    conversation: Conversation | undefined;
+    lockTouching: string[];
   };
 }
 
@@ -304,6 +353,14 @@ export class World {
   lives: number | undefined;
   /** The scene to play next (a won goal's `next`, or world.goto). Hosts that can load scenes move on to it. */
   exit: string | undefined;
+  /** What the player carries: item name → count. Carried to the next scene. Scripts use world.items. */
+  readonly items: Record<string, number> = {};
+  /** Story state: flag name → value. Carried to the next scene. */
+  readonly flags: Record<string, Flag> = {};
+  /** The open conversation, if any. */
+  private conversation: Conversation | undefined;
+  /** player>lock pairs touching last frame, so "locked" fires once per touch. */
+  private lockTouching = new Set<string>();
   private readonly prefabs: Record<string, { components: Record<string, Record<string, unknown>> }>;
   private readonly reached = new Set<string>();
   /** Moves bodies; gameplay below only talks to it through velocities, grounded and overlaps. */
@@ -339,6 +396,8 @@ export class World {
     this.score = options.carry?.score ?? 0;
     this.deaths = options.carry?.deaths ?? 0;
     this.lives = options.carry?.lives ?? scene.world?.lives;
+    Object.assign(this.items, options.carry?.items);
+    Object.assign(this.flags, options.carry?.flags);
     this.physics = options.physics ?? createPhysics(physicsEngineName(scene), { width: this.width, height: this.height, gravity: this.gravity });
     const world = this;
     this.physicsHost = {
@@ -374,13 +433,22 @@ export class World {
     return this.entities.find((e) => e.id === id);
   }
 
+  /** The open conversation as the player sees it (the line, its speaker and choices), or undefined. A fresh copy each time. */
+  get talking(): Talking | undefined {
+    const c = this.conversation;
+    const dialogue = c && this.get(c.entity)?.dialogue?.[c.dialogue];
+    return c && dialogue && dialogue.lines[c.line] ? talkingView(c, dialogue, this) : undefined;
+  }
+
   /** Advances one frame with the given actions held down. */
   step(input: ReadonlySet<Action>): void {
-    const pressed = new Set([...input].filter((action) => !this.previousInput.has(action)));
+    let pressed: ReadonlySet<Action> = new Set([...input].filter((action) => !this.previousInput.has(action)));
     this.previousInput = new Set(input);
     this.frame++;
     if (this.over) return;
 
+    // While talking the player stands still: the keys are the conversation's.
+    if (this.updateDialogue(pressed)) input = pressed = NO_INPUT;
     this.updatePlatformers(input, pressed);
     this.updateCharacters(input, pressed);
     this.updateTopdown(input);
@@ -393,6 +461,8 @@ export class World {
     this.updateTouches();
     if (this.over) return;
     this.updateCollectibles();
+    this.updateItems();
+    this.updateLocks();
     this.updateCheckpoints();
     this.updateHazards();
     if (this.over) return;
@@ -419,7 +489,19 @@ export class World {
       // A JSON copy, so later frames can't change an earlier snapshot.
       if (Object.keys(e.state).length > 0) entities[e.id]!.state = JSON.parse(JSON.stringify(e.state));
     }
-    return { frame: this.frame, time: this.time, score: this.score, deaths: this.deaths, won: this.won, lost: this.lost, lives: this.lives, entities };
+    return {
+      frame: this.frame,
+      time: this.time,
+      score: this.score,
+      deaths: this.deaths,
+      won: this.won,
+      lost: this.lost,
+      lives: this.lives,
+      ...(Object.keys(this.items).length > 0 ? { items: { ...this.items } } : {}),
+      ...(Object.keys(this.flags).length > 0 ? { flags: { ...this.flags } } : {}),
+      ...(this.conversation ? { talking: this.conversation.entity } : {}),
+      entities,
+    };
   }
 
   /** True when this world's physics engine can save its state, so `save` works. */
@@ -455,6 +537,10 @@ export class World {
         seed: this.seed,
         spawnCount: this.spawnCount,
         physics: this.physics.save!(),
+        items: { ...this.items },
+        flags: { ...this.flags },
+        conversation: this.conversation ? { ...this.conversation } : undefined,
+        lockTouching: [...this.lockTouching],
       },
     };
   }
@@ -481,6 +567,13 @@ export class World {
     this.seed = s.seed;
     this.spawnCount = s.spawnCount;
     this.physics.restore!(s.physics, this.physicsHost);
+    // The same objects, emptied and refilled: hosts may hold on to world.items and world.flags.
+    for (const key of Object.keys(this.items)) delete this.items[key];
+    Object.assign(this.items, s.items);
+    for (const key of Object.keys(this.flags)) delete this.flags[key];
+    Object.assign(this.flags, s.flags);
+    this.conversation = s.conversation ? { ...s.conversation } : undefined;
+    this.lockTouching = new Set(s.lockTouching);
   }
 
   private emit(event: EventPayload): void {
@@ -829,6 +922,15 @@ export class World {
         world.guard("Setting score");
         world.score = value;
       },
+      get items() {
+        return world.itemsApi();
+      },
+      get flags() {
+        return world.flagsApi();
+      },
+      get talking() {
+        return world.talking;
+      },
       get: (id) => {
         const e = world.get(id);
         return e ? world.handle(e) : undefined;
@@ -918,6 +1020,57 @@ export class World {
       },
     };
     return this.scriptApi;
+  }
+
+  private itemsView: ScriptWorld["items"] | undefined;
+  private flagsView: Record<string, Flag> | undefined;
+
+  /** world.items for scripts: get, add, take, all. Read-only in draw hooks. */
+  private itemsApi(): ScriptWorld["items"] {
+    if (this.itemsView) return this.itemsView;
+    const world = this;
+    const check = (what: string, name: unknown, n: unknown) => {
+      if (typeof name !== "string" || name === "") throw world.misuse(`world.items.${what} needs an item name, e.g. world.items.${what}("key").`);
+      if (typeof n !== "number" || !Number.isInteger(n) || n < 0) throw world.misuse(`world.items.${what}: the count must be a whole number ≥ 0, got ${JSON.stringify(n)}.`);
+    };
+    this.itemsView = {
+      get: (name) => world.items[name] ?? 0,
+      add: (name, n = 1) => {
+        world.guard("world.items.add");
+        check("add", name, n);
+        addItem(world.items, name, n);
+      },
+      take: (name, n = 1) => {
+        world.guard("world.items.take");
+        check("take", name, n);
+        return takeItem(world.items, name, n);
+      },
+      all: () => ({ ...world.items }),
+    };
+    return this.itemsView;
+  }
+
+  /** world.flags for scripts: a plain-looking record that only takes numbers, strings and booleans, and can't change in draw hooks. */
+  private flagsApi(): Record<string, Flag> {
+    if (this.flagsView) return this.flagsView;
+    const world = this;
+    this.flagsView = new Proxy(this.flags, {
+      set(target, key, value) {
+        world.guard("Setting a flag");
+        if (typeof key !== "string") return false;
+        if (!(typeof value === "string" || typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value)))) {
+          throw world.misuse(`world.flags.${key} must be a number, a string or true/false, got ${JSON.stringify(value) ?? String(value)}. Use delete world.flags.${key} to clear it.`);
+        }
+        target[key] = value;
+        return true;
+      },
+      deleteProperty(target, key) {
+        world.guard("Clearing a flag");
+        if (typeof key === "string") delete target[key];
+        return true;
+      },
+    });
+    return this.flagsView;
   }
 
   /** The world as cells a walker of half-size `inflate` can or can't stand in, rebuilt when a wall changes. */
@@ -1256,6 +1409,120 @@ export class World {
     }
   }
 
+  /** Players pick up `item` entities into world.items. */
+  private updateItems(): void {
+    const players = this.players();
+    for (const item of this.entities.filter((e) => e.item && e.body)) {
+      const taker = players.find((p) => this.physics.overlaps(p, item));
+      if (!taker) continue;
+      this.remove(item);
+      addItem(this.items, item.item!.name, item.item!.count);
+      this.emit({ type: "pickup", entity: taker.id, item: item.id, name: item.item!.name, count: item.item!.count, ...this.at(item) });
+    }
+  }
+
+  /** A player touching a `lock` opens it with the item, or hears it's locked (once per touch). */
+  private updateLocks(): void {
+    const touching = new Set<string>();
+    for (const lock of this.entities.filter((e) => e.lock && e.body)) {
+      const l = lock.lock!;
+      for (const player of this.players()) {
+        if (!this.physics.overlaps(player, lock, TOUCH_MARGIN)) continue;
+        if ((this.items[l.needs] ?? 0) >= l.count) {
+          if (l.take) takeItem(this.items, l.needs, l.count);
+          this.remove(lock);
+          this.emit({ type: "unlock", entity: player.id, lock: lock.id, needs: l.needs, ...this.at(lock) });
+          break;
+        }
+        const key = `${player.id}>${lock.id}`;
+        touching.add(key);
+        if (!this.lockTouching.has(key)) this.emit({ type: "locked", entity: player.id, lock: lock.id, needs: l.needs, ...this.at(lock) });
+      }
+    }
+    this.lockTouching = touching;
+  }
+
+  /**
+   * Conversations (the `dialogue` component): pressing action near someone opens one; action or
+   * jump goes on, up/down pick a choice. True when a conversation had the keys this frame, so the
+   * player doesn't move (or jump on the press that ends it).
+   */
+  private updateDialogue(pressed: ReadonlySet<Action>): boolean {
+    const c = this.conversation;
+    if (!c) return this.openDialogue(pressed);
+    const npc = this.get(c.entity);
+    const dialogue = npc?.dialogue?.[c.dialogue];
+    const line = dialogue?.lines[c.line];
+    if (!npc || !dialogue || !line) {
+      // Whoever was talking is gone (destroyed by a script): the conversation ends with it.
+      this.endDialogue(c.entity, npc);
+      return true;
+    }
+    const choices = shownChoices(line, this);
+    if (choices.length > 0) {
+      const move = (pressed.has("down") ? 1 : 0) - (pressed.has("up") ? 1 : 0);
+      c.choice = Math.min(Math.max(0, c.choice), choices.length - 1);
+      if (move !== 0) c.choice = (c.choice + move + choices.length) % choices.length;
+    }
+    if (!pressed.has("action") && !pressed.has("jump")) return true;
+    let next: number;
+    if (choices.length > 0) {
+      const { choice, index } = choices[c.choice]!;
+      this.emit({ type: "choose", entity: npc.id, line: c.line, choice: index, text: choice.text, ...this.at(npc) });
+      applyEffects(choice, this);
+      next = choice.end ? -1 : resolveNext(dialogue.lines, choice.next, c.line);
+    } else {
+      next = line.end ? -1 : resolveNext(dialogue.lines, line.next, c.line);
+    }
+    if (next < 0) this.endDialogue(npc.id, npc);
+    else this.sayLine(npc, dialogue, next);
+    return true;
+  }
+
+  /** Opens a conversation with the nearest entity in range that has something to say, when action is pressed. */
+  private openDialogue(pressed: ReadonlySet<Action>): boolean {
+    if (!pressed.has("action")) return false;
+    const player = this.entities.find(isPlayer);
+    if (!player) return false;
+    let best: { npc: Entity; index: number; gap: number } | undefined;
+    for (const npc of this.entities) {
+      if (!npc.dialogue || npc === player) continue;
+      const index = pickDialogue(npc.dialogue, this);
+      if (index < 0) continue;
+      const range = npc.dialogue[index]!.range || (this.dimensions === 3 ? DEFAULT_RANGE_3D : DEFAULT_RANGE_2D);
+      const gap = this.gap(player, npc);
+      if (gap <= range && (!best || gap < best.gap)) best = { npc, index, gap };
+    }
+    if (!best) return false;
+    this.conversation = { entity: best.npc.id, dialogue: best.index, line: 0, choice: 0 };
+    this.emit({ type: "talk", entity: best.npc.id, player: player.id, ...this.at(best.npc) });
+    this.sayLine(best.npc, best.npc.dialogue![best.index]!, 0);
+    return true;
+  }
+
+  private sayLine(npc: Entity, dialogue: Dialogue, index: number): void {
+    const line = dialogue.lines[index]!;
+    this.conversation = { ...this.conversation!, line: index, choice: 0 };
+    applyEffects(line, this);
+    this.emit({ type: "say", entity: npc.id, line: index, text: line.text, speaker: line.speaker ?? "", ...this.at(npc) });
+  }
+
+  private endDialogue(id: string, npc: Entity | undefined): void {
+    this.conversation = undefined;
+    this.emit({ type: "endtalk", entity: id, ...(npc ? this.at(npc) : { x: 0, y: 0 }) });
+  }
+
+  /** The distance between two entities' boxes (0 when they overlap), in px (metres in 3D). */
+  private gap(a: Entity, b: Entity): number {
+    const size = (e: Entity) => ({ w: e.body?.width ?? e.sprite?.width ?? 0, h: e.body?.height ?? e.sprite?.height ?? 0, d: e.body ? e.body.depth || e.body.width : 0 });
+    const sa = size(a);
+    const sb = size(b);
+    const gx = Math.max(0, Math.abs(a.transform.x - b.transform.x) - (sa.w + sb.w) / 2);
+    const gy = Math.max(0, Math.abs(a.transform.y - b.transform.y) - (sa.h + sb.h) / 2);
+    const gz = this.dimensions === 3 ? Math.max(0, Math.abs(a.transform.z - b.transform.z) - (sa.d + sb.d) / 2) : 0;
+    return Math.sqrt(gx * gx + gy * gy + gz * gz);
+  }
+
   private updateHazards(): void {
     for (const player of this.players()) {
       const b = player.body!;
@@ -1284,6 +1551,7 @@ export class World {
   private updateGoals(): void {
     for (const goal of this.entities.filter((e) => e.goal && e.body)) {
       if (this.score < goal.goal!.requireScore) continue;
+      if (Object.entries(goal.goal!.requires).some(([name, count]) => (this.items[name] ?? 0) < count)) continue;
       const player = this.players().find((p) => this.physics.overlaps(p, goal));
       if (!player) continue;
       this.won = true;
@@ -1372,6 +1640,9 @@ function createEntity(def: EntityDef): Entity {
   }
   if (c.hazard) entity.hazard = resolveComponent<Hazard>("hazard", c.hazard);
   if (c.goal) entity.goal = resolveComponent<Goal>("goal", c.goal);
+  if (c.item) entity.item = resolveComponent<Item>("item", c.item);
+  if (c.lock) entity.lock = resolveComponent<Lock>("lock", c.lock);
+  if (c.dialogue) entity.dialogue = resolveDialogues(c.dialogue);
   if (c.checkpoint) entity.checkpoint = {};
   if (c.joint) entity.joints = (Array.isArray(c.joint) ? c.joint : [c.joint]).map((j) => resolveComponent<Joint>("joint", j as Record<string, unknown>));
   if (c.emitter) entity.emitter = resolveComponent<Emitter>("emitter", c.emitter);

@@ -18,6 +18,9 @@ type Subject =
   /** Built-in event types, or custom events fired by scripts with world.emit(name). */
   | { kind: "events"; name: string; builtin: boolean }
   | { kind: "entity"; id: string; field: EntityField }
+  /** How many of an item the player carries, or a story flag. */
+  | { kind: "items"; name: string }
+  | { kind: "flags"; name: string }
   | { kind: "state"; id: string; key: string };
 
 type Value = number | boolean | string;
@@ -34,7 +37,7 @@ export interface Assertion {
 export class AssertionSyntaxError extends Error {}
 
 const EXAMPLES =
-  'Examples: "player.x > 400", "player.grounded == true at 1s", "score >= 3", "won == true", "deaths == 0", "events.jump == 1 at end", "coin1.exists == false", "door.state.open == true", "boss.state.phase == \\"angry\\"", "events.shoot >= 3".';
+  'Examples: "player.x > 400", "player.grounded == true at 1s", "score >= 3", "won == true", "deaths == 0", "events.jump == 1 at end", "coin1.exists == false", "door.state.open == true", "boss.state.phase == \\"angry\\"", "events.shoot >= 3", "items.key >= 1", "flags.helped == true".';
 
 /** Parses `<subject> <op> <value> [at <time|end>]`. */
 export function parseAssertion(source: string): Assertion {
@@ -49,6 +52,9 @@ export function parseAssertion(source: string): Assertion {
   } else if (lhs.startsWith("events.") && lhs.length > "events.".length) {
     const name = lhs.slice("events.".length);
     subject = { kind: "events", name, builtin: (EVENT_TYPES as readonly string[]).includes(name) };
+  } else if (/^(items|flags)\.[\w-]+$/.test(lhs)) {
+    const dot = lhs.indexOf(".");
+    subject = { kind: lhs.slice(0, dot) as "items" | "flags", name: lhs.slice(dot + 1) };
   } else if (stateMatch) {
     subject = { kind: "state", id: stateMatch[1]!, key: stateMatch[2]! };
   } else {
@@ -56,7 +62,7 @@ export function parseAssertion(source: string): Assertion {
     const field = lhs.slice(dot + 1);
     if (dot <= 0 || !(ENTITY_FIELDS as readonly string[]).includes(field)) {
       throw new AssertionSyntaxError(
-        `"${lhs}" is not something Ludra can check. Use ${WORLD_FIELDS.join(", ")}, events.<name>, <entityId>.<${ENTITY_FIELDS.join("|")}> or <entityId>.state.<key>.`,
+        `"${lhs}" is not something Ludra can check. Use ${WORLD_FIELDS.join(", ")}, events.<name>, items.<name>, flags.<name>, <entityId>.<${ENTITY_FIELDS.join("|")}> or <entityId>.state.<key>.`,
       );
     }
     subject = { kind: "entity", id: lhs.slice(0, dot), field: field as EntityField };
@@ -110,6 +116,20 @@ export function evaluateAssertion(assertion: Assertion, snapshot: WorldSnapshot,
       label = `events.${subject.name}`;
       break;
     }
+    case "items":
+      // An item the player never had counts as 0.
+      actual = snapshot.items?.[subject.name] ?? 0;
+      label = `items.${subject.name}`;
+      break;
+    case "flags":
+      actual = snapshot.flags?.[subject.name];
+      label = `flags.${subject.name}`;
+      // A flag never set reads as false, as dialogue "when" sees it.
+      if (actual === undefined && typeof expected === "boolean") actual = false;
+      if (actual === undefined) {
+        return { source, pass: false, actual, time, message: `${label} is not set at ${time.toFixed(2)}s. Dialogue "set" or a script (world.flags.${subject.name} = ...) sets it.` };
+      }
+      break;
     case "state": {
       const entity = snapshot.entities[subject.id];
       label = `${subject.id}.state.${subject.key}`;
@@ -196,7 +216,7 @@ export interface TestCase {
   /** Run length, e.g. "3s". Defaults to the inputs plus one second, or the latest `at`. */
   duration?: string | number;
   /** What the run starts with from the scene before, as a recorded take did. */
-  carry?: { score?: number; deaths?: number; lives?: number };
+  carry?: { score?: number; deaths?: number; lives?: number; items?: Record<string, number>; flags?: Record<string, number | string | boolean> };
   /** The session this was recorded from: a person's run, not a route written to prove something. */
   recording?: string;
   assert: string[];
