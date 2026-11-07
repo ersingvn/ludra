@@ -4,6 +4,7 @@
 import type { Backend, Connection } from "../backend.ts";
 import type { CheckResult, Command, RunCommand, Diagnostic, EditRequest, EditResult, FileChange, FileText, ReviewResult, RunResponse, ServerEvent, TestRunResult, UndoResult } from "../protocol.ts";
 import type { Studio } from "../studio.ts";
+import { MOCK_COMPONENTS } from "./components.ts";
 import { MockSceneFile, type GameOp } from "./edits.ts";
 import { MOCK_BLOCKS, MOCK_PREFABS, MOCK_PROJECT, type MockEntity } from "./scene.ts";
 
@@ -250,7 +251,7 @@ export class MockBackend implements Backend {
 
   async project() {
     await delay(60);
-    return { ...MOCK_PROJECT, prefabs: MOCK_PREFABS, blocks: MOCK_BLOCKS };
+    return { ...MOCK_PROJECT, prefabs: MOCK_PREFABS, blocks: MOCK_BLOCKS, components: MOCK_COMPONENTS };
   }
 
   async file(path: string): Promise<FileText> {
