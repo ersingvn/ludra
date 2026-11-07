@@ -14,6 +14,7 @@ import { MARK_LABELS, Recorder, type MarkKind } from "./recording.ts";
 import { NoWebGL, PostFx } from "./postfx.ts";
 import { carryFrom, encodeProgress, localProgressStore, progressCarry, progressFromCarry, type ProgressCarry, type ProgressStore } from "./progress.ts";
 import type { DrawContext, DrawEvent, Script } from "./script.ts";
+import { drawGhost, drawGrid, type StudioOverlay } from "./studio-draw.ts";
 import { FIXED_DT } from "./time.ts";
 import type { Body } from "./components.ts";
 import type { Action, PostFxDef, SceneDef } from "./types.ts";
@@ -384,6 +385,8 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
   let touched = false;
   /** The scene a game over goes back to: the first one, or its hot-reloaded version. */
   let entryScene = firstScene;
+  /** What Studio draws over the game while a person edits it, kept across scenes and hot reloads. */
+  const studioOverlay: StudioOverlay = { grid: 0 };
   /** Every frame's input since the scene started, for a hot reload to replay. One past the limit means too far. */
   let frameInputs: string[] = [];
   let paused = false;
@@ -422,6 +425,7 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
     startCarry = carry;
     view?.renderer?.dispose();
     view = new View(next, images, await useRenderer3D(next, options, canvas.width, canvas.height));
+    view.studio = studioOverlay;
     view.touch = touched;
     if (!options.actions) touch?.setActions(actionsUsed([next]));
     view.debug = debug;
@@ -890,6 +894,24 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
       highlight: (id) => {
         view.highlight = id ?? undefined;
       },
+      get view() {
+        const seen = view.lastView;
+        if (!seen || view.renderer) return undefined;
+        const r = screen.output.getBoundingClientRect();
+        return { cameraX: seen.cameraX, cameraY: seen.cameraY, zoom: seen.zoom, width: seen.width, height: seen.height, rect: { left: r.left, top: r.top, width: r.width, height: r.height } };
+      },
+      preview: (preview) => {
+        studioOverlay.preview = preview ?? undefined;
+      },
+      ghost: (ghost) => {
+        studioOverlay.ghost = ghost ?? undefined;
+      },
+      grid: (size) => {
+        studioOverlay.grid = size > 0 ? size : 0;
+      },
+      look: (look) => {
+        studioOverlay.look = look ?? undefined;
+      },
       pointToWorld: (clientX, clientY) => {
         const seen = view.lastView;
         if (!seen) return undefined;
@@ -912,6 +934,7 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
         const highlighted = view.highlight;
         view.renderer?.dispose();
         view = new View(next, images, renderer);
+        view.studio = studioOverlay;
         view.touch = touched;
         view.debug = debug;
         view.highlight = highlighted;
@@ -1163,11 +1186,24 @@ class View {
   highlight: string | undefined;
   /** The camera of the last 2D frame drawn, to turn a click into a world point. */
   lastView: DrawContext["view"] | undefined;
+  /** What Studio draws while a person edits: grid, drag preview, placement ghost, its own camera. Never set in a build. */
+  studio: StudioOverlay = { grid: 0 };
+
+  /** How far Studio's drag preview moves an entity's drawing. */
+  private shifted(e: Entity): { dx: number; dy: number } | undefined {
+    const p = this.studio.preview;
+    return p && p.id === e.id ? { dx: p.x - e.transform.x, dy: p.y - e.transform.y } : undefined;
+  }
 
   private drawHighlight(ctx: CanvasRenderingContext2D, world: World, zoom: number): void {
     const e = world.entities.find((x) => x.id === this.highlight);
     if (!e) return;
     const b = entityBox(e);
+    const shift = this.shifted(e);
+    if (shift) {
+      b.x += shift.dx;
+      b.y += shift.dy;
+    }
     const pad = 3 / zoom;
     ctx.save();
     ctx.lineWidth = 2 / zoom;
@@ -1309,7 +1345,10 @@ class View {
 
     // The camera moves with the simulation step (see step); the first frame places it at once.
     this.size = { width: viewWidth, height: viewHeight };
-    const camera = this.camera.view ?? this.camera.update(world.entities, world, this.size, 0);
+    const rig = this.camera.view ?? this.camera.update(world.entities, world, this.size, 0);
+    // F in Studio looks at the selection; the game's own camera goes on following underneath.
+    const look = this.studio.look;
+    const camera = look ? { x: look.x - viewWidth / look.zoom / 2, y: look.y - viewHeight / look.zoom / 2, zoom: look.zoom } : rig;
     const zoom = camera.zoom;
     let cameraX = camera.x;
     let cameraY = camera.y;
@@ -1325,6 +1364,11 @@ class View {
     const layer = (e: Entity) => e.sprite?.layer ?? 0;
     const visible = world.entities.filter((e) => (e.sprite || e.script?.module.draw) && !this.hidden.has(e.id)).sort((a, b) => layer(a) - layer(b));
     for (const e of visible) {
+      const shift = this.shifted(e);
+      if (shift) {
+        ctx.save();
+        ctx.translate(shift.dx, shift.dy);
+      }
       if (e.sprite && e.sprite.opacity > 0) {
         ctx.save();
         ctx.globalAlpha *= Math.min(1, e.sprite.opacity);
@@ -1338,8 +1382,11 @@ class View {
         ctx.restore();
       }
       if (e.script?.module.draw) this.drawHook(ctx, world, e, "draw", viewInfo);
+      if (shift) ctx.restore();
     }
     this.particles.draw(ctx);
+    if (this.studio.grid > 0) drawGrid(ctx, this.studio.grid, viewInfo);
+    if (this.studio.ghost) drawGhost(ctx, this.scene, this.studio.ghost, this.images, zoom);
     if (this.debug) this.drawDebug(ctx, world, zoom);
     if (this.highlight) this.drawHighlight(ctx, world, zoom);
     ctx.restore();

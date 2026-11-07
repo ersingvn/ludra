@@ -1,5 +1,18 @@
 import type { Action, Diagnostic, SceneDef } from "./types.ts";
 import { World, type Entity, type GameEvent, type WorldOptions } from "./world.ts";
+import type { StudioGhost, StudioLook, StudioPreview } from "./studio-draw.ts";
+
+/** How a 2D game is on screen: its camera, and where its canvas is in the page. Studio maps pointers with it. */
+export interface GameView {
+  cameraX: number;
+  cameraY: number;
+  zoom: number;
+  /** The canvas in its own pixels. */
+  width: number;
+  height: number;
+  /** The canvas in the page, in CSS px. */
+  rect: { left: number; top: number; width: number; height: number };
+}
 
 /**
  * Ludra Studio's side of a running game (docs/studio.md): hot reload by replay, and the postMessage
@@ -163,6 +176,16 @@ export interface GameControl {
   highlight(id: string | null): void;
   /** Where a point of the page is in the world, for picking. */
   pointToWorld(clientX: number, clientY: number): { x: number; y: number } | undefined;
+  /** The 2D camera and canvas, once a frame is drawn; undefined in 3D. */
+  readonly view?: GameView;
+  /** Draws an entity at (x, y) instead of where it is, or stops (null). Presentation only. */
+  preview?(preview: StudioPreview | null): void;
+  /** Draws a translucent entity where a placement would go, or stops (null). */
+  ghost?(ghost: StudioGhost | null): void;
+  /** A grid every `size` world px over the world; 0 is off. */
+  grid?(size: number): void;
+  /** Looks through another camera (world centre and zoom), or the game's own again (null). */
+  look?(look: StudioLook | null): void;
   /** Swaps in an edited version of the running scene, replaying to the same frame when it can. */
   hot(scene: SceneDef): Promise<{ result: "kept" | "restarted"; frame: number; reason?: string }>;
   /** `scene`: a scene started (first, restart, level change, a hot restart). `crash`: a script threw. */
@@ -195,6 +218,7 @@ export function connectStudio(control: GameControl, target: Pick<Window, "postMe
   let lastStatus = "";
   let lastEntities = "";
   let lastEntity = "";
+  let lastView = "";
   let eventWorld: World | undefined;
   let eventsSent = 0;
   let budget = EVENTS_PER_SECOND;
@@ -208,9 +232,19 @@ export function connectStudio(control: GameControl, target: Pick<Window, "postMe
   const sendStatus = (force: boolean) => {
     const s = status();
     const key = JSON.stringify({ ...s, fps: undefined });
+    sendView(force);
     if (!force && key === lastStatus) return;
     lastStatus = key;
     send("status", s);
+  };
+  const sendView = (force: boolean) => {
+    const v = control.view;
+    if (!v) return;
+    const view = { cameraX: round(v.cameraX), cameraY: round(v.cameraY), zoom: round(v.zoom), width: v.width, height: v.height, rect: { left: round(v.rect.left), top: round(v.rect.top), width: round(v.rect.width), height: round(v.rect.height) } };
+    const key = JSON.stringify(view);
+    if (!force && key === lastView) return;
+    lastView = key;
+    send("view", view);
   };
   const sendEntities = (force: boolean) => {
     const w = control.world;
@@ -322,6 +356,35 @@ export function connectStudio(control: GameControl, target: Pick<Window, "postMe
         return control.mute(m.on === true);
       case "focus":
         return control.focus();
+      case "pickAt": {
+        // Studio holds the pointer over the game: it asks what is at a world point.
+        const x = Number(m.x);
+        const y = Number(m.y);
+        const e = Number.isFinite(x) && Number.isFinite(y) ? entityAt(control.world, x, y) : undefined;
+        return send("picked", { id: e?.id ?? null, ...(m.tag !== undefined ? { tag: m.tag } : {}) });
+      }
+      case "preview": {
+        if (typeof m.id !== "string") return control.preview?.(null);
+        const x = Number(m.x);
+        const y = Number(m.y);
+        if (Number.isFinite(x) && Number.isFinite(y)) control.preview?.({ id: m.id, x, y });
+        return;
+      }
+      case "ghost": {
+        const x = Number(m.x);
+        const y = Number(m.y);
+        if ((typeof m.prefab !== "string" && (typeof m.components !== "object" || m.components === null)) || !Number.isFinite(x) || !Number.isFinite(y)) return control.ghost?.(null);
+        return control.ghost?.({ ...(typeof m.prefab === "string" ? { prefab: m.prefab } : {}), ...(typeof m.components === "object" && m.components ? { components: m.components as Record<string, unknown> } : {}), x, y });
+      }
+      case "grid":
+        return control.grid?.(Math.max(0, Number(m.size) || 0));
+      case "look": {
+        const x = Number(m.x);
+        const y = Number(m.y);
+        const zoom = Number(m.zoom);
+        control.look?.(Number.isFinite(x) && Number.isFinite(y) && zoom > 0 ? { x, y, zoom } : null);
+        return sendView(true);
+      }
       default:
         link.onMessage?.(m);
     }

@@ -146,6 +146,14 @@ The fair area uses the search below:
 - Exhausted without a win is reported as unsolvable at this resolution.
 - `quick` mode stops at the first win and skips the steps below.
 
+**The beam, for long levels.** On a long level the cells multiply faster than the search moves on: each platform's state and each coin's score makes one place into many cells. Rounds then stop bringing the player closer to the goal. When 40,000 frames go by without getting a cell (16 px) closer, and there are at least 1,000 cells, the beam takes a turn. Few cells and no progress means a small level or a pit, and exploring is left to finish those.
+1. It starts from the cell closest to the goal and moves every situation it holds forward together, trying each choice for 12 frames.
+2. Situations are told apart only by place (24 px squares), grounded and rising/falling. Script state and score are left out, which is what keeps them from multiplying. Of each place it keeps the one nearest the goal, then the 100 nearest overall.
+3. A jump from the ground counts only if pressing it 6 frames late also lands without dying, the slack a person needs.
+4. Only the situations it keeps are saved. Each is replayed from its parent's save, because a save copies the world and most moves are dropped.
+5. A win goes through the same finishing steps below (`strategy: "beam"` in the result). If the beam stops getting closer for 40 moves, its 20 nearest situations become cells and exploring goes on from there. The beam gets another turn once exploring makes progress again.
+On the long levels of the Son Fener experiment (`yerel/deneme/ludra-ile`), exploring alone didn't finish level 2 or 3 in 90 s. With the beam they are won in about 10 s and 22 s.
+
 **Finishing a win:**
 1. `simplify` makes the route read like a person's. It tries each stretch as its neighbour, as the run's main direction, with one action fewer, or not at all, and keeps changes that still win as early.
 2. The route is replayed on a fresh world as proof. If it doesn't win, the simulation isn't deterministic, and `solve` throws.

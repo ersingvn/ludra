@@ -188,3 +188,142 @@ dependencies unless one is clearly worth it. Must work in Chromium (Electron) at
   on quit.
 - Preload, `window.studio`: `{ version, platform, project: { dir }, openProject(), openRecent(dir), reveal(path), openInEditor(path), onMenu(cb) }`.
   `onMenu` passes menu commands (`"play"`, `"step"`, `"restart"`, `"check"`, ...) to the UI.
+
+## Edits: server and inspector (v0.99, part A of docs/editor.md)
+
+What `feat/editor-edits` built, where `docs/editor.md` leaves room. Parts B and C can rely on these:
+
+- **The file is printed the way it was written.** `packages/cli/src/scene-edit.ts` parses the file keeping where
+  each value is, applies the edits to the JSON, and prints the result by copying every value the edits didn't
+  change byte for byte from the old text: key order (integer-like keys too), indentation (spaces or tabs), CRLF,
+  objects and arrays the agent wrote on one line, and number spelling (`1.50` stays `1.50`). A changed object
+  keeps its layout (one line stays one line); a new entity is printed like `JSON.stringify(…, null, 2)` at its
+  depth. So moving an entity is a one-line diff. A trailing newline is kept, or added.
+- **`version`** is the first 16 hex digits of the SHA-1 of the file's text, for `GET /__ludra/file` and
+  `POST /__ludra/edit` alike. `/__ludra/file` reads only text files inside the project (not in `node_modules`,
+  `build`, `.git` …): 404 otherwise.
+- **`/__ludra/edit` answers:** `400 { error }` for a bad edit, a path that isn't one of the project's scenes, or a
+  body that isn't a JSON object. Several edits that fail name the one: `edits[1]: There is no entity "x"…`.
+  An id that a tilemap makes (`<tilemap>-<row>-<col>`) says to edit that tilemap. `409 { error, version }` when
+  stale. `422 { error, diagnostics }` lists only the errors the edit would **add** (by code and message), so a
+  scene that already has an error can still be edited; each diagnostic carries `file`. `200 { ok, version,
+  diagnostics }` lists the result's warnings. An edit that changes nothing writes nothing.
+- **`set`** makes the objects on its path (an override of a prefab's component on an entity that only had
+  `transform`), takes list indexes (`components.dialogue.lines.2`), and without `value` removes the field.
+  `value: null` is written as `null` (on a component it drops the prefab's). `__proto__`, `constructor` and
+  `prototype` are refused anywhere in a path or a value. Renaming (`field: "id"`) doesn't rewrite references to
+  the old id in other entities or scripts: check reports those.
+- **Undo and redo** hold Studio's last 200 writes (edits and palette adds), across all scenes, newest last. Each
+  remembers the file's text before and after: undo needs the file to be exactly as that write left it, redo as
+  it was before, else 409. A new edit clears redo. The history lives in the `ludra dev` process.
+- **`by: "studio"`** comes from the server remembering what it wrote and what the file read as right after. When
+  the watcher reports the file with that content, the change is Studio's (with `label`; undo and redo are
+  labelled "Undo <label>" / "Redo <label>"). Studio's files and other files changed in the same 100 ms go out as
+  two `change` messages. Every other change says `by: "files"`.
+- **`/__ludra/run` `add`** takes exactly `[block, "--at", "x,y"]` and optionally `"--id", name` (a known block,
+  numbers, a plain id): anything else is 400. It runs `ludra add` on the **entry scene** (that's what `ludra add`
+  does), and is an undoable Studio write labelled "Added <block>"; the files it copies are attributed to Studio
+  too. Undo takes the entities out, not the copied files.
+- **`/__ludra/project`** also has `components`: the component schema, as `ludra components --json` gives it
+  without `effects` (`ProjectInfo.components` in `protocol.ts`). `prefabs` are the names of `prefabs/*.prefab.json`.
+
+The inspector (`packages/studio/ui/src/panels/inspector.ts`, with `scene-doc.ts` holding the running scene's file):
+
+- It reads the scene the game reports in `ready` with `/__ludra/file`, and again on every `change` to it (or
+  to a prefab its entities use). Studio keeps nothing else.
+- An entity in the file shows every field of its components' schema: the file's value in an input, the default
+  as a placeholder, and in green beside it the live value when the game has moved away from the file (a moving
+  body). In 2D, 3D-only fields show only when the file sets them. Components the game added while playing show
+  as "live only", read-only.
+- Enter, or leaving the field, writes it; Esc puts it back. Dragging a number field's name sideways scrubs it
+  (Shift for fine steps, Esc cancels) and writes once, on release. Booleans, enums and colors write at once.
+  Lists and objects are typed as JSON. An empty field removes the value from the file (so the default or the
+  prefab's applies); so does the ↺ button on a field the file sets.
+- Values from the prefab are in italics; a value the entity overrides has a blue bar, and ↺ takes it back to
+  the prefab's. Removing a prefab's component writes `null` for it. "Add component…" lists the schema's
+  components the entity doesn't have, and fills their required fields with a start value.
+- Clicking the id renames it (a taken id is refused before it's sent); the selection follows the new id.
+- A `422` shows each diagnostic under its field, with its `fix`, and keeps what was typed; diagnostics about
+  another entity or the scene go on top. A `409` says the agent changed the scene, reads it again and shows
+  it as it is now; the edit isn't retried.
+- Entities the file doesn't hold are read-only, with why: a tilemap cell (with a link to select the tilemap)
+  or an entity made while playing.
+- Keys typed in the inspector don't reach the viewport's shortcuts (Delete, Ctrl+Z).
+- The mock (`?mock=1`) serves a copy of the real schema for some components (`src/mock/components.ts`).
+
+## Viewport tools (v0.99, part B of docs/editor.md)
+
+What a person can do to the scene from the game view, the hierarchy and the palette. Every tool writes
+the scene file through part A's `/__ludra/file` and `/__ludra/edit`, and the game shows it by hot reload,
+like an agent's change. Studio keeps no copy of the scene: before an edit it reads the file and names the
+version it read.
+
+### Game link additions
+
+Game → Studio: `view` `{ cameraX, cameraY, zoom, width, height, rect }`, sent with `status` when it changed
+(and once a frame in the mock). `width`/`height` are the canvas in its own pixels and `rect` is the canvas in
+the game page in CSS px, so a point `p` in the iframe is the world point
+`camera + ((p - rect.left/top) / rect.width/height × width/height) / zoom`. 3D games send no `view`.
+`picked` gains `tag` when it answers `pickAt`, so the answer isn't taken for a pick-tool click.
+
+Studio → Game, all 2D and all presentation (none of it reaches the world, a build never has it):
+
+| type | fields | effect |
+| --- | --- | --- |
+| `pickAt` | `x`, `y` (world), `tag?` | answers `picked` with the entity there (smallest wins) and the same `tag` |
+| `preview` | `id`, `x`, `y`, or `id: null` | draws that entity at (x, y) while it is dragged |
+| `ghost` | `prefab` or `components`, `x`, `y`; neither to stop | a translucent placement with a dashed box |
+| `grid` | `size` (0 = off) | a grid every `size` world px, every fifth line stronger |
+| `look` | `x`, `y`, `zoom` (world centre); no `x` to stop | draws through Studio's camera (F); the game's own camera keeps following underneath |
+
+### In the viewport
+
+The tools take the pointer while the game is **paused**, the **pick** tool is on or the palette is
+**placing**. While the game runs, the pointer and the keyboard are the game's, as before, and the
+selection box stays dimmed. The viewport head has **Grid** (G), its size, **Frame** (F) and a hint of what
+the pointer does now. 3D games say "Editing tools are 2D only for now".
+
+- **Click** selects (through `pickAt`), the empty world deselects. A press on the selection drags it even
+  where something smaller overlaps it.
+- **Drag** moves: `preview` while dragging, then one edit `set components.transform.x` and `.y`, label
+  `Moved <id>`. Whole px, or snapped to the grid while it shows. **Shift** keeps to the axis moved further.
+  The preview stays until the hot reload lands (or 1.5 s), so the entity doesn't jump back.
+- **Alt+drag** duplicates: a ghost of the copy while dragging, then an `add` of a copy with a fresh id
+  (`ledge-2` → `ledge-4`, past every id in the file and the world) right after the original.
+- **Delete/Backspace** removes the selection, **Ctrl+D** duplicates it one grid step (or 16 px) to the
+  right, **Ctrl+Z** and **Ctrl+Y** (or Ctrl+Shift+Z) are `/__ludra/undo` and `/redo`, **F** frames the
+  selection (`look`, zoomed so it fills about a third of the view) and F or Esc again goes back,
+  **G** toggles the grid. Keys are ignored while typing in a field.
+
+### Palette (bottom tab)
+
+The project's `prefabs` and `blocks` from `/__ludra/project`, with search. Pick one, and a ghost follows the
+pointer over the game; a click places it (snapped like a drag), Shift+click keeps placing, Esc stops. A
+prefab is an `add` of `{ id: "<name>-N", prefab: "<name>", components: { transform: { x, y } } }`, label
+`Placed <id>`, and the new entity is selected. A block runs `/__ludra/run` `add` with
+`[block, "--at", "x,y"]`.
+
+### Hierarchy
+
+Right-click a row for **Rename** (F2, in place: Enter or leaving the field saves, Esc doesn't), **Duplicate**,
+**Frame in game** and **Delete**. Drag a row onto another to put it before or after it (by the half you
+drop on): a `remove` and an `add` with `after` (`after: null` when it goes first), label
+`Moved <id> before|after <other>`.
+
+### Rules the tools keep
+
+- **One edit at a time**, in the order the person made them.
+- **The agent wrote the file in between (409):** Studio reads it again and makes the same edit once more
+  against the new version. The edit only touches what the person changed, so the agent's work stays.
+  A second 409 in a row gives up with a toast.
+- **Refusals are toasts** and change nothing: 422 shows the first error's message and `fix`, 400 the
+  server's `error`, a taken id says so, and an entity the scene file doesn't hold (a tilemap's, a spawned
+  one) says to edit what made it.
+- **Activity** shows `by: "studio"` changes as **You** with what was done ("You moved ledge-2",
+  "You undid: deleted ledge-4") and the agent's as before. A hot reload of the person's own edit shows
+  no toast unless it didn't simply apply.
+
+`ui/index.html?mock=1` runs all of it: the mock game answers `view`, `pickAt`, `preview`, `ghost`, `grid`
+and `look`, fills a placed prefab in from the level's own, and the mock backend keeps part A's rules.
+The arithmetic (`ui/src/tools.ts`) and the edits (`ui/src/editor.ts`, against the mock's scene file) are
+tested in `packages/studio/test/editor-tools.test.ts`.

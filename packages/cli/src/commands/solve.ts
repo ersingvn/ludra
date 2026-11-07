@@ -85,7 +85,7 @@ export async function solve(dir: string, options: SolveCommandOptions): Promise<
       lines.push(`  ludra play ${where} --inputs "${c.inputs}" --screenshot end`);
     }
   }
-  lines.push("", paint("dim", `explored ${result.explored.toLocaleString("en-US")} frames, ${result.cells.toLocaleString("en-US")} cells, method ${result.method}, ${fixed(elapsed)}s`));
+  lines.push("", paint("dim", `explored ${result.explored.toLocaleString("en-US")} frames, ${result.cells.toLocaleString("en-US")} cells, method ${result.method}${result.strategy === "beam" ? ", found by the beam" : ""}, ${fixed(elapsed)}s`));
   console.log(lines.join("\n"));
   return result.solved ? 0 : 1;
 }
