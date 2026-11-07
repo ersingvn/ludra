@@ -3,6 +3,7 @@ import { icon } from "../icons.ts";
 import type { FileChange } from "../protocol.ts";
 import type { ActivityEntry, Studio } from "../studio.ts";
 import { parseDiff, renderDiff } from "../syntax.ts";
+import { youDid } from "../tools.ts";
 
 export function activity(root: HTMLElement, studio: Studio, setBadge: (t: string, k?: string) => void, toolbar: HTMLElement): void {
   const list = h("div", { class: "activity" });
@@ -43,13 +44,14 @@ export function activity(root: HTMLElement, studio: Studio, setBadge: (t: string
   const entry = (e: ActivityEntry) =>
     h(
       "div",
-      { class: "act" },
+      { class: `act${e.by === "studio" ? " act-you" : ""}` },
       h(
         "div",
         { class: "act-head" },
         h("span", { class: "act-time mono", text: clock(e.at) }),
-        h("span", { class: "act-who" }, icon("spark"), " Agent"),
-        h("span", { class: "act-what", text: describe(e.files) }),
+        // The person's own edits (by: "studio") say what they did; the rest is the agent, as before.
+        e.by === "studio" ? h("span", { class: "act-who you" }, icon("pick"), " You") : h("span", { class: "act-who" }, icon("spark"), " Agent"),
+        h("span", { class: "act-what", text: e.by === "studio" ? youDid(e.label).replace(/^You /, "") : describe(e.files) }),
         h("span", { class: "tb-spacer" }),
         hotBadge(e),
       ),

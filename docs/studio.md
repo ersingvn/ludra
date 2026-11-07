@@ -250,3 +250,80 @@ The inspector (`packages/studio/ui/src/panels/inspector.ts`, with `scene-doc.ts`
   or an entity made while playing.
 - Keys typed in the inspector don't reach the viewport's shortcuts (Delete, Ctrl+Z).
 - The mock (`?mock=1`) serves a copy of the real schema for some components (`src/mock/components.ts`).
+
+## Viewport tools (v0.99, part B of docs/editor.md)
+
+What a person can do to the scene from the game view, the hierarchy and the palette. Every tool writes
+the scene file through part A's `/__ludra/file` and `/__ludra/edit`, and the game shows it by hot reload,
+like an agent's change. Studio keeps no copy of the scene: before an edit it reads the file and names the
+version it read.
+
+### Game link additions
+
+Game → Studio: `view` `{ cameraX, cameraY, zoom, width, height, rect }`, sent with `status` when it changed
+(and once a frame in the mock). `width`/`height` are the canvas in its own pixels and `rect` is the canvas in
+the game page in CSS px, so a point `p` in the iframe is the world point
+`camera + ((p - rect.left/top) / rect.width/height × width/height) / zoom`. 3D games send no `view`.
+`picked` gains `tag` when it answers `pickAt`, so the answer isn't taken for a pick-tool click.
+
+Studio → Game, all 2D and all presentation (none of it reaches the world, a build never has it):
+
+| type | fields | effect |
+| --- | --- | --- |
+| `pickAt` | `x`, `y` (world), `tag?` | answers `picked` with the entity there (smallest wins) and the same `tag` |
+| `preview` | `id`, `x`, `y`, or `id: null` | draws that entity at (x, y) while it is dragged |
+| `ghost` | `prefab` or `components`, `x`, `y`; neither to stop | a translucent placement with a dashed box |
+| `grid` | `size` (0 = off) | a grid every `size` world px, every fifth line stronger |
+| `look` | `x`, `y`, `zoom` (world centre); no `x` to stop | draws through Studio's camera (F); the game's own camera keeps following underneath |
+
+### In the viewport
+
+The tools take the pointer while the game is **paused**, the **pick** tool is on or the palette is
+**placing**. While the game runs, the pointer and the keyboard are the game's, as before, and the
+selection box stays dimmed. The viewport head has **Grid** (G), its size, **Frame** (F) and a hint of what
+the pointer does now. 3D games say "Editing tools are 2D only for now".
+
+- **Click** selects (through `pickAt`), the empty world deselects. A press on the selection drags it even
+  where something smaller overlaps it.
+- **Drag** moves: `preview` while dragging, then one edit `set components.transform.x` and `.y`, label
+  `Moved <id>`. Whole px, or snapped to the grid while it shows. **Shift** keeps to the axis moved further.
+  The preview stays until the hot reload lands (or 1.5 s), so the entity doesn't jump back.
+- **Alt+drag** duplicates: a ghost of the copy while dragging, then an `add` of a copy with a fresh id
+  (`ledge-2` → `ledge-4`, past every id in the file and the world) right after the original.
+- **Delete/Backspace** removes the selection, **Ctrl+D** duplicates it one grid step (or 16 px) to the
+  right, **Ctrl+Z** and **Ctrl+Y** (or Ctrl+Shift+Z) are `/__ludra/undo` and `/redo`, **F** frames the
+  selection (`look`, zoomed so it fills about a third of the view) and F or Esc again goes back,
+  **G** toggles the grid. Keys are ignored while typing in a field.
+
+### Palette (bottom tab)
+
+The project's `prefabs` and `blocks` from `/__ludra/project`, with search. Pick one, and a ghost follows the
+pointer over the game; a click places it (snapped like a drag), Shift+click keeps placing, Esc stops. A
+prefab is an `add` of `{ id: "<name>-N", prefab: "<name>", components: { transform: { x, y } } }`, label
+`Placed <id>`, and the new entity is selected. A block runs `/__ludra/run` `add` with
+`[block, "--at", "x,y"]`.
+
+### Hierarchy
+
+Right-click a row for **Rename** (F2, in place: Enter or leaving the field saves, Esc doesn't), **Duplicate**,
+**Frame in game** and **Delete**. Drag a row onto another to put it before or after it (by the half you
+drop on): a `remove` and an `add` with `after` (`after: null` when it goes first), label
+`Moved <id> before|after <other>`.
+
+### Rules the tools keep
+
+- **One edit at a time**, in the order the person made them.
+- **The agent wrote the file in between (409):** Studio reads it again and makes the same edit once more
+  against the new version. The edit only touches what the person changed, so the agent's work stays.
+  A second 409 in a row gives up with a toast.
+- **Refusals are toasts** and change nothing: 422 shows the first error's message and `fix`, 400 the
+  server's `error`, a taken id says so, and an entity the scene file doesn't hold (a tilemap's, a spawned
+  one) says to edit what made it.
+- **Activity** shows `by: "studio"` changes as **You** with what was done ("You moved ledge-2",
+  "You undid: deleted ledge-4") and the agent's as before. A hot reload of the person's own edit shows
+  no toast unless it didn't simply apply.
+
+`ui/index.html?mock=1` runs all of it: the mock game answers `view`, `pickAt`, `preview`, `ghost`, `grid`
+and `look`, fills a placed prefab in from the level's own, and the mock backend keeps part A's rules.
+The arithmetic (`ui/src/tools.ts`) and the edits (`ui/src/editor.ts`, against the mock's scene file) are
+tested in `packages/studio/test/editor-tools.test.ts`.
