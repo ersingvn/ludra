@@ -188,3 +188,65 @@ dependencies unless one is clearly worth it. Must work in Chromium (Electron) at
   on quit.
 - Preload, `window.studio`: `{ version, platform, project: { dir }, openProject(), openRecent(dir), reveal(path), openInEditor(path), onMenu(cb) }`.
   `onMenu` passes menu commands (`"play"`, `"step"`, `"restart"`, `"check"`, ...) to the UI.
+
+## Edits: server and inspector (v0.99, part A of docs/editor.md)
+
+What `feat/editor-edits` built, where `docs/editor.md` leaves room. Parts B and C can rely on these:
+
+- **The file is printed the way it was written.** `packages/cli/src/scene-edit.ts` parses the file keeping where
+  each value is, applies the edits to the JSON, and prints the result by copying every value the edits didn't
+  change byte for byte from the old text: key order (integer-like keys too), indentation (spaces or tabs), CRLF,
+  objects and arrays the agent wrote on one line, and number spelling (`1.50` stays `1.50`). A changed object
+  keeps its layout (one line stays one line); a new entity is printed like `JSON.stringify(…, null, 2)` at its
+  depth. So moving an entity is a one-line diff. A trailing newline is kept, or added.
+- **`version`** is the first 16 hex digits of the SHA-1 of the file's text, for `GET /__ludra/file` and
+  `POST /__ludra/edit` alike. `/__ludra/file` reads only text files inside the project (not in `node_modules`,
+  `build`, `.git` …): 404 otherwise.
+- **`/__ludra/edit` answers:** `400 { error }` for a bad edit, a path that isn't one of the project's scenes, or a
+  body that isn't a JSON object. Several edits that fail name the one: `edits[1]: There is no entity "x"…`.
+  An id that a tilemap makes (`<tilemap>-<row>-<col>`) says to edit that tilemap. `409 { error, version }` when
+  stale. `422 { error, diagnostics }` lists only the errors the edit would **add** (by code and message), so a
+  scene that already has an error can still be edited; each diagnostic carries `file`. `200 { ok, version,
+  diagnostics }` lists the result's warnings. An edit that changes nothing writes nothing.
+- **`set`** makes the objects on its path (an override of a prefab's component on an entity that only had
+  `transform`), takes list indexes (`components.dialogue.lines.2`), and without `value` removes the field.
+  `value: null` is written as `null` (on a component it drops the prefab's). `__proto__`, `constructor` and
+  `prototype` are refused anywhere in a path or a value. Renaming (`field: "id"`) doesn't rewrite references to
+  the old id in other entities or scripts: check reports those.
+- **Undo and redo** hold Studio's last 200 writes (edits and palette adds), across all scenes, newest last. Each
+  remembers the file's text before and after: undo needs the file to be exactly as that write left it, redo as
+  it was before, else 409. A new edit clears redo. The history lives in the `ludra dev` process.
+- **`by: "studio"`** comes from the server remembering what it wrote and what the file read as right after. When
+  the watcher reports the file with that content, the change is Studio's (with `label`; undo and redo are
+  labelled "Undo <label>" / "Redo <label>"). Studio's files and other files changed in the same 100 ms go out as
+  two `change` messages. Every other change says `by: "files"`.
+- **`/__ludra/run` `add`** takes exactly `[block, "--at", "x,y"]` and optionally `"--id", name` (a known block,
+  numbers, a plain id): anything else is 400. It runs `ludra add` on the **entry scene** (that's what `ludra add`
+  does), and is an undoable Studio write labelled "Added <block>"; the files it copies are attributed to Studio
+  too. Undo takes the entities out, not the copied files.
+- **`/__ludra/project`** also has `components`: the component schema, as `ludra components --json` gives it
+  without `effects` (`ProjectInfo.components` in `protocol.ts`). `prefabs` are the names of `prefabs/*.prefab.json`.
+
+The inspector (`packages/studio/ui/src/panels/inspector.ts`, with `scene-doc.ts` holding the running scene's file):
+
+- It reads the scene the game reports in `ready` with `/__ludra/file`, and again on every `change` to it (or
+  to a prefab its entities use). Studio keeps nothing else.
+- An entity in the file shows every field of its components' schema: the file's value in an input, the default
+  as a placeholder, and in green beside it the live value when the game has moved away from the file (a moving
+  body). In 2D, 3D-only fields show only when the file sets them. Components the game added while playing show
+  as "live only", read-only.
+- Enter, or leaving the field, writes it; Esc puts it back. Dragging a number field's name sideways scrubs it
+  (Shift for fine steps, Esc cancels) and writes once, on release. Booleans, enums and colors write at once.
+  Lists and objects are typed as JSON. An empty field removes the value from the file (so the default or the
+  prefab's applies); so does the ↺ button on a field the file sets.
+- Values from the prefab are in italics; a value the entity overrides has a blue bar, and ↺ takes it back to
+  the prefab's. Removing a prefab's component writes `null` for it. "Add component…" lists the schema's
+  components the entity doesn't have, and fills their required fields with a start value.
+- Clicking the id renames it (a taken id is refused before it's sent); the selection follows the new id.
+- A `422` shows each diagnostic under its field, with its `fix`, and keeps what was typed; diagnostics about
+  another entity or the scene go on top. A `409` says the agent changed the scene, reads it again and shows
+  it as it is now; the edit isn't retried.
+- Entities the file doesn't hold are read-only, with why: a tilemap cell (with a link to select the tilemap)
+  or an entity made while playing.
+- Keys typed in the inspector don't reach the viewport's shortcuts (Delete, Ctrl+Z).
+- The mock (`?mock=1`) serves a copy of the real schema for some components (`src/mock/components.ts`).

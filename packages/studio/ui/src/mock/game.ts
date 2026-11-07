@@ -1,6 +1,7 @@
 // The mock game page (mock-game.html): plays "Lantern Steps" with a bot at the keys and speaks the game
 // link from docs/studio.md, so the UI can be built and screenshotted with no server. It is not the engine.
 
+import { applyOp, type GameOp } from "./edits.ts";
 import { mockScene, MOCK_PROJECT, type MockEntity } from "./scene.ts";
 
 const W = 960;
@@ -470,8 +471,7 @@ window.addEventListener("message", (ev) => {
 });
 
 type Op =
-  | { op: "set"; id: string; path: string[]; value: unknown }
-  | { op: "add"; entity: MockEntity }
+  | GameOp
   | { op: "reject"; diagnostics: unknown[] }
   | { op: "restart"; reason: string }
   | { op: "keep" };
@@ -488,16 +488,11 @@ function apply(ops: Op[], files: string[]): void {
       post("hot", { result: "restarted", frame: 0, files, reason: op.reason });
       return;
     }
-    if (op.op === "set") {
-      const e = byId(op.id);
-      if (!e) continue;
-      let target: any = e;
-      for (const key of op.path.slice(0, -1)) target = target[key] ??= {};
-      target[op.path[op.path.length - 1]!] = op.value;
-    } else if (op.op === "add") {
-      entities.push(op.entity);
-      sendEntities();
-    }
+    if (op.op === "keep") continue;
+    // Studio's edits and the agent's: the same changes the scene file got (mock/edits.ts).
+    if (op.op === "rename" && inspected === op.id) inspected = op.to;
+    applyOp(entities, op);
+    if (op.op !== "set" || op.path[0] === "components") sendEntities();
   }
   post("hot", { result: "kept", frame, files });
   sendStatus();
