@@ -177,8 +177,12 @@ describe("ludra dev --studio", () => {
     const { status, headers, body } = await fetchJson(server.port, "/__ludra/project");
     assert.equal(status, 200);
     assert.equal(headers["access-control-allow-origin"], "*");
-    assert.deepEqual(body, { name: "Studio Test", dir, entry: "scenes/main.scene.json", scenes: ["scenes/main.scene.json"], window: body.window });
-    assert.equal(typeof body.window.width, "number");
+    const { window, blocks, components, ...rest } = body;
+    assert.deepEqual(rest, { name: "Studio Test", dir, entry: "scenes/main.scene.json", scenes: ["scenes/main.scene.json"], prefabs: [] });
+    assert.equal(typeof window.width, "number");
+    // For the palette and the inspector: the block library and the component schema.
+    assert.ok(blocks.some((b: any) => b.name === "coin-row" && typeof b.description === "string" && Array.isArray(b.tags)));
+    assert.equal(components.transform.fields.x.type, "number");
     const preflight = await fetchJson(server.port, "/__ludra/run", { method: "OPTIONS" });
     assert.equal(preflight.status, 204);
     assert.match(String(preflight.headers["access-control-allow-headers"]), /content-type/);
@@ -237,6 +241,135 @@ describe("ludra dev --studio", () => {
     assert.equal(flag.status, 400);
     assert.match(flag.body.error, /doesn't take "--out"/);
     assert.equal((await fetchJson(server.port, "/__ludra/run")).status, 405);
+  });
+});
+
+describe("ludra dev --studio: the person's edits", () => {
+  let dir: string;
+  let server: { port: number; child: ChildProcess };
+  const SCENE = "scenes/main.scene.json";
+  before(async () => {
+    dir = game();
+    mkdirSync(join(dir, "prefabs"));
+    writeFileSync(join(dir, "prefabs", "coin.prefab.json"), JSON.stringify({ components: { body: { type: "static", width: 16, height: 16, sensor: true }, collectible: {} } }));
+    server = await serve(dir, "--studio");
+  });
+  after(() => {
+    server.child.kill();
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  });
+
+  const file = async () => (await fetchJson(server.port, `/__ludra/file?path=${encodeURIComponent(SCENE)}`)).body as { path: string; version: string; text: string };
+  const post = (endpoint: string, body: unknown) => fetchJson(server.port, `/__ludra/${endpoint}`, { method: "POST", body: JSON.stringify(body) });
+
+  it("reads a file with its version, and only text files inside the project", async () => {
+    const { path, version, text } = await file();
+    assert.equal(path, SCENE);
+    assert.equal(text, sceneJson("#335"));
+    assert.match(version, /^[0-9a-f]{16}$/);
+    assert.equal((await fetchJson(server.port, "/__ludra/file?path=../outside.json")).status, 404);
+    assert.equal((await fetchJson(server.port, "/__ludra/file?path=nothing.json")).status, 404);
+    const project = await fetchJson(server.port, "/__ludra/project");
+    assert.deepEqual(project.body.prefabs, ["coin"]);
+  });
+
+  it("writes an edit as a one-line diff, says Studio made it, and undoes and redoes it", async () => {
+    const stream = events(server.port);
+    try {
+      await stream.next((m) => m.type === "hello");
+      const before = await file();
+      const edit = await post("edit", { path: SCENE, version: before.version, label: "Moved player", edits: [{ op: "set", entity: "player", field: "components.transform.x", value: 140 }] });
+      assert.equal(edit.status, 200, JSON.stringify(edit.body));
+      assert.equal(edit.body.ok, true);
+      const after = await file();
+      assert.equal(edit.body.version, after.version);
+      assert.equal(after.text, before.text.replace('"x": 100', '"x": 140'));
+
+      const change = await stream.next((m) => m.type === "change" && m.by === "studio");
+      assert.equal(change.label, "Moved player");
+      assert.deepEqual(change.files.map((f: any) => f.path), [SCENE]);
+      assert.equal(change.files[0].diff.split("\n").filter((l: string) => /^[-+][^-+]/.test(l)).length, 2, "one line out, one in");
+
+      // The agent's writes are "files".
+      writeFileSync(join(dir, "scenes", "main.scene.json"), after.text.replace("#335", "#446"));
+      const agent = await stream.next((m) => m.type === "change" && m.files.some((f: any) => f.path === SCENE));
+      assert.equal(agent.by, "files");
+      assert.equal(agent.label, undefined);
+
+      // Undo would overwrite the agent's work now: refused.
+      const refused = await post("undo", {});
+      assert.equal(refused.status, 409);
+      assert.match(refused.body.error, /Moved player/);
+
+      // Once the file is back where Studio left it, undo and redo go through.
+      writeFileSync(join(dir, "scenes", "main.scene.json"), after.text);
+      await stream.next((m) => m.type === "change" && m.by === "files");
+      assert.deepEqual((await post("undo", {})).body, { ok: true, path: SCENE, label: "Moved player" });
+      assert.equal((await file()).text, before.text);
+      assert.equal((await stream.next((m) => m.type === "change" && m.by === "studio")).label, "Undo Moved player");
+      assert.deepEqual((await post("redo", {})).body, { ok: true, path: SCENE, label: "Moved player" });
+      assert.equal((await file()).text, after.text);
+      assert.deepEqual((await post("redo", {})).body, { ok: false }, "nothing more to redo");
+    } finally {
+      stream.close();
+    }
+  });
+
+  it("refuses a stale version, a bad edit and one that would break the scene, and writes nothing", async () => {
+    const { version, text } = await file();
+    const stale = await post("edit", { path: SCENE, version: "0000000000000000", edits: [{ op: "remove", entity: "player" }] });
+    assert.equal(stale.status, 409);
+    assert.equal(stale.body.version, version, "with the version to load");
+
+    const unknown = await post("edit", { path: SCENE, version, edits: [{ op: "remove", entity: "ghost" }] });
+    assert.equal(unknown.status, 400);
+    assert.match(unknown.body.error, /no entity "ghost"/);
+    assert.equal((await post("edit", { path: "ludra.json", version, edits: [{ op: "remove", entity: "player" }] })).status, 400);
+
+    // Half good, half broken: neither is written.
+    const broken = await post("edit", {
+      path: SCENE,
+      version,
+      edits: [
+        { op: "set", entity: "player", field: "components.transform.x", value: 300 },
+        { op: "set", entity: "ground", field: "components.body.width", value: -5 },
+      ],
+    });
+    assert.equal(broken.status, 422);
+    assert.ok(broken.body.diagnostics.length > 0);
+    assert.ok(broken.body.diagnostics.every((d: any) => d.severity === "error" && d.file === SCENE));
+    assert.match(JSON.stringify(broken.body.diagnostics), /width/);
+    assert.equal((await file()).text, text);
+
+    assert.equal((await fetchJson(server.port, "/__ludra/edit")).status, 405);
+    assert.equal((await fetchJson(server.port, "/__ludra/edit", { method: "POST", body: "[1]" })).status, 400);
+  });
+
+  it("adds a prefab entity and removes it", async () => {
+    let { version } = await file();
+    const add = await post("edit", { path: SCENE, version, edits: [{ op: "add", entity: { id: "coin-1", prefab: "coin", components: { transform: { x: 300, y: 450 } } }, after: "ground" }] });
+    assert.equal(add.status, 200, JSON.stringify(add.body));
+    const scene = JSON.parse((await file()).text);
+    assert.deepEqual(scene.entities.map((e: any) => e.id), ["ground", "coin-1", "player"]);
+    version = add.body.version;
+    assert.equal((await post("edit", { path: SCENE, version, edits: [{ op: "set", entity: "coin-1", field: "id", value: "player" }] })).status, 400, "a taken id");
+    const remove = await post("edit", { path: SCENE, version, edits: [{ op: "remove", entity: "coin-1" }] });
+    assert.equal(remove.status, 200);
+  });
+
+  it("runs ludra add for the palette, as an edit Studio can undo", async () => {
+    const before = (await file()).text;
+    const bad = await post("run", { command: "add", args: ["coin-row", "--at", "1,2", "--force"] });
+    assert.equal(bad.status, 400);
+    assert.equal((await post("run", { command: "add", args: ["no-such-block", "--at", "1,2"] })).status, 400);
+    const run = await post("run", { command: "add", args: ["coin-row", "--at", "400,500", "--id", "row"] });
+    assert.equal(run.status, 200, JSON.stringify(run.body));
+    assert.equal(run.body.ok, true);
+    assert.ok(run.body.result.entities.length > 0);
+    assert.ok(JSON.parse((await file()).text).entities.some((e: any) => e.id.startsWith("row")));
+    const undo = await post("undo", {});
+    assert.deepEqual(undo.body, { ok: true, path: SCENE, label: "Added coin-row" });
+    assert.equal((await file()).text, before);
   });
 });
 
