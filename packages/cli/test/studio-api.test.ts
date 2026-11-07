@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
-import { get, request } from "node:http";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { createServer, get, request } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { extname, join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { findBrowser } from "../src/headless.ts";
@@ -475,6 +475,91 @@ describe("a studio page in a real browser", { skip: live }, () => {
         assert.deepEqual(page.problems.filter((p) => !/doesn't pass check|E_/.test(p)), []);
       } finally {
         await page.close();
+        server.child.kill();
+        rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+      }
+    }));
+});
+
+const UI = fileURLToPath(new URL("../../studio/ui/", import.meta.url));
+const uiBuilt = existsSync(join(UI, "dist", "main.js"));
+
+/** Serves the Studio UI folder, as a person would open it in a browser (ES modules need http). */
+function serveUi(): Promise<{ port: number; close: () => void }> {
+  const types: Record<string, string> = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml" };
+  const server = createServer((req, res) => {
+    const file = join(UI, decodeURIComponent(new URL(req.url ?? "/", "http://x").pathname));
+    if (!file.startsWith(UI) || !existsSync(file) || !statSync(file).isFile()) {
+      res.writeHead(404);
+      return res.end();
+    }
+    res.writeHead(200, { "content-type": types[extname(file)] ?? "application/octet-stream" });
+    res.end(readFileSync(file));
+  });
+  return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve({ port: (server.address() as { port: number }).port, close: () => server.close() })));
+}
+
+describe("the inspector in a real browser", { skip: live || (!uiBuilt && "build the Studio UI first (npm run build)") }, () => {
+  it("edits the scene file from its fields, shows refusals inline and is read-only for tilemap cells", { timeout: 240_000 }, () =>
+    oneLiveBrowser(async () => {
+      const dir = game();
+      const SCENE = join(dir, "scenes", "main.scene.json");
+      const level = { id: "level", components: { transform: { x: 0, y: 0 }, tilemap: { tileSize: 40, rows: ["#"], legend: { "#": { color: "#555" } } } } };
+      writeFileSync(SCENE, `${JSON.stringify({ entities: [ground, player, level] }, null, 2)}\n`);
+      const server = await serve(dir, "--studio");
+      const ui = await serveUi();
+      const page = await open(`http://127.0.0.1:${ui.port}/index.html?server=${encodeURIComponent(`http://127.0.0.1:${server.port}`)}`, "");
+      const until = async <T>(what: string, expression: string, ms = 60_000): Promise<T> => {
+        const end = Date.now() + ms;
+        for (;;) {
+          const value = await page.evaluate(expression);
+          if (value) return value as T;
+          if (Date.now() > end) throw new Error(`Timed out waiting for ${what}. Inspector: ${await page.evaluate(`document.querySelector("#right")?.innerText`)}`);
+          await sleep(100);
+        }
+      };
+      const select = (id: string) => until(`${id} in the hierarchy`, `(() => { const row = document.querySelector('.tree-row[data-id="${id}"]'); row?.click(); return !!row; })()`);
+      /** Types into a field and presses a key, the way a person would. */
+      const type = (key: string, text: string, press = "Enter") =>
+        page.evaluate(`(() => {
+          const input = document.querySelector('#right [data-key="${key}"]');
+          input.focus();
+          input.value = ${JSON.stringify(text)};
+          input.dispatchEvent(new Event("input"));
+          input.dispatchEvent(new KeyboardEvent("keydown", { key: ${JSON.stringify(press)}, bubbles: true }));
+        })()`);
+      try {
+        await select("player");
+        await until("the player's x field", `document.querySelector('#right [data-key="transform.x"]')?.value === "100"`);
+        const before = readFileSync(SCENE, "utf8");
+
+        // Enter writes the scene value: one line of the file changes.
+        await type("transform.x", "150");
+        const end = Date.now() + 20_000;
+        while (readFileSync(SCENE, "utf8") === before && Date.now() < end) await sleep(100);
+        const after = readFileSync(SCENE, "utf8");
+        assert.equal(after, before.replace('"x": 100', '"x": 150'));
+
+        // Esc puts the field back and writes nothing.
+        await until("the new value", `document.querySelector('#right [data-key="transform.x"]')?.value === "150"`);
+        await type("transform.x", "999", "Escape");
+        assert.equal(await page.evaluate(`document.querySelector('#right [data-key="transform.x"]').value`), "150");
+        await sleep(300);
+        assert.equal(readFileSync(SCENE, "utf8"), after);
+
+        // A value check refuses comes back next to the field, with its fix, and the file stays as it was.
+        await type("body.width", "-5");
+        await until("the refusal inline", `document.querySelector("#right .field-problem.error")?.innerText.includes("width")`);
+        assert.equal(readFileSync(SCENE, "utf8"), after);
+
+        // A tilemap's cell is shown, but not edited.
+        await select("level-0-0");
+        await until("the read-only reason", `document.querySelector("#right .inspector-notice")?.innerText.includes('tilemap "level"')`);
+        assert.equal(await page.evaluate(`document.querySelectorAll("#right .field-input").length`), 0);
+        assert.deepEqual(page.problems.filter((p) => !/E_|422|Failed to load resource/.test(p)), []);
+      } finally {
+        await page.close();
+        ui.close();
         server.child.kill();
         rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
       }

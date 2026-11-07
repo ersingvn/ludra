@@ -12,6 +12,22 @@ export interface ProjectInfo {
   prefabs?: string[];
   /** The block library (`ludra blocks`), for the palette. */
   blocks?: { name: string; description: string; tags: string[] }[];
+  /** The component schema (`ludra components --json`, without effects), for the inspector. */
+  components?: Record<string, ComponentSpec>;
+}
+
+/** One field of a component, as packages/core/src/components.ts describes it. Fields without a default are required. */
+export type FieldSpec =
+  | { type: "number"; default?: number; min?: number; description: string }
+  | { type: "string"; default?: string; description: string }
+  | { type: "boolean"; default?: boolean; description: string }
+  | { type: "enum"; values: readonly string[]; default?: string; description: string }
+  | { type: "frames" | "object" | "points" | "strings" | "list" | "rotation" | "axis"; default?: unknown; description: string };
+
+export interface ComponentSpec {
+  description: string;
+  requires?: readonly string[];
+  fields: Record<string, FieldSpec>;
 }
 
 export type FileKind = "scene" | "prefab" | "script" | "asset" | "config" | "test" | "design" | "other";
