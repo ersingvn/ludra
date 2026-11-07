@@ -16,6 +16,14 @@ export const MOCK_PROJECT = {
   window: { width: 960, height: 540, pixelated: false },
 };
 
+/** What the palette offers in the mock. */
+export const MOCK_PREFABS = ["coin", "slime"];
+export const MOCK_BLOCKS = [
+  { name: "moving-platform", description: "A platform that rides back and forth.", tags: ["platformer", "traversal"] },
+  { name: "spike-row", description: "A row of spikes that kills on touch.", tags: ["platformer", "hazard"] },
+  { name: "time-limit", description: "Lose when the clock runs out.", tags: ["rules"] },
+];
+
 export function mockScene(): MockEntity[] {
   const platform = (id: string, x: number, y: number, width: number, height: number, color = "#7a5a3c"): MockEntity => ({
     id,

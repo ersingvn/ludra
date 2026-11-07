@@ -2,9 +2,10 @@
 // on a timer, so every panel has something real-looking to show.
 
 import type { Backend, Connection } from "../backend.ts";
-import type { CheckResult, Command, Diagnostic, FileChange, ReviewResult, RunResponse, ServerEvent, TestRunResult } from "../protocol.ts";
+import type { CheckResult, Command, RunCommand, Diagnostic, EditRequest, EditResult, FileChange, FileText, ReviewResult, RunResponse, ServerEvent, TestRunResult, UndoResult } from "../protocol.ts";
 import type { Studio } from "../studio.ts";
-import { MOCK_PROJECT, type MockEntity } from "./scene.ts";
+import { MockSceneFile, type GameOp } from "./edits.ts";
+import { MOCK_BLOCKS, MOCK_PREFABS, MOCK_PROJECT, type MockEntity } from "./scene.ts";
 
 interface Step {
   files: FileChange[];
@@ -237,10 +238,39 @@ export class MockBackend implements Backend {
   private broken = false;
   private stepIndex = 0;
   private hasBigCoinTest = false;
+  private studio: Studio | null = null;
+  /** The scene file as Studio's edits see it. */
+  readonly scene = new MockSceneFile(
+    (files, by, label) => {
+      this.version++;
+      this.onEvent?.({ type: "change", version: this.version, at: new Date().toISOString(), files, by, ...(label ? { label } : {}) });
+    },
+    (ops) => setTimeout(() => this.studio?.link.sendRaw({ type: "mock-apply", ops, files: [this.scene.path] }), 60),
+  );
 
   async project() {
     await delay(60);
-    return MOCK_PROJECT;
+    return { ...MOCK_PROJECT, prefabs: MOCK_PREFABS, blocks: MOCK_BLOCKS };
+  }
+
+  async file(path: string): Promise<FileText> {
+    await delay(40);
+    return this.scene.file(path);
+  }
+
+  async edit(req: EditRequest): Promise<EditResult> {
+    await delay(50);
+    return this.scene.edit(req);
+  }
+
+  async undo(): Promise<UndoResult> {
+    await delay(40);
+    return this.scene.undo();
+  }
+
+  async redo(): Promise<UndoResult> {
+    await delay(40);
+    return this.scene.redo();
   }
 
   listen(onEvent: (e: ServerEvent) => void, onConnection: (s: Connection) => void): () => void {
@@ -252,13 +282,16 @@ export class MockBackend implements Backend {
 
   /** The agent at work: one change every few seconds, round and round. */
   start(studio: Studio): void {
+    this.studio = studio;
     const next = () => {
       const step = STEPS[this.stepIndex % STEPS.length]!;
       this.stepIndex++;
       this.version++;
       this.broken = Boolean(step.broken);
       if (step.files.some((f) => f.path.startsWith("tests/"))) this.hasBigCoinTest = true;
-      this.onEvent?.({ type: "change", version: this.version, at: new Date().toISOString(), files: step.files });
+      // The agent wrote the scene: Studio's edits against the old version are refused from now on.
+      if (step.files.some((f) => f.path === this.scene.path)) this.scene.agentChanged(step.ops.filter((op) => ["set", "add"].includes((op as GameOp).op)) as GameOp[]);
+      this.onEvent?.({ type: "change", version: this.version, at: new Date().toISOString(), files: step.files, by: "files" });
       // The game hears about it through its own /events in the real thing; here we tell it.
       if (step.ops.length > 0) setTimeout(() => studio.link.sendRaw({ type: "mock-apply", ops: step.ops, files: step.files.map((f) => f.path) }), 140);
       setTimeout(next, this.stepIndex < STEPS.length ? 6500 : 11000);
@@ -269,13 +302,24 @@ export class MockBackend implements Backend {
     setTimeout(() => void studio.runCommand("review", true), 1400);
   }
 
-  async run<T>(command: Command, args: string[] = []): Promise<RunResponse<T>> {
+  async run<T>(command: RunCommand, args: string[] = []): Promise<RunResponse<T>> {
+    if (command === "add") return { ok: true, exitCode: 0, result: this.addBlock(args) as T };
     await delay(command === "review" ? (args.includes("--fast") ? 900 : 2200) : command === "test" ? 1100 : 450);
     let result: CheckResult | TestRunResult | ReviewResult;
     if (command === "check") result = this.check();
     else if (command === "test") result = this.test();
     else result = this.review();
     return { ok: result.ok, exitCode: result.ok ? 0 : 1, result: result as T };
+  }
+
+  /** `ludra add <block> --at x,y [--id name]`: one entity where it was asked for, through the same edit path. */
+  private addBlock(args: string[]): unknown {
+    const [block = "", ...rest] = args;
+    const at = (rest.includes("--at") ? rest[rest.indexOf("--at") + 1]! : "0,0").split(",").map(Number);
+    const id = rest.includes("--id") ? rest[rest.indexOf("--id") + 1]! : `${block}-${this.scene.entities.length + 1}`;
+    const entity: MockEntity = { id, components: { transform: { x: at[0] ?? 0, y: at[1] ?? 0 }, body: { type: "static", width: 64, height: 20 }, sprite: { color: "#9aa5b1" } } };
+    const result = this.scene.edit({ path: this.scene.path, version: this.scene.version, edits: [{ op: "add", entity }], label: `Added ${block}` });
+    return result.ok ? { block, entities: [{ id, x: at[0], y: at[1] }], files: [], effects: [] } : { error: result.error ?? "refused" };
   }
 
   private check(): CheckResult {
