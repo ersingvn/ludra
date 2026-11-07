@@ -93,7 +93,9 @@ export class MockSceneFile {
   private travel(from: Done[], to: Done[], side: "before" | "after"): UndoResult {
     const entry = from[from.length - 1];
     if (!entry) return { ok: false };
-    if (entry.version !== this.version) {
+    // The file must still be as this edit (or its undo) left it. Not the version: undoing the newest
+    // edit writes a new version, and the one before it must still be undoable after that.
+    if (this.text() !== this.text(entry[side === "before" ? "after" : "before"])) {
       return { ok: false, status: 409, error: `${entry.path} changed since "${entry.label}" (the agent wrote it), so undoing it would overwrite that work.` };
     }
     from.pop();

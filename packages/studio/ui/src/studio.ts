@@ -1,9 +1,11 @@
 import type { Backend, Connection } from "./backend.ts";
 import { debounce, Emitter } from "./dom.ts";
+import { Editor } from "./editor.ts";
 import { GameLink } from "./game-link.ts";
 import type {
-  CheckResult, Command, Diagnostic, EntityData, EntitySummary, FileChange, GameMessage, GameStatus, ProjectInfo, RunResponse,
+  CheckResult, Command, Diagnostic, EntityData, EntitySummary, FileChange, GameMessage, GameStatus, GameView, ProjectInfo, RunResponse,
 } from "./protocol.ts";
+import { youDid, type Point } from "./tools.ts";
 
 export interface HotResult {
   result: "kept" | "restarted" | "rejected";
@@ -17,6 +19,15 @@ export interface ActivityEntry {
   version: number | string;
   files: FileChange[];
   hot?: HotResult;
+  /** "studio" when the person made it in Studio (an edit, undo or redo), with what they did. */
+  by?: "studio" | "files";
+  label?: string;
+}
+
+/** What the palette has picked to place with the next click in the game. */
+export interface Placing {
+  kind: "prefab" | "block";
+  name: string;
 }
 
 export interface ConsoleEntry {
@@ -62,6 +73,11 @@ type Events = {
   gameErrors: Diagnostic[];
   toast: Toast;
   tab: string;
+  view: GameView | null;
+  grid: number;
+  placing: Placing | null;
+  /** Someone asked to frame the selection (F, or the hierarchy's menu). */
+  frame: void;
 };
 
 const CONSOLE_LIMIT = 1000;
@@ -85,6 +101,15 @@ export class Studio extends Emitter<Events> {
   activity: ActivityEntry[] = [];
   consoleEntries: ConsoleEntry[] = [];
   gameErrors: Diagnostic[] = [];
+  /** The 2D game's camera and canvas, from `view`; null in 3D or before the first frame. */
+  view: GameView | null = null;
+  /** Grid size in world px (G toggles it on and off); `gridOn` says whether it shows and snaps. */
+  gridSize = 16;
+  gridOn = false;
+  placing: Placing | null = null;
+  readonly editor: Editor;
+  private pickAsks = new Map<number, (id: string | null) => void>();
+  private nextPickTag = 1;
   private nextId = 1;
   private eventsThisSecond = 0;
   private projectFailed = false;
@@ -98,6 +123,12 @@ export class Studio extends Emitter<Events> {
     this.mock = mock;
     this.link = new GameLink(backend.gameOrigin);
     this.link.on("any", (msg) => this.onGame(msg));
+    this.editor = new Editor({
+      backend,
+      scene: () => this.scene,
+      liveIds: () => this.entities.map((e) => e.id),
+      toast: (t) => this.emit("toast", t),
+    });
     setInterval(() => (this.eventsThisSecond = 0), 1000);
   }
 
@@ -105,7 +136,7 @@ export class Studio extends Emitter<Events> {
     this.backend.listen(
       (event) => {
         if (event.type === "hello") this.log("info", `Connected to ludra dev (version ${event.version})`);
-        else if (event.type === "change") this.onChange(event.version, event.at, event.files);
+        else if (event.type === "change") this.onChange(event.version, event.at, event.files, event.by, event.label);
       },
       (state) => {
         if (state === this.connection) return;
@@ -179,6 +210,57 @@ export class Studio extends Emitter<Events> {
     this.link.send({ type: "highlight", id: id ?? this.selected });
     this.emit("hover", id);
   }
+  // Viewport tools (docs/editor.md, part B)
+
+  /** What is at a world point, asked of the game (it knows the bodies and sprites). */
+  pickAt(at: Point): Promise<string | null> {
+    const tag = this.nextPickTag++;
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.pickAsks.delete(tag);
+        resolve(null);
+      }, 500);
+      this.pickAsks.set(tag, (id) => {
+        clearTimeout(timer);
+        resolve(id);
+      });
+      this.link.send({ type: "pickAt", x: at.x, y: at.y, tag });
+    });
+  }
+  preview(id: string | null, at?: Point): void {
+    this.link.send(id && at ? { type: "preview", id, x: at.x, y: at.y } : { type: "preview", id: null });
+  }
+  /** The placement ghost: what the palette has picked, or `components` (an Alt+drag copy); null hides it. */
+  ghost(at: Point | null, components?: Record<string, unknown>): void {
+    if (at && components) return this.link.send({ type: "ghost", components, x: at.x, y: at.y });
+    const p = this.placing;
+    if (!at || !p) return this.link.send({ type: "ghost" });
+    // A block has no prefab to draw; a plain box stands in for it.
+    this.link.send(p.kind === "prefab" ? { type: "ghost", prefab: p.name, x: at.x, y: at.y } : { type: "ghost", components: { sprite: { color: "#9aa5b1", width: 48, height: 24 } }, x: at.x, y: at.y });
+  }
+  look(at: { x: number; y: number; zoom: number } | null): void {
+    this.link.send(at ? { type: "look", ...at } : { type: "look" });
+  }
+  setGrid(on: boolean, size = this.gridSize): void {
+    this.gridOn = on;
+    this.gridSize = Math.max(1, Math.round(size));
+    this.link.send({ type: "grid", size: on ? this.gridSize : 0 });
+    this.emit("grid", on ? this.gridSize : 0);
+  }
+  /** The grid edits snap to: its size while it shows, otherwise none. */
+  get snap(): number {
+    return this.gridOn ? this.gridSize : 0;
+  }
+  /** F: look at the selection in the game, or back at the game's own camera. */
+  frameSelection(): void {
+    this.emit("frame", undefined);
+  }
+  setPlacing(p: Placing | null): void {
+    this.placing = p;
+    if (!p) this.ghost(null);
+    this.emit("placing", p);
+  }
+
   showTab(tab: string): void {
     this.emit("tab", tab);
   }
@@ -206,12 +288,13 @@ export class Studio extends Emitter<Events> {
 
   // Messages
 
-  private onChange(version: number | string, at: string, files: FileChange[]): void {
-    const entry: ActivityEntry = { id: this.nextId++, at: new Date(at), version, files };
+  private onChange(version: number | string, at: string, files: FileChange[], by?: "studio" | "files", label?: string): void {
+    const entry: ActivityEntry = { id: this.nextId++, at: new Date(at), version, files, ...(by ? { by } : {}), ...(label ? { label } : {}) };
     this.activity = [entry, ...this.activity].slice(0, 200);
     this.emit("activity", this.activity);
+    this.editor.changed(files.map((f) => f.path));
     const names = files.map((f) => f.path).join(", ");
-    this.log("info", `Changed ${names}`);
+    this.log("info", by === "studio" ? `${youDid(label)} (${names})` : `Changed ${names}`);
     this.autoCheck();
   }
 
@@ -222,7 +305,9 @@ export class Studio extends Emitter<Events> {
         this.dimensions = msg.dimensions;
         this.physics = msg.physics;
         if (msg.width && msg.height) this.gameSize = { width: msg.width, height: msg.height };
+        if (msg.dimensions !== 2) this.setView(null);
         this.emit("scene", msg.scene);
+        if (this.gridOn) this.link.send({ type: "grid", size: this.gridSize });
         if (this.muted) this.link.send({ type: "mute", on: true });
         if (this.picking) this.link.send({ type: "pick", on: true });
         // The world is new: ask again about the selection, which may have survived.
@@ -250,7 +335,17 @@ export class Studio extends Emitter<Events> {
         this.entity = msg.data;
         this.emit("entity", msg.data);
         break;
+      case "view": {
+        const { type: _type, ...view } = msg;
+        this.setView(view);
+        break;
+      }
       case "picked":
+        if (msg.tag !== undefined) {
+          this.pickAsks.get(msg.tag)?.(msg.id);
+          this.pickAsks.delete(msg.tag);
+          return;
+        }
         this.setPicking(false);
         if (msg.id) this.select(msg.id);
         break;
@@ -263,7 +358,9 @@ export class Studio extends Emitter<Events> {
         }
         if (msg.result !== "rejected") this.setGameErrors([]);
         const files = msg.files.length > 0 ? msg.files : entry?.files.map((f) => f.path) ?? [];
-        this.emit("toast", hotToast(hot, files));
+        // The person's own edits show in place; only say something when they didn't simply apply.
+        if (entry?.by !== "studio") this.emit("toast", hotToast(hot, files));
+        else if (msg.result !== "kept") this.emit("toast", { ...hotToast(hot, files), title: youDid(entry.label) });
         this.log("hot", `Hot reload ${msg.result}: ${files.join(", ") || "files"}${msg.reason ? ` (${msg.reason})` : ""}`, undefined, msg.frame);
         break;
       }
@@ -281,6 +378,11 @@ export class Studio extends Emitter<Events> {
         else this.emit("toast", { kind: "error", title: "Script error", detail: msg.message });
         break;
     }
+  }
+
+  private setView(view: GameView | null): void {
+    this.view = view;
+    this.emit("view", view);
   }
 
   private setGameErrors(list: Diagnostic[]): void {

@@ -176,13 +176,26 @@ export interface GameStatus {
   fps: number;
 }
 
+/** How a 2D game is on screen (Game → Studio `view`, with each status): its camera, and its canvas in the game page. */
+export interface GameView {
+  cameraX: number;
+  cameraY: number;
+  zoom: number;
+  /** The canvas in its own pixels. */
+  width: number;
+  height: number;
+  /** The canvas in the game page, in CSS px. */
+  rect: { left: number; top: number; width: number; height: number };
+}
+
 /** Game → Studio. */
 export type GameMessage =
   | { type: "ready"; scene: string; dimensions: 2 | 3; width: number; height: number; physics: string }
   | ({ type: "status" } & GameStatus)
   | { type: "entities"; list: EntitySummary[] }
   | { type: "entity"; id: string; data: EntityData | null }
-  | { type: "picked"; id: string | null }
+  | { type: "picked"; id: string | null; /** Echoed from `pickAt`, so its answer isn't taken for a click. */ tag?: number }
+  | ({ type: "view" } & GameView)
   | { type: "hot"; result: "kept" | "restarted" | "rejected"; frame: number; files: string[]; reason?: string }
   | { type: "event"; event: { type: string; [key: string]: unknown } }
   | { type: "error"; message: string; diagnostics?: Diagnostic[] };
@@ -198,7 +211,18 @@ export type StudioMessage =
   | { type: "highlight"; id: string | null }
   | { type: "pick"; on: boolean }
   | { type: "mute"; on: boolean }
-  | { type: "focus" };
+  | { type: "focus" }
+  // v0.99 viewport tools (docs/editor.md, part B). All 2D and all presentation: none of it changes the game.
+  /** What is at a world point? Answered by `picked` with the same `tag`. */
+  | { type: "pickAt"; x: number; y: number; tag?: number }
+  /** Draw this entity at (x, y) while it is dragged; `id: null` stops. */
+  | { type: "preview"; id: string | null; x?: number; y?: number }
+  /** A translucent placement at (x, y); with no prefab and no components, none. */
+  | { type: "ghost"; prefab?: string; components?: Record<string, unknown>; x?: number; y?: number }
+  /** A grid every `size` world px; 0 is off. */
+  | { type: "grid"; size: number }
+  /** Look through Studio's camera (world centre and zoom, F frames the selection); no x, the game's own again. */
+  | { type: "look"; x?: number; y?: number; zoom?: number };
 
 /** The Electron preload. Missing in a plain browser. */
 export interface StudioBridge {
