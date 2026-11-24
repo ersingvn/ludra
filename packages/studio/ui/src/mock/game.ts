@@ -1,6 +1,7 @@
 // The mock game page (mock-game.html): plays "Lantern Steps" with a bot at the keys and speaks the game
 // link from docs/studio.md, so the UI can be built and screenshotted with no server. It is not the engine.
 
+import { applyOp, type GameOp } from "./edits.ts";
 import { mockScene, MOCK_PROJECT, type MockEntity } from "./scene.ts";
 
 const W = 960;
@@ -30,6 +31,94 @@ let fps = 60;
 let drawn = 0;
 let fpsClock = performance.now();
 const removed = new Set<string>();
+
+// The viewport tools (docs/editor.md, part B): what Studio asks the game to draw, all presentation.
+let preview: { id: string; x: number; y: number } | null = null;
+let ghost: { prefab?: string; components?: Record<string, any>; x: number; y: number } | null = null;
+let grid = 0;
+let look: { x: number; y: number; zoom: number } | null = null;
+let lastView = "";
+
+/** The camera: the whole level, or Studio's own (F) when it looks at something. */
+function camera(): { x: number; y: number; zoom: number } {
+  return look ? { x: look.x - W / look.zoom / 2, y: look.y - H / look.zoom / 2, zoom: look.zoom } : { x: 0, y: 0, zoom: 1 };
+}
+
+/** Where the game is drawn in the page: the letterboxed area, in CSS px and canvas px. */
+function stageRect(): { s: number; ox: number; oy: number } {
+  const s = Math.min(canvas.width / W, canvas.height / H);
+  return { s, ox: (canvas.width - W * s) / 2, oy: (canvas.height - H * s) / 2 };
+}
+
+function sendView(force = false): void {
+  if (canvas.width === 0) return;
+  const dpr = window.devicePixelRatio || 1;
+  const { s, ox, oy } = stageRect();
+  const cam = camera();
+  const r = (n: number) => Math.round(n * 100) / 100;
+  const view = { cameraX: r(cam.x), cameraY: r(cam.y), zoom: cam.zoom, width: W, height: H, rect: { left: r(ox / dpr), top: r(oy / dpr), width: r((W * s) / dpr), height: r((H * s) / dpr) } };
+  const key = JSON.stringify(view);
+  if (!force && key === lastView) return;
+  lastView = key;
+  post("view", view);
+}
+
+/** The smallest entity under a world point, as the engine's pick does. */
+function entityAt(x: number, y: number): MockEntity | undefined {
+  return live()
+    .filter((e) => e.components.body || e.components.emitter)
+    .map((e) => ({ e, b: boundsOf(e) }))
+    .filter(({ b }) => x >= b.l - 3 && x <= b.r + 3 && y >= b.t - 3 && y <= b.b + 3)
+    .sort((a, b) => (a.b.r - a.b.l) * (a.b.b - a.b.t) - (b.b.r - b.b.l) * (b.b.b - b.b.t))[0]?.e;
+}
+
+function drawGrid(cam: { x: number; y: number; zoom: number }): void {
+  let step = grid;
+  while (step * cam.zoom < 6) step *= 2;
+  const right = cam.x + W / cam.zoom;
+  const bottom = cam.y + H / cam.zoom;
+  ctx.save();
+  ctx.lineWidth = 1 / cam.zoom;
+  for (let x = Math.floor(cam.x / step) * step; x <= right; x += step) {
+    ctx.strokeStyle = Math.round(x / step) % 5 === 0 ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.09)";
+    ctx.beginPath();
+    ctx.moveTo(x, cam.y);
+    ctx.lineTo(x, bottom);
+    ctx.stroke();
+  }
+  for (let y = Math.floor(cam.y / step) * step; y <= bottom; y += step) {
+    ctx.strokeStyle = Math.round(y / step) % 5 === 0 ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.09)";
+    ctx.beginPath();
+    ctx.moveTo(cam.x, y);
+    ctx.lineTo(right, y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/** A mock prefab's components: those of the first entity in the level made from it. */
+function prefabComponents(prefab: string): Record<string, any> {
+  const name = (p: string) => p.replace(/^.*\//, "").replace(/\.prefab\.json$/, "");
+  const from = mockScene().find((e) => e.prefab && name(e.prefab) === name(prefab));
+  return from ? JSON.parse(JSON.stringify(from.components)) : {};
+}
+
+function drawGhost(g: NonNullable<typeof ghost>, zoom: number): void {
+  // A prefab looks like the first entity made from it; otherwise its own components say its size and color.
+  const c: Record<string, any> = { ...(g.prefab ? prefabComponents(g.prefab) : {}), ...(g.components ?? {}) };
+  const w = Number(c.sprite?.width || c.body?.width || 32);
+  const h = Number(c.sprite?.height || c.body?.height || 32);
+  ctx.save();
+  ctx.globalAlpha = 0.55;
+  ctx.fillStyle = typeof c.sprite?.color === "string" ? c.sprite.color : "#7fdbff";
+  ctx.fillRect(g.x - w / 2, g.y - h / 2, w, h);
+  ctx.globalAlpha = 1;
+  ctx.lineWidth = 1.5 / zoom;
+  ctx.setLineDash([5 / zoom, 3 / zoom]);
+  ctx.strokeStyle = "#ffd24a";
+  ctx.strokeRect(g.x - w / 2, g.y - h / 2, w, h);
+  ctx.restore();
+}
 
 function post(type: string, fields: Record<string, unknown> = {}): void {
   parent.postMessage({ ludra: 1, type, ...fields }, "*");
@@ -68,6 +157,7 @@ function sendEntities(): void {
 
 function sendStatus(): void {
   post("status", { frame, paused, won, lost, score, lives, deaths, fps });
+  sendView();
 }
 
 function sendEntity(force = false): void {
@@ -255,6 +345,15 @@ function draw(): void {
     ctx.fillRect(st.x, st.y, st.r, st.r);
   }
   ctx.globalAlpha = 1;
+  const cam = camera();
+  ctx.setTransform(s * cam.zoom, 0, 0, s * cam.zoom, (cw - W * s) / 2 - cam.x * s * cam.zoom, (ch - H * s) / 2 - cam.y * s * cam.zoom);
+  // A dragged entity is drawn where it's being dragged to; the world keeps its own place.
+  const moved = preview ? byId(preview.id)?.components.transform : undefined;
+  const kept = moved ? { x: moved.x, y: moved.y } : undefined;
+  if (moved && preview) {
+    moved.x = preview.x;
+    moved.y = preview.y;
+  }
   hills(380, 70, "#2b2347", 0.004, 1.1);
   hills(430, 55, "#231c39", 0.007, 2.3);
 
@@ -283,7 +382,14 @@ function draw(): void {
   const player = byId("player");
   if (player) wren(box(player)!, t, player.components.body);
 
+  if (grid > 0) drawGrid(cam);
+  if (ghost) drawGhost(ghost, cam.zoom);
   if (highlighted) outline(highlighted);
+  if (moved && kept) {
+    moved.x = kept.x;
+    moved.y = kept.y;
+  }
+  ctx.setTransform(s, 0, 0, s, (cw - W * s) / 2, (ch - H * s) / 2);
   if (paused) {
     ctx.fillStyle = "rgba(10,12,20,0.18)";
     ctx.fillRect(0, 0, W, H);
@@ -433,17 +539,13 @@ function outline(id: string): void {
 canvas.addEventListener("click", (ev) => {
   if (!picking) return;
   const dpr = window.devicePixelRatio || 1;
-  const s = Math.min(canvas.width / W, canvas.height / H);
-  const x = (ev.clientX * dpr - (canvas.width - W * s) / 2) / s;
-  const y = (ev.clientY * dpr - (canvas.height - H * s) / 2) / s;
-  const hits = live()
-    .filter((e) => e.components.body || e.components.emitter)
-    .map((e) => ({ e, b: boundsOf(e) }))
-    .filter(({ b }) => x >= b.l - 3 && x <= b.r + 3 && y >= b.t - 3 && y <= b.b + 3)
-    .sort((a, b) => (a.b.r - a.b.l) * (a.b.b - a.b.t) - (b.b.r - b.b.l) * (b.b.b - b.b.t));
+  const { s, ox, oy } = stageRect();
+  const cam = camera();
+  const x = cam.x + (ev.clientX * dpr - ox) / s / cam.zoom;
+  const y = cam.y + (ev.clientY * dpr - oy) / s / cam.zoom;
   picking = false;
   canvas.style.cursor = "";
-  post("picked", { id: hits[0]?.e.id ?? null });
+  post("picked", { id: entityAt(x, y)?.id ?? null });
 });
 
 // Studio → Game, plus the mock's own "mock-apply" (what a hot reload would do).
@@ -466,12 +568,16 @@ window.addEventListener("message", (ev) => {
     case "mute": break;
     case "focus": canvas.focus(); break;
     case "mock-apply": apply(m.ops ?? [], m.files ?? []); break;
+    case "pickAt": post("picked", { id: entityAt(Number(m.x), Number(m.y))?.id ?? null, ...(m.tag !== undefined ? { tag: m.tag } : {}) }); break;
+    case "preview": preview = typeof m.id === "string" && Number.isFinite(m.x) && Number.isFinite(m.y) ? { id: m.id, x: m.x, y: m.y } : null; break;
+    case "ghost": ghost = (typeof m.prefab === "string" || (m.components && typeof m.components === "object")) && Number.isFinite(m.x) && Number.isFinite(m.y) ? { prefab: m.prefab, components: m.components, x: m.x, y: m.y } : null; break;
+    case "grid": grid = Math.max(0, Number(m.size) || 0); break;
+    case "look": look = Number.isFinite(m.x) && Number.isFinite(m.y) && m.zoom > 0 ? { x: m.x, y: m.y, zoom: m.zoom } : null; sendView(true); break;
   }
 });
 
 type Op =
-  | { op: "set"; id: string; path: string[]; value: unknown }
-  | { op: "add"; entity: MockEntity }
+  | GameOp
   | { op: "reject"; diagnostics: unknown[] }
   | { op: "restart"; reason: string }
   | { op: "keep" };
@@ -488,16 +594,13 @@ function apply(ops: Op[], files: string[]): void {
       post("hot", { result: "restarted", frame: 0, files, reason: op.reason });
       return;
     }
-    if (op.op === "set") {
-      const e = byId(op.id);
-      if (!e) continue;
-      let target: any = e;
-      for (const key of op.path.slice(0, -1)) target = target[key] ??= {};
-      target[op.path[op.path.length - 1]!] = op.value;
-    } else if (op.op === "add") {
-      entities.push(op.entity);
-      sendEntities();
-    }
+    if (op.op === "keep") continue;
+    // Studio's edits and the agent's: the same changes the scene file got (mock/edits.ts).
+    if (op.op === "rename" && inspected === op.id) inspected = op.to;
+    // A placed prefab names only its prefab and transform: the game fills in the rest, as the engine does.
+    if (op.op === "add" && op.entity.prefab) op.entity.components = { ...prefabComponents(op.entity.prefab), ...op.entity.components };
+    applyOp(entities, op);
+    if (op.op !== "set" || op.path[0] === "components") sendEntities();
   }
   post("hot", { result: "kept", frame, files });
   sendStatus();
@@ -532,6 +635,8 @@ function loop(now: number): void {
     }
   }
   draw();
+  // The canvas can move or resize without a status (the window, the panels): keep Studio's map current.
+  sendView();
   drawn++;
   if (now - fpsClock >= 1000) {
     fps = Math.round((drawn * 1000) / (now - fpsClock));

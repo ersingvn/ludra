@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { entityAt, entityJson, entitySummary, inputKey, REPLAY_LIMIT, replayScene } from "../src/studio-link.ts";
+import { connectStudio, entityAt, entityJson, entitySummary, inputKey, REPLAY_LIMIT, replayScene, type GameControl, type GameView } from "../src/studio-link.ts";
+import type { StudioGhost, StudioLook, StudioPreview } from "../src/studio-draw.ts";
 import { validateScene } from "../src/validate.ts";
 import type { Action, SceneDef } from "../src/types.ts";
 import { World } from "../src/world.ts";
@@ -106,5 +107,117 @@ describe("entities for Studio", () => {
     assert.equal(entityAt(world, 600, 520)?.id, "ground");
     assert.equal(entityAt(world, 100, 482)?.id, "player");
     assert.equal(entityAt(world, 500, 100), undefined);
+  });
+});
+
+describe("the editing link (v0.99)", () => {
+  /** A game page with no browser: the link's window is an EventTarget, and the control a stand-in that writes down what Studio asked. */
+  function connected(dimensions: 2 | 3 = 2) {
+    const page = new EventTarget();
+    const g = globalThis as unknown as Record<string, unknown>;
+    const saved = { add: g.addEventListener, remove: g.removeEventListener };
+    g.addEventListener = page.addEventListener.bind(page);
+    g.removeEventListener = page.removeEventListener.bind(page);
+    const world = new World(scene([ground, player, coin]));
+    const asked: { preview: (StudioPreview | null)[]; ghost: (StudioGhost | null)[]; grid: number[]; look: (StudioLook | null)[] } = { preview: [], ghost: [], grid: [], look: [] };
+    let view: GameView | undefined = dimensions === 2 ? { cameraX: 0, cameraY: 0, zoom: 1, width: 960, height: 540, rect: { left: 10, top: 20, width: 480, height: 270 } } : undefined;
+    const control = {
+      world,
+      scene: scene([]),
+      scenePath: "scenes/main.scene.json",
+      paused: true,
+      fps: 60,
+      canvas: { width: 960, height: 540 },
+      get view() {
+        return view;
+      },
+      pause() {},
+      resume() {},
+      step() {},
+      restart() {},
+      goto: async () => {},
+      mute() {},
+      focus() {},
+      highlight() {},
+      pointToWorld: () => undefined,
+      hot: async () => ({ result: "kept" as const, frame: 0 }),
+      on() {},
+      preview: (p: StudioPreview | null) => void asked.preview.push(p),
+      ghost: (x: StudioGhost | null) => void asked.ghost.push(x),
+      grid: (n: number) => void asked.grid.push(n),
+      look: (l: StudioLook | null) => void asked.look.push(l),
+    } as unknown as GameControl;
+    const sent: { type: string; [k: string]: unknown }[] = [];
+    const link = connectStudio(control, { postMessage: (m: unknown) => void sent.push(m as { type: string }) } as Pick<Window, "postMessage">);
+    const say = (m: Record<string, unknown>) => page.dispatchEvent(new MessageEvent("message", { data: { ludra: 1, ...m } }));
+    const done = () => {
+      link.close();
+      g.addEventListener = saved.add;
+      g.removeEventListener = saved.remove;
+    };
+    return { sent, say, asked, done, setView: (v: GameView | undefined) => (view = v) };
+  }
+
+  it("tells Studio the camera and where the canvas is, with the first status and when they change", async () => {
+    const c = connected();
+    try {
+      const views = () => c.sent.filter((m) => m.type === "view");
+      assert.equal(views().length, 1);
+      assert.deepEqual(views()[0], { ludra: 1, type: "view", cameraX: 0, cameraY: 0, zoom: 1, width: 960, height: 540, rect: { left: 10, top: 20, width: 480, height: 270 } });
+      c.setView({ cameraX: 120.456, cameraY: 0, zoom: 2, width: 960, height: 540, rect: { left: 10, top: 20, width: 480, height: 270 } });
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      assert.equal(views().length, 2);
+      assert.equal(views()[1]!.cameraX, 120.46);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      assert.equal(views().length, 2, "nothing new, nothing sent");
+    } finally {
+      c.done();
+    }
+  });
+
+  it("sends no view in 3D", () => {
+    const c = connected(3);
+    try {
+      assert.equal(c.sent.some((m) => m.type === "view"), false);
+    } finally {
+      c.done();
+    }
+  });
+
+  it("answers pickAt with what is at a world point, and passes preview, ghost, grid and look on", () => {
+    const c = connected();
+    try {
+      c.say({ type: "pickAt", x: 700, y: 470, tag: 3 });
+      c.say({ type: "pickAt", x: 500, y: 100 });
+      assert.deepEqual(c.sent.filter((m) => m.type === "picked").map((m) => [m.id, m.tag]), [["coin", 3], [null, undefined]]);
+      c.say({ type: "preview", id: "coin", x: 650, y: 400 });
+      c.say({ type: "preview", id: null });
+      c.say({ type: "preview", id: "coin", x: "far" });
+      assert.deepEqual(c.asked.preview, [{ id: "coin", x: 650, y: 400 }, null]);
+      c.say({ type: "ghost", prefab: "slime", x: 10, y: 20 });
+      c.say({ type: "ghost", components: { sprite: { color: "#f00" } }, x: 1, y: 2 });
+      c.say({ type: "ghost", prefab: null });
+      assert.deepEqual(c.asked.ghost, [{ prefab: "slime", x: 10, y: 20 }, { components: { sprite: { color: "#f00" } }, x: 1, y: 2 }, null]);
+      c.say({ type: "grid", size: 32 });
+      c.say({ type: "grid", size: -4 });
+      assert.deepEqual(c.asked.grid, [32, 0]);
+      c.say({ type: "look", x: 700, y: 470, zoom: 3 });
+      c.say({ type: "look", x: null });
+      assert.deepEqual(c.asked.look, [{ x: 700, y: 470, zoom: 3 }, null]);
+    } finally {
+      c.done();
+    }
+  });
+});
+
+describe("placement ghosts", () => {
+  it("are their prefab's components with their own on top", async () => {
+    const { ghostComponents } = await import("../src/studio-draw.ts");
+    const def = { entities: [], prefabs: { slime: { components: { body: { type: "kinematic", width: 30, height: 20 }, sprite: { color: "#6c6" } } } } } as unknown as SceneDef;
+    assert.deepEqual(ghostComponents(def, { prefab: "slime", components: { sprite: { width: 40 } }, x: 0, y: 0 }), {
+      body: { type: "kinematic", width: 30, height: 20 },
+      sprite: { color: "#6c6", width: 40 },
+    });
+    assert.deepEqual(ghostComponents(def, { prefab: "missing", x: 0, y: 0 }), {});
   });
 });

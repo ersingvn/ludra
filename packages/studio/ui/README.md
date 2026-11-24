@@ -29,7 +29,8 @@ Electron loads them from `file://` fine.
 | `src/main.ts` | Boot, status bar, shortcuts and `window.studio.onMenu` |
 | `src/studio.ts` | All state and actions; panels listen to it |
 | `src/game-link.ts` | postMessage to and from the game iframe |
-| `src/backend.ts` | `/__ludra/project`, `/__ludra/events`, `/__ludra/run` |
+| `src/backend.ts` | `/__ludra/project`, `/__ludra/events`, `/__ludra/run`, and the edits: `/__ludra/file`, `/edit`, `/undo`, `/redo` |
+| `src/panels/scene-doc.ts` | The running scene's file as the inspector edits it: JSON, version, prefabs |
 | `src/layout.ts` | Resizable panels, remembered in localStorage |
 | `src/panels/*` | One file per panel |
 | `src/syntax.ts` | Line-by-line coloring for JSON, TypeScript and Markdown, and unified diffs |

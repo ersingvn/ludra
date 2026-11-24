@@ -9,6 +9,12 @@ import type { Entity, World, WorldSave } from "./world.ts";
  * scripts hold), keep the earliest way to get there, and keep exploring from the cells tried least
  * and closest to the goal. Each try starts from a saved moment (`World.save`), not from frame 0.
  * Engines that can't save fall back to replaying the inputs that led to the cell.
+ *
+ * On long levels the cells multiply (every platform's state, every coin's score, at every place)
+ * faster than the search can push on, so when it stops getting closer to the goal it switches to a
+ * beam: keep the situations nearest the goal, one per place, and move them all forward together.
+ * A jump only counts if pressing it a little late lands as well, as a person might. When the beam
+ * runs dry its furthest situations become cells and exploring carries on from them.
  */
 
 export interface SolveOptions {
@@ -61,6 +67,8 @@ export interface SolveResult {
   cells: number;
   /** How the search went back in time: "save" (World.save) or "replay" (from frame 0). */
   method: "save" | "replay";
+  /** Which search found the win: exploring from cells, or the beam that pushes on along long levels. */
+  strategy?: "explore" | "beam";
   /** The closest the player came to a goal standing on something (or at all, if it never stood), when there is one. */
   closest?: { frame: number; distance: number; x: number; y: number; z?: number; inputs: string };
   /** Timing windows of each press in the solution (jumps and actions). */
@@ -86,6 +94,18 @@ const EXHAUSTED_AFTER = 400;
 const WINDOW_REACH = 30;
 /** Frames the search spends at least on looking for a faster win after the first. */
 const REFINE_MIN = 100_000;
+/** Frames of exploring without getting closer to the goal before the beam takes a turn. */
+const STALL = 40_000;
+/** Cells there have to be before the beam takes a turn: few cells and no progress is a small level, or a pit, for exploring to finish. */
+const BEAM_CELLS = 1_000;
+/** Situations the beam keeps, frames each of its moves lasts, and moves without getting closer before it stops. */
+const BEAM_WIDTH = 100;
+const BEAM_MOVE = 12;
+const BEAM_PATIENCE = 40;
+/** A person presses late: a jump from the beam counts only if pressing it this many frames later lands too. */
+const SLACK = 6;
+/** Frames a jump has to land in. */
+const LANDING = 90;
 
 export function solve(make: () => World, options: SolveOptions = {}): SolveResult {
   const budget = options.budget ?? DEFAULT_BUDGET;
@@ -115,6 +135,10 @@ export function solve(make: () => World, options: SolveOptions = {}): SolveResul
   const cells = new Map<string, Cell>();
   let closest: Cell | undefined;
   let closestGrounded = false;
+  /** Frames explored when the search last came closer to the goal. */
+  let improved = 0;
+  /** The nearest the search had come to the goal then: getting closer counts once it is by a cell. */
+  let mark = Infinity;
   /** Records where the player is now. True only for a place never reached before (a faster way to a known one is kept, but isn't new). */
   const enter = (path: [number, number][]): boolean => {
     const p = world.get(playerId);
@@ -127,6 +151,7 @@ export function solve(make: () => World, options: SolveOptions = {}): SolveResul
     cells.set(key, cell);
     if (options.places) options.places.add(placeKey(p, options.placeSize ?? quantum));
     const grounded = !!p.body?.grounded;
+    if (distance < mark - quantum) [improved, mark] = [explored, distance];
     if (!closest || (grounded && !closestGrounded) || (grounded === closestGrounded && distance < closest.distance)) {
       closest = cell;
       closestGrounded = grounded;
@@ -146,8 +171,112 @@ export function solve(make: () => World, options: SolveOptions = {}): SolveResul
   let refineUntil = Infinity;
   let sinceNew = 0;
   const startDistance = Math.max(1e-9, closest!.distance);
+  let strategy: "explore" | "beam" = "explore";
+  /** The beam needs saves and a goal to head for. */
+  const canBeam = method === "save" && Number.isFinite(closest!.distance);
+  let beamReady = canBeam;
+
+  /**
+   * Pushes the situations nearest the goal forward together, one per place, keeping `BEAM_WIDTH` of
+   * them. Returns the win, if there is one; otherwise its furthest situations become cells.
+   */
+  const beam = (): { path: [number, number][]; frame: number } | undefined => {
+    type State = { save: WorldSave; path: [number, number][]; distance: number; frame: number };
+    const placeSize = quantum * 1.5;
+    /** For each choice, the same choice without the jump (-1 if there is none). */
+    const jumpless = sets.map((set) => {
+      const without = new Set(set);
+      without.delete("jump");
+      return sets.findIndex((other) => other.size === without.size && [...without].every((a) => other.has(a)));
+    });
+    /** Whether pressing `choice` `late` frames after `save` (holding the rest of it meanwhile) lands safely. */
+    const lands = (save: WorldSave, choice: number, late: number): boolean => {
+      world.restore(save);
+      const rest = jumpless[choice]! >= 0 ? sets[jumpless[choice]!]! : NOTHING;
+      for (let f = 0; f < late + LANDING; f++) {
+        step(f < late || f >= late + BEAM_MOVE ? rest : sets[choice]!);
+        if (isGoal(world)) return true;
+        if (failed()) return false;
+        if (f >= late + BEAM_MOVE && world.get(playerId)?.body?.grounded) return true;
+      }
+      return false;
+    };
+    const start = closest!;
+    let states: State[] = [{ save: start.save!, path: start.path.slice(), distance: start.distance, frame: start.frame }];
+    let best = start.distance;
+    let since = 0;
+    while (states.length > 0 && since < BEAM_PATIENCE && explored < budget && !options.deadline?.()) {
+      /** Where each move led, kept without a save: saving copies the world, so only the moves kept are saved, played again from their state. */
+      const next = new Map<string, { from: State; choice: number; path: [number, number][]; distance: number; frame: number }>();
+      for (const state of states) {
+        for (let choice = 0; choice < sets.length && explored < budget; choice++) {
+          world.restore(state.save);
+          // A press from the ground has to work a little late too.
+          if (sets[choice]!.has("jump") && world.get(playerId)?.body?.grounded) {
+            if (!lands(state.save, choice, SLACK)) continue;
+            world.restore(state.save);
+          }
+          const path = state.path.slice();
+          let dead = false;
+          for (let f = 0; f < BEAM_MOVE; f++) {
+            step(sets[choice]!);
+            if (isGoal(world)) {
+              extend(path, choice, f + 1);
+              return { path, frame: world.frame };
+            }
+            if (failed()) {
+              dead = true;
+              break;
+            }
+          }
+          if (dead || world.frame >= maxFrames) continue;
+          extend(path, choice, BEAM_MOVE);
+          const e = world.get(playerId)!;
+          if (options.places) options.places.add(placeKey(e, options.placeSize ?? quantum));
+          const rising = Math.sign(Math.round((e.body?.vy ?? 0) / 60));
+          const key = `${placeKey(e, placeSize)}|${e.body?.grounded ? 1 : 0}|${rising}`;
+          const distance = goalDistance(world, e);
+          const known = next.get(key);
+          if (known && (known.distance < distance || (known.distance === distance && known.frame <= world.frame))) continue;
+          next.set(key, { from: state, choice, path, distance, frame: world.frame });
+        }
+      }
+      states = [...next.values()]
+        .sort((a, b) => a.distance - b.distance || a.frame - b.frame)
+        .slice(0, BEAM_WIDTH)
+        .map((move) => {
+          world.restore(move.from.save);
+          for (let f = 0; f < BEAM_MOVE; f++) step(sets[move.choice]!);
+          return { save: world.save(), path: move.path, distance: move.distance, frame: move.frame };
+        });
+      const nearest = states[0]?.distance ?? Infinity;
+      if (nearest < best - 1e-6) [best, since] = [nearest, 0];
+      else since++;
+    }
+    // Exploring carries on from where the beam got to.
+    let grew = false;
+    for (const state of states.slice(0, 20)) {
+      world.restore(state.save);
+      if (enter(state.path)) grew = true;
+    }
+    if (grew) sinceNew = 0;
+    improved = explored;
+    return undefined;
+  };
 
   while (explored < Math.min(budget, refineUntil) && !options.deadline?.()) {
+    if (beamReady && !win && explored - improved >= STALL && cells.size >= BEAM_CELLS) {
+      beamReady = false;
+      const found = beam();
+      if (found) {
+        win = found;
+        strategy = "beam";
+        break;
+      }
+      continue;
+    }
+    // Another turn for the beam once exploring has come closer again.
+    if (!beamReady && explored - improved < STALL / 4) beamReady = canBeam;
     const cell = pick([...cells.values()], startDistance, random);
     if (win && cell.frame >= win.frame) {
       cell.chosen++;
@@ -181,6 +310,7 @@ export function solve(make: () => World, options: SolveOptions = {}): SolveResul
   }
 
   const result: SolveResult = { solved: !!win, exhausted: !win && sinceNew >= EXHAUSTED_AFTER, explored, cells: cells.size, method };
+  if (win) result.strategy = strategy;
   if (closest && Number.isFinite(closest.distance)) {
     goTo(closest);
     const p = world.get(playerId)!;

@@ -89,9 +89,10 @@ export function readPrefabs(project: Project): { prefabs: Record<string, unknown
 
 /**
  * Reads and validates a scene (the entry scene by default), with the project's
- * prefab files merged in. JSON syntax errors become diagnostics too.
+ * prefab files merged in. JSON syntax errors become diagnostics too. `text` checks that text
+ * as the scene's file instead of what's on disk (Studio's edits, before they're written).
  */
-export function readScene(project: Project, scenePath: string = project.entryLabel): SceneLoad {
+export function readScene(project: Project, scenePath: string = project.entryLabel, text?: string): SceneLoad {
   const file = resolve(project.dir, scenePath);
   const label = relative(project.dir, file).replaceAll("\\", "/");
   if (!isInside(project.dir, file) || !existsSync(file)) {
@@ -115,7 +116,7 @@ export function readScene(project: Project, scenePath: string = project.entryLab
 
   let raw: unknown;
   try {
-    raw = JSON.parse(readFileSync(file, "utf8"));
+    raw = JSON.parse(text ?? readFileSync(file, "utf8"));
   } catch (err) {
     return {
       label,

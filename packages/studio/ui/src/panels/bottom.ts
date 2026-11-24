@@ -4,6 +4,7 @@ import { pref } from "../layout.ts";
 import type { Studio } from "../studio.ts";
 import { activity } from "./activity.ts";
 import { consolePanel } from "./console.ts";
+import { palette } from "./palette.ts";
 import { problems, review, tests } from "./results.ts";
 
 export interface Tab {
@@ -21,6 +22,7 @@ export function bottom(root: HTMLElement, studio: Studio): void {
     { id: "tests", label: "Tests", icon: "flask", build: (b, s, t) => tests(b, studio, s, t) },
     { id: "review", label: "Review", icon: "review", build: (b, s, t) => review(b, studio, s, t) },
     { id: "console", label: "Console", icon: "terminal", build: (b, s, t) => consolePanel(b, studio, s, t) },
+    { id: "palette", label: "Palette", icon: "prefab", build: (b, s, t) => palette(b, studio, s, t) },
   ];
   const current = pref<string>("bottom.tab", "activity");
   const strip = h("div", { class: "tabs", attrs: { role: "tablist" } });
@@ -63,4 +65,6 @@ export function bottom(root: HTMLElement, studio: Studio): void {
   };
   show(current.get());
   studio.on("tab", show);
+  // Placing from the palette keeps it in view.
+  studio.on("placing", (p) => p && show("palette"));
 }

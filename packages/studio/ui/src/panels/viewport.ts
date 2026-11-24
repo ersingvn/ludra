@@ -1,6 +1,7 @@
 import { clear, h } from "../dom.ts";
 import { icon } from "../icons.ts";
 import type { Studio, Toast } from "../studio.ts";
+import { editLayer } from "./edit-layer.ts";
 
 const TOAST_MS = 4200;
 const MAX_TOASTS = 4;
@@ -18,6 +19,7 @@ export function viewport(root: HTMLElement, studio: Studio): HTMLIFrameElement {
   const resultChip = h("span", { class: "chip" });
   const sceneChip = h("span", { class: "chip chip-dim mono" });
   const hud = h("span", { class: "chip chip-dim mono" });
+  const head = h("div", { class: "viewport-head" }, h("span", { class: "panel-title" }, icon("play", "muted"), " Game"), sceneChip);
   const toasts = h("div", { class: "toasts", attrs: { "aria-live": "polite" } });
   const pickBanner = h(
     "div",
@@ -30,14 +32,7 @@ export function viewport(root: HTMLElement, studio: Studio): HTMLIFrameElement {
 
   clear(
     root,
-    h(
-      "div",
-      { class: "viewport-head" },
-      h("span", { class: "panel-title" }, icon("play", "muted"), " Game"),
-      sceneChip,
-      h("span", { class: "tb-spacer" }),
-      hud,
-    ),
+    head,
     h(
       "div",
       { class: "viewport" },
@@ -49,6 +44,8 @@ export function viewport(root: HTMLElement, studio: Studio): HTMLIFrameElement {
     ),
   );
   studio.link.attach(frame);
+  editLayer(sizer, head, studio);
+  head.append(h("span", { class: "tb-spacer" }), hud);
 
   // Keep the game at its aspect ratio, as large as fits.
   const fit = () => {
