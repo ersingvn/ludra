@@ -190,6 +190,51 @@ describe("ludra review", () => {
   });
 });
 
+describe("story through the CLI", () => {
+  const dir = join(workDir, "smithy");
+  const entities = [
+    { id: "hero", components: { transform: { x: 100, y: 480 }, body: { type: "dynamic", width: 24, height: 40 }, platformer: {} } },
+    { id: "ground", components: { transform: { x: 480, y: 520 }, body: { type: "static", width: 960, height: 40 } } },
+    {
+      id: "smith",
+      components: {
+        transform: { x: 140, y: 480 },
+        body: { type: "static", width: 24, height: 40, sensor: true },
+        dialogue: { lines: [{ speaker: "Smith", text: "The bridge is out." }, { text: "Help me?", choices: [{ text: "Yes", set: { quest: "hammer" } }, { text: "No", end: true }] }, { text: "Bless you." }] },
+      },
+    },
+    { id: "hammer", components: { transform: { x: 300, y: 480 }, body: { type: "static", width: 16, height: 16, sensor: true }, item: { name: "hammer" } } },
+  ];
+  const write = (tests: unknown[]) => {
+    mkdirSync(join(dir, "scenes"), { recursive: true });
+    mkdirSync(join(dir, "tests"), { recursive: true });
+    writeFileSync(join(dir, "ludra.json"), JSON.stringify({ name: "Smithy" }));
+    writeFileSync(join(dir, "scenes", "main.scene.json"), JSON.stringify({ entities }));
+    writeFileSync(join(dir, "tests", "story.test.json"), JSON.stringify({ tests }));
+  };
+
+  test("play prints the conversation, line by line and choice by choice", () => {
+    write([]);
+    const { code, out } = ludra("play", dir, "--inputs", "action:2f, wait:0.2s, action:2f, wait:0.2s, action:2f, wait:0.2s, action:2f, right:1s");
+    assert.equal(code, 0, out);
+    assert.match(out, /Smith: "The bridge is out\." \(line 0\)/);
+    assert.match(out, /picked "Yes" \(choice 0 on line 1\)/);
+    assert.match(out, /hero picked up hammer: hammer/);
+  });
+
+  test("review flags a conversation no test has and silent talk and pickup", () => {
+    write([{ name: "walk", inputs: "right:1.5s", assert: ["items.hammer == 1"] }]);
+    const codes = (JSON.parse(ludra("review", dir, "--json").out).findings as { code: string; message: string }[]).map((f) => `${f.code} ${f.message}`);
+    assert.ok(codes.some((c) => c.startsWith("R_UNTESTED_DIALOGUE") && c.includes("smith")), codes.join("\n"));
+    write([{ name: "talk", inputs: "action:2f, wait:0.2s, action:2f, wait:0.2s, action:2f, wait:0.2s, action:2f, right:1.5s", assert: ['flags.quest == "hammer"', "items.hammer == 1"] }]);
+    const after = (JSON.parse(ludra("review", dir, "--json").out).findings as { code: string; message: string }[]).map((f) => `${f.code} ${f.message}`);
+    assert.ok(!after.some((c) => c.startsWith("R_UNTESTED_DIALOGUE")), after.join("\n"));
+    const silent = after.find((c) => c.startsWith("R_SILENT_EVENT"));
+    assert.ok(silent && /talk/.test(silent) && /pickup/.test(silent), after.join("\n"));
+    assert.equal(ludra("test", dir).code, 0);
+  });
+});
+
 describe("multiple scenes", () => {
   test("check validates every scene, and play can pick one", () => {
     const report = JSON.parse(ludra("check", game, "--json").out);

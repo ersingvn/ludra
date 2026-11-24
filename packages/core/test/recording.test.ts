@@ -183,3 +183,28 @@ describe("runTest with carry", () => {
     assert.ok(result.pass, JSON.stringify(result.results));
   });
 });
+
+describe("a take in a later scene", () => {
+  it("keeps the items and flags it started with, so it replays the same", () => {
+    // A lock only a player carrying the key opens: what the take carried in decides how it plays.
+    const lock: EntityDef = { id: "gate", components: { transform: { x: 200, y: 470 }, body: { type: "static", width: 20, height: 60 }, lock: { needs: "key" } } };
+    const scene: SceneDef = { entities: [ground, hero, lock, goalAt(400)] };
+    const carry = { score: 3, deaths: 1, lives: undefined, items: { key: 1 }, flags: { met: true } };
+    const { r, saved } = recorder();
+    const world = new World(scene, { carry });
+    r.begin(world, "scenes/level-2.scene.json", carry);
+    play(r, world, hold(150, "right"));
+    r.stop();
+    const take = [...saved.values()][0]!;
+    assert.deepEqual(take.carry, { score: 3, deaths: 1, items: { key: 1 }, flags: { met: true } });
+    assert.equal(world.won, true, "the key opened the gate");
+    const again = runTest(scene, { name: "replayed", inputs: take.inputs, duration: `${take.frames}f`, carry: take.carry, assert: ["won == true", "items.key == 0", "flags.met == true"] });
+    assert.ok(again.pass, JSON.stringify(again.results));
+    const empty = recorder();
+    const plain = new World(SCENE);
+    empty.r.begin(plain, "scenes/main.scene.json", { score: 0, deaths: 0, lives: undefined, items: {}, flags: {} });
+    play(empty.r, plain, hold(2, "right"));
+    empty.r.stop();
+    assert.deepEqual([...empty.saved.values()][0]!.carry, { score: 0, deaths: 0 }, "no empty items or flags in the file");
+  });
+});

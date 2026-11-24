@@ -27,6 +27,7 @@ A 3D game built with Ludra, a game engine designed for AI agents: Sky Islands. H
 - **Crystals** are sensor bodies with `collectible`, and two tweens make them turn and bob.
 - **The raft** is a kinematic box with a `patrol` along z, whose ends overlap each shore so the player can step on and off at the ends.
 - **The storm puff** is a kinematic sensor sphere with `hazard` (`stompable`) and a patrol along x.
+- **Enemies that hunt** are kinematic sensor capsules with `hazard` and `"chase": { "sight": 10, "speed": 3.5 }` (metres): they spot the player when nothing is in between, walk the ground around obstacles to it, search, give up and go home. Give the `spot` event a sound.
 - **The beacon** is a `checkpoint`.
 - **The portal** is a `goal` that needs 5 crystals.
 - **Falling** below `world.fallLimit` (-12) costs a life and respawns the player at the start or the last checkpoint.
@@ -58,3 +59,4 @@ Never call a change done until `ludra check`, `ludra test` and `ludra review` ar
 - Looks have no limits. A script's `render` hook gets the real three.js (`ctx.THREE`), the scene, the camera, the renderer and its own group that moves with the entity. Build custom meshes, shaders, particles and instancing there. `ctx.addon("postprocessing/UnrealBloomPass.js")` loads any three.js addon, and `ctx.setRender(fn)` draws the frame yourself (bloom, depth of field, outlines).
 - Sound has no limits either: `"sounds"` and `"music"` in the scene, or the Web Audio API in a script's `sound` hook. Run `npx @ludra/cli components sounds`.
 - Art never changes gameplay: render, draw and sound hooks are read-only, so tests stay valid.
+- The browser saves the player's progress by itself (when a later scene starts, at checkpoints) and the entry scene offers Continue / New game; Esc pauses. `"world": { "save": false }` makes a scene always start fresh; `world.progress.save()` saves at a moment of your choosing (fires `saved`).

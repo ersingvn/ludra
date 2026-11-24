@@ -3,6 +3,7 @@ import { CameraRig } from "./camera.ts";
 import { actionsUsed, Gamepads, TouchControls } from "./controls.ts";
 import { entityBox, inputKey, REPLAY_LIMIT, replayScene, type GameControl } from "./studio-link.ts";
 import { physicsEngineName } from "./engines.ts";
+import { drawDialogue } from "./dialogue-ui.ts";
 import { parseFrames, type Sprite } from "./components.ts";
 import { collectAssetPaths } from "./effects.ts";
 import { InputScript } from "./input.ts";
@@ -11,6 +12,7 @@ import { ParticleSystem } from "./particles.ts";
 import { pixelText } from "./pixelfont.ts";
 import { MARK_LABELS, Recorder, type MarkKind } from "./recording.ts";
 import { NoWebGL, PostFx } from "./postfx.ts";
+import { carryFrom, encodeProgress, localProgressStore, progressCarry, progressFromCarry, type ProgressCarry, type ProgressStore } from "./progress.ts";
 import type { DrawContext, DrawEvent, Script } from "./script.ts";
 import { FIXED_DT } from "./time.ts";
 import type { Body } from "./components.ts";
@@ -132,8 +134,33 @@ export interface GameOptions {
   entryPath?: string;
   /** Receives the controls Ludra Studio drives the game with: pause, step, inspect, hot reload. */
   onControl?: (control: GameControl) => void;
-  /** Writes down the session, and turns on the keys that mark moments. `ludra dev` passes one. */
+  /** Writes down the session, and turns on the keys that mark moments. `ludra dev` passes one. A recorded session never saves. */
   recorder?: Recorder;
+  /**
+   * The game's name (ludra.json): saves the player's progress in localStorage under it, when a
+   * scene starts and at each checkpoint, and offers Continue on the entry scene. Never inside
+   * Studio (`?studio=1`) or while recording.
+   */
+  save?: string;
+  /** Where progress is kept instead of localStorage (tests, another storage). Turns saving on. */
+  progressStore?: ProgressStore;
+}
+
+/** Where this page keeps the player's progress, if anywhere. */
+function progressStoreOf(options: GameOptions): ProgressStore | undefined {
+  if (options.progressStore) return options.progressStore;
+  if (!options.save || options.recorder || options.onControl) return undefined;
+  if (typeof location !== "undefined" && new URLSearchParams(location.search).has("studio")) return undefined;
+  if (typeof localStorage === "undefined") return undefined;
+  return localProgressStore(options.save);
+}
+
+/** A menu over the game: the pause menu, or Continue / New game on the entry scene. */
+interface Menu {
+  kind: "pause" | "title";
+  title: string;
+  items: { label: string; run: () => void }[];
+  selected: number;
 }
 
 /** How the game finds its assets: `assetUrl`, or `assetBase` + path. */
@@ -298,6 +325,17 @@ function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/** Two project paths name the same file: "./scenes/a.json" and "scenes\a.json" do. */
+function samePath(a: string, b: string): boolean {
+  const norm = (path: string) => path.replaceAll("\\", "/").split("/").filter((part) => part !== "" && part !== ".").join("/");
+  return norm(a) === norm(b);
+}
+
+/** A carry as recordings write it down. */
+function recorded(carry: ProgressCarry | undefined): Parameters<Recorder["begin"]>[2] {
+  return carry && { score: carry.score ?? 0, deaths: carry.deaths ?? 0, lives: carry.lives, items: carry.items, flags: carry.flags };
+}
+
 /** Seconds the win screen shows before the next scene, and the fade into a world.goto scene. */
 const WIN_PAUSE = 1.6;
 const GOTO_FADE = 0.35;
@@ -316,7 +354,17 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
   const sounds = new SoundPlayer(assetUrlOf(options));
   const scripts = new Map<string, Script>();
 
-  type Carry = { score: number; deaths: number; lives: number | undefined };
+  type Carry = ProgressCarry;
+  const store = progressStoreOf(options);
+  /** The entry scene's name in saved progress. */
+  const entryName = options.entryPath || "(entry)";
+  /** Whether a scene path is the entry scene (a goto back to the title is too). */
+  const isEntry = (path: string | undefined) => path === undefined || samePath(path, entryName);
+  /** World events already looked at for saving: checkpoints, saved, cleared. */
+  let progressEvents = 0;
+  let menu: Menu | undefined;
+  /** Actions that opened or chose in a menu: kept from the game until let go, so Resume doesn't jump. */
+  const suppressed = new Set<Action>();
   let scene = firstScene;
   /** The scene's path; undefined for the entry scene. */
   let scenePath: string | undefined;
@@ -350,7 +398,23 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
     for (const l of listeners) l.crash?.(text);
   };
 
-  const enter = async (next: SceneDef, carry: Carry | undefined, path?: string) => {
+  /** What the world knows of the saved game. */
+  const progressOption = () => {
+    const saved = store?.load();
+    return saved ? { exists: true, scene: saved.scene } : { exists: false };
+  };
+  const newWorld = (def: SceneDef, carry: Carry | undefined, checkpoint?: string) => {
+    const made = new World(def, { scripts, carry, progress: progressOption(), ...(checkpoint ? { checkpoint } : {}) });
+    progressEvents = 0;
+    return made;
+  };
+  /** A scene starting is a moment to save, except the entry scene's start: that is a new game. */
+  const saveStart = (path: string | undefined, carry: Carry | undefined, checkpoint?: string) => {
+    if (!store || !world.saves || path === undefined || isEntry(path)) return;
+    store.save(progressFromCarry(carry, path, checkpoint));
+  };
+
+  const enter = async (next: SceneDef, carry: Carry | undefined, path?: string, checkpoint?: string) => {
     const { images, shader } = await loadScene(next, options, scripts);
     await usePhysics(next, options);
     scene = next;
@@ -368,14 +432,61 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
     crash = sceneError;
     exitSince = undefined;
     try {
-      world = new World(next, { scripts, carry });
-      options.recorder?.begin(world, path, carry);
+      world = newWorld(next, carry, checkpoint);
+      options.recorder?.begin(world, path, recorded(carry));
+      saveStart(path, carry, checkpoint);
     } catch (err) {
       crash = message(err);
+      console.error("[ludra]", err);
       world = new World({ ...next, entities: [] });
     }
+    menu = isEntry(path) && !crash ? titleMenu() : undefined;
     sceneStarted();
   };
+
+  /** Starts the saved game: its scene, with what it carried, at its checkpoint. */
+  const continueGame = async () => {
+    const saved = store?.load();
+    if (!saved || loading) return;
+    const atEntry = isEntry(saved.scene);
+    if (!atEntry && !options.loadScene) return;
+    loading = true;
+    menu = undefined;
+    try {
+      const next = atEntry ? entryScene : await options.loadScene!(saved.scene);
+      await enter(next, progressCarry(saved), atEntry ? undefined : saved.scene, saved.checkpoint);
+      // The entry scene, continued, doesn't ask again.
+      menu = undefined;
+    } catch (err) {
+      crash = `Could not continue the saved game in "${saved.scene}": ${message(err)}`;
+    } finally {
+      loading = false;
+    }
+  };
+
+  /** Continue / New game on the entry scene, when there's a saved game. drawMenu hooks give it the game's own look. */
+  function titleMenu(): Menu | undefined {
+    const saved = store?.load();
+    if (!saved || !world.saves) return undefined;
+    if (!isEntry(saved.scene) && !options.loadScene) return undefined;
+    return {
+      kind: "title",
+      title: scene.name ?? "",
+      selected: 0,
+      items: [
+        { label: "Continue", run: () => void continueGame() },
+        {
+          label: "New game",
+          run: () => {
+            store?.clear();
+            menu = undefined;
+            restart();
+          },
+        },
+      ],
+    };
+  }
+
   await enter(firstScene, undefined);
 
   // Game over starts the whole game again; otherwise R restarts the current scene as it began.
@@ -386,8 +497,9 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
       void enter(entryScene, undefined).finally(() => (loading = false));
       return;
     }
-    world = new World(scene, { scripts, carry: startCarry });
-    options.recorder?.begin(world, scenePath, startCarry);
+    menu = undefined;
+    world = newWorld(scene, startCarry);
+    options.recorder?.begin(world, scenePath, recorded(startCarry));
     view.reset(world);
     sounds.setScene(scene.sounds, scene.music);
     soundEvents = 0;
@@ -399,13 +511,16 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
 
   const moveOn = (path: string) => {
     if (!options.loadScene) return;
+    // world.progress.continue(): the saved game, as Continue starts it.
+    if (world.progress.resume) return void continueGame();
     loading = true;
-    const carry = { score: world.score, deaths: world.deaths, lives: world.lives };
+    const carry = carryFrom(world);
     options
       .loadScene(path)
       .then((next) => enter(next, carry, path))
       .catch((err: unknown) => {
         crash = `Could not load the next scene "${path}": ${message(err)}`;
+        console.error("[ludra]", crash);
       })
       .finally(() => (loading = false));
   };
@@ -413,6 +528,99 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
   const held = new Set<Action>();
   // Keys pressed since the last step. A tap shorter than one frame still reaches the simulation.
   const tapped = new Set<Action>();
+  /** Gamepad and touch buttons down this frame. */
+  let pressed: ReadonlySet<Action> = new Set();
+
+  // Menus: nothing in them changes the game except what they start (Restart, Continue, New game, Quit).
+  const keepFromGame = () => {
+    for (const action of [...held, ...pressed, ...tapped]) suppressed.add(action);
+    tapped.clear();
+  };
+  const closeMenu = () => {
+    menu = undefined;
+    keepFromGame();
+  };
+  const choose = (index: number) => {
+    const item = menu?.items[index];
+    if (!item) return;
+    keepFromGame();
+    item.run();
+  };
+  const soundLabel = () => `Sound: ${sounds.muted ? "off" : "on"}`;
+  const pauseMenu = (): Menu => {
+    const items: Menu["items"] = [
+      { label: "Resume", run: closeMenu },
+      {
+        label: "Restart",
+        run: () => {
+          menu = undefined;
+          restart();
+        },
+      },
+      {
+        label: soundLabel(),
+        run: () => {
+          sounds.muted = !sounds.muted;
+          items[2]!.label = soundLabel();
+        },
+      },
+    ];
+    // The entry scene is the title: from any other scene the player can go back to it.
+    if (scenePath !== undefined) {
+      items.push({
+        label: "Quit to title",
+        run: () => {
+          if (loading) return;
+          menu = undefined;
+          loading = true;
+          void enter(entryScene, undefined).finally(() => (loading = false));
+        },
+      });
+    }
+    return { kind: "pause", title: "Paused", items, selected: 0 };
+  };
+  const openPause = () => {
+    if (menu || loading || crash) return;
+    keepFromGame();
+    menu = pauseMenu();
+  };
+  /** An action pressed while a menu is open moves through it or picks. */
+  const menuAction = (action: Action) => {
+    if (!menu) return;
+    const count = menu.items.length;
+    if (action === "up" || action === "left") menu.selected = (menu.selected + count - 1) % count;
+    else if (action === "down" || action === "right") menu.selected = (menu.selected + 1) % count;
+    else choose(menu.selected);
+  };
+  /** A tap or click on a menu item picks it; over a menu, nothing reaches the game or its touch buttons. */
+  const menuPointer = (event: PointerEvent) => {
+    if (!menu) return;
+    const r = screen.output.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return;
+    const x = ((event.clientX - r.left) / r.width) * screen.output.width;
+    const y = ((event.clientY - r.top) / r.height) * screen.output.height;
+    const index = menuLayout(screen.output.width, screen.output.height, menu.items.length).findIndex((b) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
+    if (event.type === "pointermove") {
+      if (index >= 0) menu.selected = index;
+      return;
+    }
+    event.stopPropagation();
+    event.preventDefault();
+    sounds.unlock();
+    if (index >= 0) {
+      menu.selected = index;
+      choose(index);
+    }
+  };
+  const onHidden = () => {
+    // A player who switches away comes back to a paused game. Studio has its own pause.
+    if (document.hidden && !options.onControl) openPause();
+  };
+  if (typeof document !== "undefined") {
+    window.addEventListener("pointerdown", menuPointer, { capture: true });
+    window.addEventListener("pointermove", menuPointer, { capture: true });
+    document.addEventListener("visibilitychange", onHidden);
+  }
   let toast: { text: string; until: number } | undefined;
   const mark = (kind: MarkKind, text?: string) => {
     options.recorder?.mark(world, kind, text);
@@ -431,6 +639,27 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
         if (text) mark("note", text);
         return;
       }
+    }
+    if (menu) {
+      const action = KEYMAP[event.code];
+      if (event.code === "Escape" || event.code === "KeyP") {
+        if (!event.repeat && menu.kind === "pause") closeMenu();
+      } else if (event.code === "KeyM" && !event.repeat) {
+        sounds.muted = !sounds.muted;
+        const item = menu.items.find((i) => i.label.startsWith("Sound:"));
+        if (item) item.label = soundLabel();
+      } else if (action) {
+        held.add(action);
+        suppressed.add(action);
+        if (!event.repeat || action === "up" || action === "down") menuAction(action);
+      } else return;
+      event.preventDefault();
+      return;
+    }
+    if (event.code === "Escape" || event.code === "KeyP") {
+      if (!event.repeat) openPause();
+      event.preventDefault();
+      return;
     }
     if (event.code === "KeyR") return restart();
     if (event.code === "Backquote" && !event.repeat && options.debugKey !== false) {
@@ -462,7 +691,7 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
   const gamepads = new Gamepads();
   if (options.touch !== false && typeof document !== "undefined") {
     touch = new TouchControls(options.actions ?? actionsUsed([scene]), {
-      restart,
+      pause: () => (menu?.kind === "pause" ? closeMenu() : openPause()),
       mute: () => (sounds.muted = !sounds.muted),
       touched: () => {
         sounds.unlock();
@@ -494,24 +723,53 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
   let raf = 0;
   const frame = (now: number) => {
     if (now > last) fps = fps * 0.9 + (1000 / (now - last)) * 0.1;
-    // Paused (by Studio), the clock stands still and only asked-for steps run.
-    if (!paused) accumulator += Math.min(MAX_FRAME_TIME, (now - last) / 1000);
+    // Paused (by Studio or a menu), the clock stands still and only asked-for steps run.
+    if (!paused && !menu) accumulator += Math.min(MAX_FRAME_TIME, (now - last) / 1000);
     last = now;
     const pad = gamepads.poll();
-    if (pad.restart) restart();
     if (pad.mute) sounds.muted = !sounds.muted;
-    const pressed = touch && touch.held.size > 0 ? new Set([...pad.actions, ...touch.held]) : pad.actions;
-    for (const action of pressed) if (!pressedBefore.has(action)) tapped.add(action);
+    pressed = touch && touch.held.size > 0 ? new Set([...pad.actions, ...touch.held]) : pad.actions;
+    if (pad.pause) {
+      if (menu?.kind === "pause") closeMenu();
+      else openPause();
+    }
+    for (const action of pressed) {
+      if (pressedBefore.has(action)) continue;
+      if (menu) {
+        suppressed.add(action);
+        menuAction(action);
+      } else tapped.add(action);
+    }
     pressedBefore = pressed;
-    const input = () => (tapped.size > 0 || pressed.size > 0 ? new Set([...held, ...pressed, ...tapped]) : held);
+    // What opened, closed or chose in a menu stays out of the game until it is let go.
+    for (const action of suppressed) if (!held.has(action) && !pressed.has(action)) suppressed.delete(action);
+    const input = () => {
+      const all = tapped.size > 0 || pressed.size > 0 ? new Set([...held, ...pressed, ...tapped]) : held;
+      if (suppressed.size === 0) return all;
+      return new Set([...all].filter((action) => !suppressed.has(action)));
+    };
     if (paused) {
       for (; pendingSteps > 0 && !crash && !loading; pendingSteps--) stepOnce(input());
       pendingSteps = 0;
     }
-    while (accumulator >= FIXED_DT && !crash && !loading) {
+    while (accumulator >= FIXED_DT && !crash && !loading && !menu) {
       stepOnce(input());
       accumulator -= FIXED_DT;
     }
+    if (menu) tapped.clear();
+
+    // Saving: at each checkpoint, and when a script asks. Continue starts the scene again from there.
+    if (store && world.saves && !loading) {
+      const path = scenePath ?? entryName;
+      for (const event of world.events.slice(progressEvents)) {
+        if (event.type === "checkpoint") {
+          // What the scene started with, so nothing picked up before the checkpoint is counted twice.
+          store.save(progressFromCarry({ ...startCarry, deaths: world.deaths, lives: world.lives }, path, event.checkpoint));
+        } else if (event.type === "saved") store.save(encodeProgress(world, path, world.checkpointReached));
+        else if (event.type === "cleared") store.clear();
+      }
+    }
+    progressEvents = world.events.length;
 
     // Sound hooks: the real Web Audio API, once the player has pressed a key.
     const audio = sounds.audio;
@@ -564,6 +822,14 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
     if (fade > 0 || loading) {
       ctx.fillStyle = `rgba(0, 0, 0, ${loading ? 1 : fade})`;
       ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    }
+    if (menu && !crash && !loading) {
+      try {
+        view.drawMenu(ctx, world, menu, firstFont(scene));
+      } catch (err) {
+        console.error("[ludra]", err);
+        crash = message(err);
+      }
     }
     if (crash) drawCrash(ctx, crash);
     if (toast && now < toast.until) drawToast(ctx, toast.text);
@@ -652,6 +918,7 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
         if (!options.actions) touch?.setActions(actionsUsed([next]));
         if (soundChanged || replayed.result !== "kept") sounds.setScene(next.sounds, next.music);
         soundEvents = replayed.result === "kept" ? world.events.length : 0;
+        progressEvents = replayed.result === "kept" ? world.events.length : 0;
         if (replayed.result !== "kept") soundLocals.clear();
         sceneError = screen.use(next.postfx, shader);
         crash = sceneError;
@@ -672,6 +939,9 @@ export async function startGame(canvas: HTMLCanvasElement, firstScene: SceneDef,
     window.removeEventListener("keydown", onKeyDown);
     window.removeEventListener("keyup", onKeyUp);
     window.removeEventListener("blur", onBlur);
+    window.removeEventListener("pointerdown", menuPointer, { capture: true });
+    window.removeEventListener("pointermove", menuPointer, { capture: true });
+    if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onHidden);
     touch?.dispose();
   };
 }
@@ -753,6 +1023,59 @@ export async function captureFrames(canvas: HTMLCanvasElement, scene: SceneDef, 
     view.step(world, () => {});
   }
   return captured;
+}
+
+/** The game's own font, when its scene loads one: the first in "fonts". */
+function firstFont(scene: SceneDef): string | undefined {
+  return Object.keys(scene.fonts ?? {})[0];
+}
+
+const MENU_ITEM_WIDTH = 300;
+const MENU_ITEM_HEIGHT = 50;
+const MENU_GAP = 10;
+
+/** Where each menu item sits on the canvas, for drawing it and for taps. */
+function menuLayout(width: number, height: number, count: number): { x: number; y: number; w: number; h: number }[] {
+  const total = count * MENU_ITEM_HEIGHT + (count - 1) * MENU_GAP;
+  const top = Math.round(height / 2 - total / 2 + 28);
+  const w = Math.min(MENU_ITEM_WIDTH, width - 32);
+  return Array.from({ length: count }, (_, i) => ({ x: Math.round(width / 2 - w / 2), y: top + i * (MENU_ITEM_HEIGHT + MENU_GAP), w, h: MENU_ITEM_HEIGHT }));
+}
+
+/** The engine's menu: calm and readable over the dimmed game, in the game's font when it has one. */
+function drawDefaultMenu(ctx: CanvasRenderingContext2D, menu: NonNullable<DrawContext["menu"]>, font: string | undefined, touch: boolean): void {
+  const { width, height } = ctx.canvas;
+  const family = font ? `"${font}", system-ui, sans-serif` : "system-ui, sans-serif";
+  const boxes = menuLayout(width, height, menu.items.length);
+  ctx.save();
+  ctx.fillStyle = "rgba(8, 10, 16, 0.66)";
+  ctx.fillRect(0, 0, width, height);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  if (menu.title) {
+    ctx.fillStyle = "#ffffff";
+    ctx.font = `700 36px ${family}`;
+    ctx.fillText(menu.title, width / 2, boxes[0]!.y - 44, width - 32);
+  }
+  menu.items.forEach((label, i) => {
+    const b = boxes[i]!;
+    const on = i === menu.selected;
+    ctx.beginPath();
+    ctx.roundRect(b.x, b.y, b.w, b.h, 12);
+    ctx.fillStyle = on ? "rgba(255, 255, 255, 0.92)" : "rgba(255, 255, 255, 0.08)";
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = on ? "rgba(255, 255, 255, 1)" : "rgba(255, 255, 255, 0.28)";
+    ctx.stroke();
+    ctx.fillStyle = on ? "#10131c" : "rgba(255, 255, 255, 0.9)";
+    ctx.font = `${on ? 700 : 500} 21px ${family}`;
+    ctx.fillText(label, width / 2, b.y + b.h / 2 + 1, b.w - 24);
+  });
+  const last = boxes[boxes.length - 1]!;
+  ctx.fillStyle = "rgba(255, 255, 255, 0.55)";
+  ctx.font = "500 14px system-ui, sans-serif";
+  ctx.fillText(touch ? "Tap to choose" : "↑ ↓ choose · Enter select" + (menu.title === "Paused" ? " · Esc resume" : ""), width / 2, last.y + last.h + 30, width - 32);
+  ctx.restore();
 }
 
 /** Tells the player their mark was kept, without getting in the way of the game. */
@@ -1046,7 +1369,10 @@ class View {
     ctx.font = "500 13px system-ui, sans-serif";
     ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
     // On a touch screen the buttons for these are in that corner.
-    if (!this.touch) ctx.fillText(`M: sound ${muted ? "off" : "on"} · R: restart`, viewWidth - 16, 28);
+    if (!this.touch) ctx.fillText(`Esc: menu · M: sound ${muted ? "off" : "on"} · R: restart`, viewWidth - 16, 28);
+    // A conversation (the dialogue component) in the engine's own box; a game with drawUI draws it itself.
+    // In 2D the camera says where the speaker is on screen, so the box can keep clear of it; 3D keeps it at the bottom.
+    drawDialogue(ctx, world, this.renderer ? { width: viewWidth, height: viewHeight, touch: viewInfo.touch } : { ...viewInfo, width: viewWidth, height: viewHeight });
 
     if (world.won || world.lost) {
       ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
@@ -1063,7 +1389,19 @@ class View {
     }
   }
 
-  private drawHook(ctx: CanvasRenderingContext2D, world: World, e: Entity, hook: "draw" | "drawUI", view: DrawContext["view"]): void {
+  /** The pause or title menu: the game's own drawMenu hooks, or the default look. */
+  drawMenu(ctx: CanvasRenderingContext2D, world: World, menu: Menu, font: string | undefined): void {
+    const info = { title: menu.title, items: menu.items.map((i) => i.label), selected: menu.selected };
+    if (world.hasHook("drawMenu")) {
+      const { width, height } = ctx.canvas;
+      const view = { width, height, cameraX: 0, cameraY: 0, zoom: 1, touch: this.touch };
+      for (const e of [...world.entities]) if (e.script?.module.drawMenu) this.drawHook(ctx, world, e, "drawMenu", view, info);
+      return;
+    }
+    drawDefaultMenu(ctx, info, font, this.touch);
+  }
+
+  private drawHook(ctx: CanvasRenderingContext2D, world: World, e: Entity, hook: "draw" | "drawUI" | "drawMenu", view: DrawContext["view"], menu?: DrawContext["menu"]): void {
     let local = this.local.get(e.id);
     if (!local) this.local.set(e.id, (local = {}));
     ctx.save();
@@ -1081,6 +1419,7 @@ class View {
         },
         random: () => this.particles.random(),
         pixelText: (text, x, y, options) => pixelText(ctx, text, x, y, options),
+        ...(menu ? { menu } : {}),
       });
     } finally {
       // Whatever the hook changed (transform, alpha, blend mode, filter) ends with it.

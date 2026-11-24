@@ -122,6 +122,8 @@ if (data.ok) {
     assetBase: "${PROJECT_PREFIX}", scriptBase: "${SCRIPT_PREFIX}", scriptPaths, loadScene, loadPhysics, loadRenderer3D, recorder,
     actions: ${JSON.stringify(gameActions(project))},
     entryPath: data.path,
+    // The player's progress, in localStorage. Recorded and Studio sessions never save.
+    save: ${JSON.stringify(project.config.name)},
     ...(studio ? { loadScript, onControl: (c) => (control = c) } : {}),
   });
   if (studio) {

@@ -246,6 +246,81 @@ describe("controls besides the keyboard", { skip: live }, () => {
   }));
 });
 
+/** Two levels: walking right reaches level 1's goal. Each level's script tells the page where it is. */
+function savingGame(): string {
+  const ground = { id: "ground", components: { transform: { x: 480, y: 520 }, body: { type: "static", width: 960, height: 40 }, sprite: { color: "#335" } } };
+  const player = { id: "player", components: { transform: { x: 100, y: 482 }, body: { type: "dynamic", width: 28, height: 36 }, platformer: {}, sprite: { color: "#f80" } } };
+  const goal = { id: "door", components: { transform: { x: 300, y: 470 }, body: { type: "static", width: 30, height: 60, sensor: true }, goal: { next: "scenes/level-2.scene.json" } } };
+  const reporter = (name: string) => ({ id: "reporter", components: { transform: { x: 0, y: 0 }, script: { src: "scripts/report.ts", params: { name } } } });
+  return files({
+    "ludra.json": JSON.stringify({ name: "Saving Test", entry: "scenes/level-1.scene.json" }),
+    "scenes/level-1.scene.json": JSON.stringify({ name: "Saving Test", entities: [ground, player, goal, reporter("one")] }),
+    "scenes/level-2.scene.json": JSON.stringify({ entities: [ground, player, reporter("two")] }),
+    "scripts/report.ts": `export default { update({ world, params }) { const page = globalThis as Record<string, unknown>; page.level = params.name; page.frame = world.frame; } };`,
+  });
+}
+
+describe("saving the player's game, and menus", { skip: live }, () => {
+  it("saves when a level starts, offers Continue after a reload, pauses, quits to the title and starts a new game", { timeout: 240_000 }, () => oneLiveBrowser(async () => {
+    const dir = savingGame();
+    assert.equal(run("build", dir).code, 0);
+    const page = await open(join(dir, "build", "index.html"));
+    const key = (code: string, type = "keydown") => page.evaluate(`window.dispatchEvent(new KeyboardEvent(${JSON.stringify(type)}, { code: ${JSON.stringify(code)} })), true`);
+    const tap = async (code: string) => {
+      await key(code);
+      await sleep(60);
+      await key(code, "keyup");
+      await sleep(60);
+    };
+    const saved = async () => JSON.parse(((await page.evaluate(`localStorage.getItem("ludra:progress:Saving Test")`)) as string | null) ?? "null");
+    const frame = async () => (await page.evaluate("globalThis.frame")) as number;
+    try {
+      await until(async () => (await page.evaluate("globalThis.level")) === "one", 120_000);
+      assert.equal(await saved(), null, "a new game's first level is no progress yet");
+      await key("ArrowRight");
+      await until(async () => (await page.evaluate("globalThis.level")) === "two", 60_000);
+      await key("ArrowRight", "keyup");
+      const progress = await saved();
+      assert.equal(progress?.scene, "scenes/level-2.scene.json");
+      assert.equal(progress?.v, 1);
+
+      // Esc pauses: the clock stands still until Esc again.
+      await tap("Escape");
+      const pausedAt = await frame();
+      await sleep(600);
+      assert.equal(await frame(), pausedAt, "nothing moves while paused");
+      await tap("Escape");
+      await until(async () => (await frame()) > pausedAt, 30_000);
+
+      // A reload starts at the title, which offers Continue; Continue goes back to level 2.
+      await page.evaluate("globalThis.level = undefined, location.reload(), true");
+      await sleep(1000);
+      await until(async () => (await page.evaluate("document.readyState")) === "complete", 60_000);
+      await sleep(1500);
+      assert.equal(await page.evaluate("globalThis.level"), undefined, "the title waits under its menu: no frame has run");
+      await tap("Enter");
+      await until(async () => (await page.evaluate("globalThis.level")) === "two", 60_000);
+
+      // Pause, down three to Quit to title, and pick it: level 1 again, under Continue / New game.
+      await tap("Escape");
+      for (let i = 0; i < 3; i++) await tap("ArrowDown");
+      await page.evaluate("globalThis.level = undefined, true");
+      await tap("Enter");
+      await sleep(1500);
+      assert.equal(await page.evaluate("globalThis.level"), undefined, "back at the title, under its menu");
+      // New game forgets the save and plays level 1.
+      await tap("ArrowDown");
+      await tap("Enter");
+      await until(async () => (await page.evaluate("globalThis.level")) === "one", 30_000);
+      assert.equal(await saved(), null);
+      assert.deepEqual(page.problems, []);
+    } finally {
+      await page.close();
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    }
+  }));
+});
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function until(ready: () => Promise<boolean>, ms: number) {
